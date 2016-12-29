@@ -1,0 +1,11 @@
+<sys-devel/binutils-9999		**
+sys-devel/clang				**
+sys-devel/llvm 				**
+x11-libs/libvdpau-va-gl			**
+sys-devel/gcc				**
+media-libs/mesa				**
+=kde-misc/kdiff3-9999			**
+sys-libs/compiler-rt			**
+sys-libs/libomp				**
+sys-devel/clang-runtime			**
+sys-libs/compiler-rt-sanitizers		**

@@ -1,0 +1,7 @@
+virtual/jdk:7
+virtual/jre:7
+dev-java/icedtea:7
+=media-libs/openjpeg-2.1.1_p20160922
+=sys-devel/flex-2.6.2
+=sys-apps/sandbox-2.11-r2
+=www-client/chromium-57.0.2950.4
