@@ -218,3 +218,13 @@ x11-proto/fixesproto			abi_x86_32
 media-libs/libtxc_dxtn			abi_x86_32
 sys-devel/clang				abi_x86_32
 virtual/opencl				abi_x86_32
+# required by net-libs/gnutls-3.5.8::gentoo
+# required by net-misc/wget-1.18::gentoo
+# required by @system
+# required by @world (argument)
+>=dev-libs/libunistring-0.9.7 abi_x86_32
+# required by net-libs/gnutls-3.5.8::gentoo[idn]
+# required by net-misc/wget-1.18::gentoo
+# required by @system
+# required by @world (argument)
+>=net-dns/libidn-1.33 abi_x86_32
