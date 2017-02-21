@@ -1,5 +1,5 @@
 app-eselect/eselect-opengl
-=app-office/calligra-3.0.0
+dev-libs/libclc
 dev-qt/assistant
 dev-qt/designer
 dev-qt/linguist
@@ -59,4 +59,3 @@ www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
 x11-base/xorg-server
 x11-misc/sddm
-dev-libs/libclc

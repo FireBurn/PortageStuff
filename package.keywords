@@ -1,0 +1,13 @@
+app-vim/llvm-vim			**
+=kde-misc/kdiff3-9999			**
+media-libs/mesa				**
+<sys-devel/binutils-9999		**
+sys-devel/clang				**
+sys-devel/clang-runtime			**
+sys-devel/gcc				**
+sys-devel/llvm 				**
+sys-devel/llvmgold			**
+sys-libs/compiler-rt			**
+sys-libs/compiler-rt-sanitizers		**
+sys-libs/libomp				**
+x11-libs/libvdpau-va-gl			**
