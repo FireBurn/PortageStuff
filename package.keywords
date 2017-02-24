@@ -1,6 +1,8 @@
 app-vim/llvm-vim			**
 =kde-misc/kdiff3-9999			**
 media-libs/mesa				**
+media-libs/vulkan-demos			**
+media-libs/vulkan-loader		**
 <sys-devel/binutils-9999		**
 sys-devel/clang				**
 sys-devel/clang-runtime			**

@@ -10,8 +10,7 @@ dev-java/icedtea			nss sunec
 dev-lang/orc				abi_x86_32
 dev-lang/python				sqlite
 dev-libs/atk				abi_x86_32
-dev-libs/elfutils			abi_x86_32
-dev-libs/elfutils			static-libs
+dev-libs/elfutils			abi_x86_32 static-libs
 dev-libs/expat				abi_x86_32
 dev-libs/fribidi			abi_x86_32
 dev-libs/glib				abi_x86_32
@@ -75,16 +74,15 @@ media-libs/libtheora			abi_x86_32
 media-libs/libtxc_dxtn			abi_x86_32
 media-libs/libv4l			abi_x86_32
 media-libs/libvorbis			abi_x86_32
-media-libs/libvpx			abi_x86_32
-media-libs/libvpx			svc
+media-libs/libvpx			abi_x86_32 svc
 media-libs/libwebp			abi_x86_32
-media-libs/mesa				abi_x86_32
-media-libs/mesa				-video_cards_radeon -video_cards_intel gles2 
+media-libs/mesa				abi_x86_32 gles2 -video_cards_radeon -video_cards_intel
 media-libs/openal			abi_x86_32
 media-libs/opencore-amr			abi_x86_32
 media-libs/opus				abi_x86_32
 media-libs/phonon			gstreamer
 media-libs/tiff				abi_x86_32
+media-libs/vulkan-loader		abi_x86_32
 media-libs/x264				abi_x86_32 -opencl
 media-libs/x265				abi_x86_32
 media-libs/xvid				abi_x86_32
@@ -106,11 +104,8 @@ media-plugins/gst-plugins-vpx		abi_x86_32
 media-plugins/gst-plugins-x264		abi_x86_32
 media-sound/lame			abi_x86_32
 media-sound/mpg123			abi_x86_32
-media-sound/pulseaudio			abi_x86_32
-media-sound/pulseaudio			gnome
-media-video/ffmpeg			abi_x86_32
-media-video/ffmpeg			fdk
-media-video/ffmpeg			-samba
+media-sound/pulseaudio			abi_x86_32 gnome
+media-video/ffmpeg			abi_x86_32 fdk -samba
 media-video/smplayer			-qt4
 media-video/vlc				-qt4
 net-dns/dnsmasq				-lua
@@ -123,8 +118,7 @@ net-libs/gnutls				abi_x86_32
 net-libs/libasyncns			abi_x86_32
 net-misc/networkmanager			modemmanager -consolekit -nss
 net-misc/openssh			-ldap
-net-nds/openldap			abi_x86_32
-net-nds/openldap 			-gnutls
+net-nds/openldap			abi_x86_32 -gnutls
 net-p2p/transmission			-gtk -qt4
 net-print/cups				abi_x86_32
 sys-apps/attr				abi_x86_32
@@ -136,16 +130,14 @@ sys-apps/util-linux			abi_x86_32
 sys-devel/clang				abi_x86_32
 sys-devel/flex				abi_x86_32
 sys-devel/gettext			abi_x86_32
-sys-devel/llvm				abi_x86_32
-sys-devel/llvm				-ncurses 
+sys-devel/llvm				abi_x86_32 -ncurses
 sys-fs/ntfs3g				-crypt
 sys-libs/binutils-libs			abi_x86_32
 sys-libs/cracklib			abi_x86_32
 sys-libs/db				abi_x86_32
 sys-libs/gpm				abi_x86_32
 sys-libs/libcap				abi_x86_32
-sys-libs/ncurses			abi_x86_32
-sys-libs/ncurses			tinfo
+sys-libs/ncurses			abi_x86_32 tinfo
 sys-libs/ntdb                           python
 sys-libs/pam				abi_x86_32
 sys-libs/talloc 			python 
