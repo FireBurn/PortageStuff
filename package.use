@@ -36,6 +36,7 @@ dev-libs/weston				wayland-compositor gles2 xwayland
 dev-util/apitrace			system-snappy
 dev-util/cmake				qt5 -qt4
 dev-util/pkgconfig			abi_x86_32
+dev-vcs/git				tk
 games-emulation/dolphin			-wxwidgets
 games-fps/worldofpadman			maps
 gnome-base/librsvg			abi_x86_32
@@ -143,7 +144,7 @@ sys-libs/pam				abi_x86_32
 sys-libs/talloc 			python 
 sys-libs/tdb				python 
 sys-libs/tevent				python 
-sys-libs/zlib				abi_x86_32
+sys-libs/zlib				abi_x86_32 static-libs
 virtual/glu				abi_x86_32
 virtual/jpeg				abi_x86_32
 virtual/libelf				abi_x86_32
