@@ -117,6 +117,7 @@ net-fs/samba				client
 net-irc/konversation			-crypt
 net-libs/gnutls				abi_x86_32
 net-libs/libasyncns			abi_x86_32
+net-misc/curl				abi_x86_32
 net-misc/networkmanager			modemmanager -consolekit -nss
 net-misc/openssh			-ldap
 net-nds/openldap			abi_x86_32 -gnutls
@@ -214,3 +215,4 @@ x11-proto/xf86driproto			abi_x86_32
 x11-proto/xf86vidmodeproto		abi_x86_32
 x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
+
