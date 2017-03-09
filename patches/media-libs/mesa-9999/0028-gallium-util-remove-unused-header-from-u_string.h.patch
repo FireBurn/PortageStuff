@@ -1,0 +1,24 @@
+From b57d75b923dd216922043a90f1001e366850f177 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Wed, 8 Mar 2017 14:36:16 +1100
+Subject: [PATCH 28/33] gallium/util: remove unused header from u_string.h
+
+---
+ src/gallium/auxiliary/util/u_string.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/src/gallium/auxiliary/util/u_string.h b/src/gallium/auxiliary/util/u_string.h
+index 42c834fecf..e88e13f42c 100644
+--- a/src/gallium/auxiliary/util/u_string.h
++++ b/src/gallium/auxiliary/util/u_string.h
+@@ -41,7 +41,6 @@
+ #include <stddef.h>
+ #include <stdarg.h>
+ 
+-#include "pipe/p_compiler.h"
+ #include "util/macros.h" // PRINTFLIKE
+ 
+ 
+-- 
+2.12.0
+
