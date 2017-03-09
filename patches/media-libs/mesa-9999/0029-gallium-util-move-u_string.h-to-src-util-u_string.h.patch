@@ -1,7 +1,7 @@
-From 7d3cff99fb6faeb65f99c45eded2dfcbc765fe6a Mon Sep 17 00:00:00 2001
+From 4860ca1cc51ea8ec3c5c14699df70177a0157e35 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 14:36:17 +1100
-Subject: [PATCH 29/33] gallium/util: move u_string.h to src/util/u_string.h
+Subject: [PATCH 29/36] gallium/util: move u_string.h to src/util/u_string.h
 
 This will help use move u_queue.c here eventually and also provide
 string function wrappers for anyone wishing to port disk_cache.c

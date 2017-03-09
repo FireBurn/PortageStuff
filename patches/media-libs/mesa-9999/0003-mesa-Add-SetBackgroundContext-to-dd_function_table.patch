@@ -1,7 +1,7 @@
-From d4f9fa8b17ed8489cf611a807c359a9cea3de225 Mon Sep 17 00:00:00 2001
+From 6de65389d79175807e321d50b7bc61a076c5f8b3 Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:15 +1100
-Subject: [PATCH 03/33] mesa: Add SetBackgroundContext to dd_function_table
+Subject: [PATCH 03/36] mesa: Add SetBackgroundContext to dd_function_table
 
 ---
  src/mesa/drivers/common/driverfuncs.c |  3 +++

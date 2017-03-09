@@ -1,7 +1,7 @@
-From 34110763da2aff6595651e2367047c279828fdf4 Mon Sep 17 00:00:00 2001
+From c0084d3cc51eeeb84f509553d8798ed6378afa22 Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:13 +1100
-Subject: [PATCH 01/33] dri_interface: Add new marshalling interfaces to
+Subject: [PATCH 01/36] dri_interface: Add new marshalling interfaces to
  dri_interface.h
 
 ---

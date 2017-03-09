@@ -1,7 +1,7 @@
-From d839d5cd4cba16575a25b7c6b3c5104aa9e813ab Mon Sep 17 00:00:00 2001
+From 95cbb0e2b2c5fe6921746651023fdecc8897b8de Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:20 +1100
-Subject: [PATCH 08/33] glapi: Generate GL API marshalling code from the XML.
+Subject: [PATCH 08/36] glapi: Generate GL API marshalling code from the XML.
 
 This is not yet used in the build, just generated.
 

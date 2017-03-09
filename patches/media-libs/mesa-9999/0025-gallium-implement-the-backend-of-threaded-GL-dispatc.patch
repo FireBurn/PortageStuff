@@ -1,7 +1,7 @@
-From c6737ea593812a05164cda40cf570681beb7ef9f Mon Sep 17 00:00:00 2001
+From 7b60d83cf603b047ee3f1acc944e8c812d98e78d Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Marek=20Ol=C5=A1=C3=A1k?= <marek.olsak@amd.com>
 Date: Tue, 7 Mar 2017 17:21:37 +1100
-Subject: [PATCH 25/33] gallium: implement the backend of threaded GL dispatch
+Subject: [PATCH 25/36] gallium: implement the backend of threaded GL dispatch
 
 ---
  src/gallium/include/state_tracker/st_api.h      | 19 +++++++++++++++++++

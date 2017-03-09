@@ -1,7 +1,7 @@
-From 42171d785b0946b742e278435ff03c7b24aa6b3d Mon Sep 17 00:00:00 2001
+From e0da25180aa024beca5e241155d9f6199380a5a1 Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:23 +1100
-Subject: [PATCH 11/33] mesa: Create pointers for multithread marshalling
+Subject: [PATCH 11/36] mesa: Create pointers for multithread marshalling
  dispatch table.
 
 This patch splits the context's CurrentDispatch pointer into two

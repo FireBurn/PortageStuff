@@ -1,7 +1,7 @@
-From 5ef13e96bdb71cf2ebda2c3732b04748eea21721 Mon Sep 17 00:00:00 2001
+From 64a46851ff51448a3ee0c4f1baa850e2912c2a9e Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 14:36:14 +1100
-Subject: [PATCH 26/33] gallium/util: remove unused util_memmove()
+Subject: [PATCH 26/36] gallium/util: remove unused util_memmove()
 
 This is not used anywhere and Visual Studio looks to have
 supported memmove() for a long time if not always.

@@ -1,7 +1,7 @@
-From 78e3c8bc9ea8e56708933037695a2b1a6fe0748d Mon Sep 17 00:00:00 2001
+From f6722dcc5b270c0b7901ae3721415094eab20ef4 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 15:36:32 +1100
-Subject: [PATCH 31/33] util: add u_thread.h
+Subject: [PATCH 31/36] util: add u_thread.h
 
 This is a minimal copy of os_thread.h from gallium in order to move
 u_queue.{c,h} to this directory.

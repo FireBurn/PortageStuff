@@ -1,7 +1,7 @@
-From 44a1229571802b1d8e135e96ee16120a37d5ee85 Mon Sep 17 00:00:00 2001
+From 70ae7a3afd7ccca5f8be136926d4de7ebf1a1963 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 15:36:33 +1100
-Subject: [PATCH 32/33] gallium/util: make use of new u_thread.h in u_queue.{c,
+Subject: [PATCH 32/36] gallium/util: make use of new u_thread.h in u_queue.{c,
  h}
 
 ---

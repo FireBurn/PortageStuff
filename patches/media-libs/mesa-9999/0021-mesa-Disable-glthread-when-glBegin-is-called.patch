@@ -1,7 +1,7 @@
-From aba7987ac2c2aee42eca80b21e9ac493942552f5 Mon Sep 17 00:00:00 2001
+From 4b36ae5758d435ce7dad03d55a9d9316c832d89d Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:33 +1100
-Subject: [PATCH 21/33] mesa: Disable glthread when glBegin() is called.
+Subject: [PATCH 21/36] mesa: Disable glthread when glBegin() is called.
 
 glBegin() swaps dispatch tables, and we don't have any code in place for
 handling that in glthread (which also messes with dispatch tables), and I

@@ -1,7 +1,7 @@
-From 73fd7303a28207f63ee5104e03ff2b5cd9fdb89b Mon Sep 17 00:00:00 2001
+From e3b67bd9cdb35ddd2a4abcea9a3626c28c1b03f1 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:22 +1100
-Subject: [PATCH 10/33] mesa: Add infrastructure for a worker thread to process
+Subject: [PATCH 10/36] mesa: Add infrastructure for a worker thread to process
  GL commands.
 
 v2: Keep an allocated buffer around instead of checking for one at the

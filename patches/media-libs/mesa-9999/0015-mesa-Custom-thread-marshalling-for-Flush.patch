@@ -1,7 +1,7 @@
-From a001a2addeeb13ad61cfdf5359ca4d6c675c273e Mon Sep 17 00:00:00 2001
+From 34c84f3512989212bbe14888cc0a3d41b8338182 Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:27 +1100
-Subject: [PATCH 15/33] mesa: Custom thread marshalling for Flush.
+Subject: [PATCH 15/36] mesa: Custom thread marshalling for Flush.
 
 ---
  src/mapi/glapi/gen/gl_API.xml |  3 +--

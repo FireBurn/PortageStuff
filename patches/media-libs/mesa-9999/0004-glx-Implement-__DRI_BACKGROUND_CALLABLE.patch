@@ -1,7 +1,7 @@
-From 406d7c3dc96af92e5fda2bb5af1b3ceabe750f92 Mon Sep 17 00:00:00 2001
+From 22a4e67a1b259286efe459a99a84743faa502208 Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:16 +1100
-Subject: [PATCH 04/33] glx: Implement __DRI_BACKGROUND_CALLABLE
+Subject: [PATCH 04/36] glx: Implement __DRI_BACKGROUND_CALLABLE
 
 v2: Marek: Add DRI3 support.
 

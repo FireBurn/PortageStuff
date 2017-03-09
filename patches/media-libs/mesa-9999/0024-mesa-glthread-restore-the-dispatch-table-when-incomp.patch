@@ -1,7 +1,7 @@
-From c277a43a48d18fad167d3453d4accabc3f24b730 Mon Sep 17 00:00:00 2001
+From ac6d6c2211ffe72eaecb1f3935a162c091cb28d5 Mon Sep 17 00:00:00 2001
 From: Gregory Hainaut <gregory.hainaut@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:36 +1100
-Subject: [PATCH 24/33] mesa/glthread: restore the dispatch table when
+Subject: [PATCH 24/36] mesa/glthread: restore the dispatch table when
  incompatible gl calls are detected
 
 While a context only has a single glthread, the context itself can be

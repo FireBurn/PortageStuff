@@ -1,7 +1,7 @@
-From e51a23e92903cb49cd8435162f923628154e0bd4 Mon Sep 17 00:00:00 2001
+From 61a4738556e99b0cbc157f69b8c825f653084406 Mon Sep 17 00:00:00 2001
 From: =?UTF-8?q?Marek=20Ol=C5=A1=C3=A1k?= <marek.olsak@amd.com>
 Date: Tue, 7 Mar 2017 17:21:24 +1100
-Subject: [PATCH 12/33] Revert "mesa: make _mesa_alloc_dispatch_table() static"
+Subject: [PATCH 12/36] Revert "mesa: make _mesa_alloc_dispatch_table() static"
 
 This reverts commit 4009d22b61e76850b1b725f4e491da05c2406fa4.
 

@@ -1,7 +1,7 @@
-From b9695edef2867b53840b20563f9cde39632eff9d Mon Sep 17 00:00:00 2001
+From 1acb01db18d6ac28b815720b6e7123c6133a67f1 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:21 +1100
-Subject: [PATCH 09/33] mesa: Validate count parameters when marshalling.
+Subject: [PATCH 09/36] mesa: Validate count parameters when marshalling.
 
 Otherwise, for example, glDeleteBuffers(-1, &bo) gets you a segfault
 instead of GL_INVALID_VALUE.

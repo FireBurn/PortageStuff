@@ -1,7 +1,7 @@
-From 326470dbf050da7bc4ed621241a6ad3cbd25b1f4 Mon Sep 17 00:00:00 2001
+From 9a7ec306518e945faca656f361668a845497510a Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:31 +1100
-Subject: [PATCH 19/33] mesa: Add support for asynchronous glDraw* on GL core.
+Subject: [PATCH 19/36] mesa: Add support for asynchronous glDraw* on GL core.
 
 ---
  src/mapi/glapi/gen/gl_marshal.py  | 4 ++++

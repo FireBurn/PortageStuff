@@ -1,7 +1,7 @@
-From c432e134722a96a5c916ca3011c7d8b571c5ab79 Mon Sep 17 00:00:00 2001
+From 1bf27109a012fa722a9abf79289856cde84ab44c Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:30 +1100
-Subject: [PATCH 18/33] mesa: Add support for NULL arguments like in
+Subject: [PATCH 18/36] mesa: Add support for NULL arguments like in
  glBufferData() in marshalling.
 
 This will let us support things like glBufferData() that should be

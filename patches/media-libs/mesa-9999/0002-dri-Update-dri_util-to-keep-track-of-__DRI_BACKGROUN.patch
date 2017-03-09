@@ -1,7 +1,7 @@
-From 94a9e8c1ea3fde30ef05367a31ab80ec055fb4d2 Mon Sep 17 00:00:00 2001
+From 61b3c43145e3059023102619a42eff410280650f Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:14 +1100
-Subject: [PATCH 02/33] dri: Update dri_util to keep track of
+Subject: [PATCH 02/36] dri: Update dri_util to keep track of
  __DRI_BACKGROUND_CALLABLE
 
 ---

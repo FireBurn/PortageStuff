@@ -1,7 +1,7 @@
-From 51faf73750be7f7a99f779e9ce4628a6f8b4210d Mon Sep 17 00:00:00 2001
+From ab03376472bc15e7784e7eb1d70437a451ce5a35 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:19 +1100
-Subject: [PATCH 07/33] glapi: Mark compressed teximage functions as sync.
+Subject: [PATCH 07/36] glapi: Mark compressed teximage functions as sync.
 
 Without doing some additional tracking, we won't know whether the data
 will be immediate user data, or will be loaded from a PBO.  The normal

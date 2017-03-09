@@ -1,7 +1,7 @@
-From 8e1e8f30c4f6e42819dbf9624e08e31e76f66a78 Mon Sep 17 00:00:00 2001
+From bf49c4b2d4af896c00d5d9a09e91c1f56ff7892f Mon Sep 17 00:00:00 2001
 From: Paul Berry <stereotype441@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:18 +1100
-Subject: [PATCH 06/33] glapi: Annotate functions with "marshal" attribute.
+Subject: [PATCH 06/36] glapi: Annotate functions with "marshal" attribute.
 
 Several API functions require special treatment in order to be marshalled
 to a background thread.  Others can't be safely executed in a background

@@ -1,7 +1,7 @@
-From 00e5ac545c251d871ac02f6ea185c73c76442f90 Mon Sep 17 00:00:00 2001
+From 16966a05a1060370a0ff99aa46b5f855a4b73794 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:28 +1100
-Subject: [PATCH 16/33] glapi: Mark vertex attrib pointer functions as async.
+Subject: [PATCH 16/36] glapi: Mark vertex attrib pointer functions as async.
 
 These don't actually read data out of the pointers, they set the
 pointers (or offsets in a VBO) to be used in a later draw call.

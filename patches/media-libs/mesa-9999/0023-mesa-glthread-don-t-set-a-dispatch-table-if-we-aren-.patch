@@ -1,7 +1,7 @@
-From 8fa73e08697304edb361c75b0d9ca75dd365d65b Mon Sep 17 00:00:00 2001
+From 051aaf0da04d3403874c4a4c569a6578661e9803 Mon Sep 17 00:00:00 2001
 From: Gregory Hainaut <gregory.hainaut@gmail.com>
 Date: Tue, 7 Mar 2017 17:21:35 +1100
-Subject: [PATCH 23/33] mesa/glthread: don't set a dispatch table if we aren't
+Subject: [PATCH 23/36] mesa/glthread: don't set a dispatch table if we aren't
  the owner
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8

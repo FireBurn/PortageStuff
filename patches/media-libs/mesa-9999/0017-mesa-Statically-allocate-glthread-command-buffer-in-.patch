@@ -1,7 +1,7 @@
-From 9d7051df5954eec2bb8d131746a08b47187b00a3 Mon Sep 17 00:00:00 2001
+From f7efa94b1892f295e28d9ec08ea017313f37fe6a Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:29 +1100
-Subject: [PATCH 17/33] mesa: Statically allocate glthread command buffer in
+Subject: [PATCH 17/36] mesa: Statically allocate glthread command buffer in
  the batch struct.
 
 This avoids an extra pointer dereference in the marshalling functions,

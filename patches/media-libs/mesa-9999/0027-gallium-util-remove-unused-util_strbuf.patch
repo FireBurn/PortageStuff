@@ -1,7 +1,7 @@
-From 323fe6e9046a2fcf3e4bcf1c7ddf47b87d9d07b7 Mon Sep 17 00:00:00 2001
+From a06c934ff6fd427fbb18d4930d02c047cdbad5a7 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 14:36:15 +1100
-Subject: [PATCH 27/33] gallium/util: remove unused util_strbuf*
+Subject: [PATCH 27/36] gallium/util: remove unused util_strbuf*
 
 Looks like they have been unused since 2008 b8a7eef242f6bb97d90f.
 ---

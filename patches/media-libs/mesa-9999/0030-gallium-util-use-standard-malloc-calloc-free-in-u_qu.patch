@@ -1,7 +1,7 @@
-From 86a858087568418e7c74e3d4b85044035f6956b6 Mon Sep 17 00:00:00 2001
+From 592419339f9f8ab9949ac73fba801e7fb70f19b0 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 8 Mar 2017 15:36:31 +1100
-Subject: [PATCH 30/33] gallium/util: use standard malloc/calloc/free in
+Subject: [PATCH 30/36] gallium/util: use standard malloc/calloc/free in
  u_queue.c
 
 This will help us moving the file to the shared src/util dir.

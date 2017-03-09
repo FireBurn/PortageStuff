@@ -1,7 +1,7 @@
-From 104b5016c9c7361871e1cedd1f9cf9488e3de6a0 Mon Sep 17 00:00:00 2001
+From d24384d091eec141d8d2e853bdf8ab9cb75ce069 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:25 +1100
-Subject: [PATCH 13/33] mesa: Connect the generated GL command marshalling code
+Subject: [PATCH 13/36] mesa: Connect the generated GL command marshalling code
  to the build.
 
 v2: Rebase on the Begin/End changes, and just disable this feature on

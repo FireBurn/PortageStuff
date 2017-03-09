@@ -1,7 +1,7 @@
-From 110df3a3836baa4ae7f700f2e4bd7e3153e6b086 Mon Sep 17 00:00:00 2001
+From 1182d19be0dbaa8266e1dbefbfab116e5b9fb3a3 Mon Sep 17 00:00:00 2001
 From: Eric Anholt <eric@anholt.net>
 Date: Tue, 7 Mar 2017 17:21:17 +1100
-Subject: [PATCH 05/33] egl: Implement __DRI_BACKGROUND_CALLABLE
+Subject: [PATCH 05/36] egl: Implement __DRI_BACKGROUND_CALLABLE
 
 v2: (Timothy Arceri) use C99 initializers.
 ---
