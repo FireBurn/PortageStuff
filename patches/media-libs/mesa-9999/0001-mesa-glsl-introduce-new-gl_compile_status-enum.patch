@@ -1,0 +1,129 @@
+From 589bd45b717b0d8439cb030b7a6d552da71dd9d0 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Thu, 9 Mar 2017 22:58:37 +1100
+Subject: [PATCH 01/44] mesa/glsl: introduce new gl_compile_status enum
+
+This will allow us to tell if a shader really has been compiled or
+if the shader cache has just seen it before.
+---
+ src/compiler/glsl/glsl_parser_extras.cpp |  4 ++--
+ src/mesa/drivers/common/meta.c           |  2 +-
+ src/mesa/main/ff_fragment_shader.cpp     |  2 +-
+ src/mesa/main/mtypes.h                   | 14 +++++++++++++-
+ src/mesa/main/shaderapi.c                |  6 +++---
+ 5 files changed, 20 insertions(+), 8 deletions(-)
+
+diff --git a/src/compiler/glsl/glsl_parser_extras.cpp b/src/compiler/glsl/glsl_parser_extras.cpp
+index 44fb46ab83..59114a7a48 100644
+--- a/src/compiler/glsl/glsl_parser_extras.cpp
++++ b/src/compiler/glsl/glsl_parser_extras.cpp
+@@ -1946,7 +1946,7 @@ _mesa_glsl_compile_shader(struct gl_context *ctx, struct gl_shader *shader,
+             fprintf(stderr, "deferring compile of shader: %s\n",
+                     _mesa_sha1_format(buf, shader->sha1));
+          }
+-         shader->CompileStatus = true;
++         shader->CompileStatus = compile_skipped;
+ 
+          free((void *)shader->FallbackSource);
+          shader->FallbackSource = NULL;
+@@ -2034,7 +2034,7 @@ _mesa_glsl_compile_shader(struct gl_context *ctx, struct gl_shader *shader,
+       set_shader_inout_layout(shader, state);
+ 
+    shader->symbols = new(shader->ir) glsl_symbol_table;
+-   shader->CompileStatus = !state->error;
++   shader->CompileStatus = state->error ? compile_failure : compile_success;
+    shader->InfoLog = state->info_log;
+    shader->Version = state->language_version;
+    shader->IsES = state->es_shader;
+diff --git a/src/mesa/drivers/common/meta.c b/src/mesa/drivers/common/meta.c
+index 2db4668ef7..d8deaaf371 100644
+--- a/src/mesa/drivers/common/meta.c
++++ b/src/mesa/drivers/common/meta.c
+@@ -131,7 +131,7 @@ meta_compile_shader_with_debug(struct gl_context *ctx, gl_shader_stage stage,
+ 
+    sh = _mesa_new_shader(name, stage);
+    sh->Source = strdup(source);
+-   sh->CompileStatus = false;
++   sh->CompileStatus = compile_failure;
+    _mesa_compile_shader(ctx, sh);
+ 
+    if (!sh->CompileStatus) {
+diff --git a/src/mesa/main/ff_fragment_shader.cpp b/src/mesa/main/ff_fragment_shader.cpp
+index b2942f1aad..be382fa3ae 100644
+--- a/src/mesa/main/ff_fragment_shader.cpp
++++ b/src/mesa/main/ff_fragment_shader.cpp
+@@ -1273,7 +1273,7 @@ create_new_program(struct gl_context *ctx, struct state_key *key)
+ 
+    reparent_ir(p.shader->ir, p.shader->ir);
+ 
+-   p.shader->CompileStatus = true;
++   p.shader->CompileStatus = compile_success;
+    p.shader->Version = state->language_version;
+    p.shader_program->Shaders =
+       (gl_shader **)malloc(sizeof(*p.shader_program->Shaders));
+diff --git a/src/mesa/main/mtypes.h b/src/mesa/main/mtypes.h
+index d07391debb..e53d5762f9 100644
+--- a/src/mesa/main/mtypes.h
++++ b/src/mesa/main/mtypes.h
+@@ -2400,6 +2400,18 @@ static inline GLbitfield gl_external_samplers(struct gl_program *prog)
+ }
+ 
+ /**
++ * Compile status enum. compile_skipped is used to indicate the compile
++ * was skipped due to the shader matching one that's been seen before by
++ * the on-disk cache.
++ */
++enum gl_compile_status
++{
++   compile_failure = 0,
++   compile_success,
++   compile_skipped
++};
++
++/**
+  * A GLSL shader object.
+  */
+ struct gl_shader
+@@ -2415,7 +2427,7 @@ struct gl_shader
+    GLchar *Label;   /**< GL_KHR_debug */
+    unsigned char sha1[20]; /**< SHA1 hash of pre-processed source */
+    GLboolean DeletePending;
+-   GLboolean CompileStatus;
++   enum gl_compile_status CompileStatus;
+    bool IsES;              /**< True if this shader uses GLSL ES */
+ 
+ #ifdef DEBUG
+diff --git a/src/mesa/main/shaderapi.c b/src/mesa/main/shaderapi.c
+index 0c38cea255..f044081786 100644
+--- a/src/mesa/main/shaderapi.c
++++ b/src/mesa/main/shaderapi.c
+@@ -903,7 +903,7 @@ get_shaderiv(struct gl_context *ctx, GLuint name, GLenum pname, GLint *params)
+       *params = shader->DeletePending;
+       break;
+    case GL_COMPILE_STATUS:
+-      *params = shader->CompileStatus;
++      *params = shader->CompileStatus ? GL_TRUE : GL_FALSE;
+       break;
+    case GL_INFO_LOG_LENGTH:
+       *params = (shader->InfoLog && shader->InfoLog[0] != '\0') ?
+@@ -1003,7 +1003,7 @@ shader_source(struct gl_shader *sh, const GLchar *source)
+ {
+    assert(sh);
+ 
+-   if (sh->CompileStatus == GL_TRUE && !sh->FallbackSource) {
++   if (sh->CompileStatus && !sh->FallbackSource) {
+       /* If shader was previously compiled back-up the source in case of cache
+        * fallback.
+        */
+@@ -1034,7 +1034,7 @@ _mesa_compile_shader(struct gl_context *ctx, struct gl_shader *sh)
+       /* If the user called glCompileShader without first calling
+        * glShaderSource, we should fail to compile, but not raise a GL_ERROR.
+        */
+-      sh->CompileStatus = GL_FALSE;
++      sh->CompileStatus = compile_failure;
+    } else {
+       if (ctx->_Shader->Flags & GLSL_DUMP) {
+          _mesa_log("GLSL source for %s shader %d:\n",
+-- 
+2.12.0
+

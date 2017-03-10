@@ -1,0 +1,49 @@
+From e205018f4d8c1c0b3aeb4a2d2bc54c1c0a8107f9 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Thu, 9 Mar 2017 10:09:57 +1100
+Subject: [PATCH 12/44] gallium/util: replace pipe_thread_get_time_nano() with
+ u_thread_get_time_nano()
+
+They do the same thing we are just moving the function to be
+accessible to all of Mesa.
+---
+ src/gallium/auxiliary/os/os_thread.h | 18 +-----------------
+ 1 file changed, 1 insertion(+), 17 deletions(-)
+
+diff --git a/src/gallium/auxiliary/os/os_thread.h b/src/gallium/auxiliary/os/os_thread.h
+index 468fbfe2f9..ecd8f8a5e9 100644
+--- a/src/gallium/auxiliary/os/os_thread.h
++++ b/src/gallium/auxiliary/os/os_thread.h
+@@ -258,28 +258,12 @@ pipe_tsd_set(pipe_tsd *tsd, void *value)
+  * Thread statistics.
+  */
+ 
+-/* Return the time of a thread's CPU time clock. */
+-static inline int64_t
+-pipe_thread_get_time_nano(thrd_t thread)
+-{
+-#if defined(PIPE_OS_LINUX) && defined(HAVE_PTHREAD)
+-   struct timespec ts;
+-   clockid_t cid;
+-
+-   pthread_getcpuclockid(thread, &cid);
+-   clock_gettime(cid, &ts);
+-   return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
+-#else
+-   return 0;
+-#endif
+-}
+-
+ /* Return the time of the current thread's CPU time clock. */
+ static inline int64_t
+ pipe_current_thread_get_time_nano(void)
+ {
+ #if defined(HAVE_PTHREAD)
+-   return pipe_thread_get_time_nano(pthread_self());
++   return u_thread_get_time_nano(pthread_self());
+ #else
+    return 0;
+ #endif
+-- 
+2.12.0
+

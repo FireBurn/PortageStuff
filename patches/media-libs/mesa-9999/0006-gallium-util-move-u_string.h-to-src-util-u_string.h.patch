@@ -1,0 +1,74 @@
+From 89354837dbd4322ede33cf3b9998b41802761685 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Wed, 8 Mar 2017 14:36:17 +1100
+Subject: [PATCH 06/44] gallium/util: move u_string.h to src/util/u_string.h
+
+This will help use move u_queue.c here eventually and also provide
+string function wrappers for anyone wishing to port disk_cache.c
+to windows.
+---
+ src/gallium/auxiliary/Makefile.sources      | 1 -
+ src/gallium/auxiliary/util/u_debug_symbol.c | 2 +-
+ src/gallium/auxiliary/util/u_queue.c        | 2 +-
+ src/util/Makefile.sources                   | 1 +
+ src/{gallium/auxiliary => }/util/u_string.h | 0
+ 5 files changed, 3 insertions(+), 3 deletions(-)
+ rename src/{gallium/auxiliary => }/util/u_string.h (100%)
+
+diff --git a/src/gallium/auxiliary/Makefile.sources b/src/gallium/auxiliary/Makefile.sources
+index 8d3e4a95c6..9063b5134c 100644
+--- a/src/gallium/auxiliary/Makefile.sources
++++ b/src/gallium/auxiliary/Makefile.sources
+@@ -290,7 +290,6 @@ C_SOURCES := \
+ 	util/u_simple_shaders.h \
+ 	util/u_split_prim.h \
+ 	util/u_sse.h \
+-	util/u_string.h \
+ 	util/u_suballoc.c \
+ 	util/u_suballoc.h \
+ 	util/u_surface.c \
+diff --git a/src/gallium/auxiliary/util/u_debug_symbol.c b/src/gallium/auxiliary/util/u_debug_symbol.c
+index f0b0629c8e..4b55523864 100644
+--- a/src/gallium/auxiliary/util/u_debug_symbol.c
++++ b/src/gallium/auxiliary/util/u_debug_symbol.c
+@@ -34,7 +34,7 @@
+ 
+ #include "pipe/p_compiler.h"
+ #include "os/os_thread.h"
+-#include "u_string.h"
++#include "util/u_string.h"
+ 
+ #include "u_debug.h"
+ #include "u_debug_symbol.h"
+diff --git a/src/gallium/auxiliary/util/u_queue.c b/src/gallium/auxiliary/util/u_queue.c
+index bb63a6ba08..05ffc3ef98 100644
+--- a/src/gallium/auxiliary/util/u_queue.c
++++ b/src/gallium/auxiliary/util/u_queue.c
+@@ -26,7 +26,7 @@
+ 
+ #include "u_queue.h"
+ #include "u_memory.h"
+-#include "u_string.h"
++#include "util/u_string.h"
+ 
+ static void util_queue_killall_and_wait(struct util_queue *queue);
+ 
+diff --git a/src/util/Makefile.sources b/src/util/Makefile.sources
+index 08ad7bec3a..8b2170292d 100644
+--- a/src/util/Makefile.sources
++++ b/src/util/Makefile.sources
+@@ -44,6 +44,7 @@ MESA_UTIL_FILES :=	\
+ 	texcompress_rgtc_tmp.h \
+ 	u_atomic.h \
+ 	u_endian.h \
++	u_string.h \
+ 	u_vector.c \
+ 	u_vector.h \
+ 	vk_alloc.h \
+diff --git a/src/gallium/auxiliary/util/u_string.h b/src/util/u_string.h
+similarity index 100%
+rename from src/gallium/auxiliary/util/u_string.h
+rename to src/util/u_string.h
+-- 
+2.12.0
+

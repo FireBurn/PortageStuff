@@ -1,0 +1,49 @@
+From 84eaf0059990c7322a76c547c4e62e6dce3a595c Mon Sep 17 00:00:00 2001
+From: Emil Velikov <emil.velikov@collabora.com>
+Date: Fri, 10 Mar 2017 12:27:54 +0000
+Subject: [PATCH 39/44] autoconf/scons: bump libdrm to 2.4.75
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+We'll be using the drmGetDevice[s]2 API in src/loader with next patch.
+
+v2: Rebase.
+
+Signed-off-by: Emil Velikov <emil.velikov@collabora.com>
+Reviewed-by: Michel Dänzer <michel.daenzer@amd.com> (v1)
+Reviewed-by: Eric Engestrom <eric.engestrom@imgtec.com> (v1)
+---
+ configure.ac     | 2 +-
+ scons/gallium.py | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index d64ed2d3e8..420814b517 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -72,7 +72,7 @@ AC_SUBST([OPENCL_VERSION])
+ # codifies which drivers need which version of libdrm. Any libdrm
+ # version dependencies in non-driver-specific code should be reflected
+ # in the first entry.
+-LIBDRM_REQUIRED=2.4.66
++LIBDRM_REQUIRED=2.4.75
+ LIBDRM_RADEON_REQUIRED=2.4.71
+ LIBDRM_AMDGPU_REQUIRED=2.4.63
+ LIBDRM_INTEL_REQUIRED=2.4.75
+diff --git a/scons/gallium.py b/scons/gallium.py
+index 665d66afc7..a411277324 100755
+--- a/scons/gallium.py
++++ b/scons/gallium.py
+@@ -648,7 +648,7 @@ def generate(env):
+     env.PkgCheckModules('X11', ['x11', 'xext', 'xdamage >= 1.1', 'xfixes', 'glproto >= 1.4.13', 'dri2proto >= 2.8'])
+     env.PkgCheckModules('XCB', ['x11-xcb', 'xcb-glx >= 1.8.1', 'xcb-dri2 >= 1.8'])
+     env.PkgCheckModules('XF86VIDMODE', ['xxf86vm'])
+-    env.PkgCheckModules('DRM', ['libdrm >= 2.4.66'])
++    env.PkgCheckModules('DRM', ['libdrm >= 2.4.75'])
+ 
+     if env['x11']:
+         env.Append(CPPPATH = env['X11_CPPPATH'])
+-- 
+2.12.0
+

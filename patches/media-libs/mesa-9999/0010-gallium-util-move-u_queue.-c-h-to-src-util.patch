@@ -1,0 +1,53 @@
+From 2cde02810071ee5220249712cbee412985acfd6d Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Wed, 8 Mar 2017 15:36:34 +1100
+Subject: [PATCH 10/44] gallium/util: move u_queue.{c, h} to src/util
+
+This will allow us to use it outside of gallium for things like
+compressing shader cache entries.
+---
+ src/gallium/auxiliary/Makefile.sources     | 2 --
+ src/util/Makefile.sources                  | 2 ++
+ src/{gallium/auxiliary => }/util/u_queue.c | 0
+ src/{gallium/auxiliary => }/util/u_queue.h | 0
+ 4 files changed, 2 insertions(+), 2 deletions(-)
+ rename src/{gallium/auxiliary => }/util/u_queue.c (100%)
+ rename src/{gallium/auxiliary => }/util/u_queue.h (100%)
+
+diff --git a/src/gallium/auxiliary/Makefile.sources b/src/gallium/auxiliary/Makefile.sources
+index 9063b5134c..c3a3af9fbc 100644
+--- a/src/gallium/auxiliary/Makefile.sources
++++ b/src/gallium/auxiliary/Makefile.sources
+@@ -276,8 +276,6 @@ C_SOURCES := \
+ 	util/u_pstipple.c \
+ 	util/u_pstipple.h \
+ 	util/u_pwr8.h \
+-	util/u_queue.c \
+-	util/u_queue.h \
+ 	util/u_range.h \
+ 	util/u_rect.h \
+ 	util/u_resource.c \
+diff --git a/src/util/Makefile.sources b/src/util/Makefile.sources
+index 8b5ee2d0c7..e6c1c7690f 100644
+--- a/src/util/Makefile.sources
++++ b/src/util/Makefile.sources
+@@ -44,6 +44,8 @@ MESA_UTIL_FILES :=	\
+ 	texcompress_rgtc_tmp.h \
+ 	u_atomic.h \
+ 	u_endian.h \
++	u_queue.c \
++	u_queue.h \
+ 	u_string.h \
+ 	u_thread.h \
+ 	u_vector.c \
+diff --git a/src/gallium/auxiliary/util/u_queue.c b/src/util/u_queue.c
+similarity index 100%
+rename from src/gallium/auxiliary/util/u_queue.c
+rename to src/util/u_queue.c
+diff --git a/src/gallium/auxiliary/util/u_queue.h b/src/util/u_queue.h
+similarity index 100%
+rename from src/gallium/auxiliary/util/u_queue.h
+rename to src/util/u_queue.h
+-- 
+2.12.0
+
