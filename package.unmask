@@ -64,3 +64,15 @@ x11-misc/sddm
 # Mask 4.0.0 RCs (then final) for initial testing, and updating most
 # important revdeps. Also revdeps that require 4.0.
 =dev-libs/libclc-0.2.0_pre20170118
+# required by =xf86-video-intel-9999 (argument)
+# /var/lib/layman/x11/profiles/package.mask:
+# Don't let people install these accidentally
+=x11-drivers/xf86-video-intel-9999
+# required by =sandbox-2.11-r5 (argument)
+# /usr/portage/profiles/package.mask:
+# Ian Stakenvicius (17 Nov 2016)
+# Does not honour LD_LIBRARY_PATH set in the environment, causing
+# all mozilla packages to fail in src_install() when xpcshell is
+# called in ${WORKDIR}, #580726
+# Segfaults when creating directories #578582
+=sys-apps/sandbox-2.11-r5
