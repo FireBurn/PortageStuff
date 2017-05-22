@@ -6,6 +6,7 @@ app-arch/lz4				abi_x86_32
 app-arch/xz-utils			abi_x86_32
 app-office/libreoffice			java gtk gtk3
 dev-db/mariadb				embedded
+dev-db/sqlite				abi_x86_32
 dev-java/icedtea			nss sunec
 dev-lang/orc				abi_x86_32
 dev-lang/python				sqlite
@@ -30,6 +31,8 @@ dev-libs/libxml2			abi_x86_32
 dev-libs/libxslt			abi_x86_32
 dev-libs/lzo				abi_x86_32
 dev-libs/nettle				abi_x86_32
+dev-libs/nspr				abi_x86_32
+dev-libs/nss				abi_x86_32
 dev-libs/openssl			abi_x86_32
 dev-libs/wayland			abi_x86_32
 dev-libs/weston				wayland-compositor gles2 xwayland
@@ -142,6 +145,7 @@ sys-libs/libcap				abi_x86_32
 sys-libs/ncurses			abi_x86_32 tinfo
 sys-libs/ntdb                           python
 sys-libs/pam				abi_x86_32
+sys-libs/readline			abi_x86_32
 sys-libs/talloc 			python 
 sys-libs/tdb				python 
 sys-libs/tevent				python 
@@ -190,6 +194,7 @@ x11-libs/libxkbcommon			abi_x86_32
 x11-libs/libXrandr			abi_x86_32
 x11-libs/libXrender			abi_x86_32
 x11-libs/libxshmfence			abi_x86_32
+x11-libs/libXt				abi_x86_32
 x11-libs/libXtst			abi_x86_32
 x11-libs/libXv				abi_x86_32
 x11-libs/libXxf86vm			abi_x86_32
@@ -216,28 +221,3 @@ x11-proto/xf86driproto			abi_x86_32
 x11-proto/xf86vidmodeproto		abi_x86_32
 x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
-
-# required by www-plugins/adobe-flash-25.0.0.171::gentoo[nsplugin]
-# required by @selected
-# required by @world (argument)
->=x11-libs/libXt-1.1.5 abi_x86_32
-# required by dev-libs/nss-3.30.2::gentoo
-# required by app-office/libreoffice-5.2.7.2::gentoo
-# required by @selected
-# required by @world (argument)
->=dev-db/sqlite-3.18.0 abi_x86_32
-# required by dev-db/sqlite-3.18.0::gentoo[readline]
-# required by dev-libs/nss-3.30.2::gentoo
-# required by app-office/libreoffice-5.2.7.2::gentoo
-# required by @selected
-# required by @world (argument)
->=sys-libs/readline-7.0_p3 abi_x86_32
-# required by www-plugins/adobe-flash-25.0.0.171::gentoo[nsplugin]
-# required by @selected
-# required by @world (argument)
->=dev-libs/nss-3.30.2 abi_x86_32
-# required by dev-libs/nss-3.30.2::gentoo
-# required by app-office/libreoffice-5.2.7.2::gentoo
-# required by @selected
-# required by @world (argument)
->=dev-libs/nspr-4.14 abi_x86_32
