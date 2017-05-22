@@ -217,3 +217,27 @@ x11-proto/xf86vidmodeproto		abi_x86_32
 x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
 
+# required by www-plugins/adobe-flash-25.0.0.171::gentoo[nsplugin]
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libXt-1.1.5 abi_x86_32
+# required by dev-libs/nss-3.30.2::gentoo
+# required by app-office/libreoffice-5.2.7.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=dev-db/sqlite-3.18.0 abi_x86_32
+# required by dev-db/sqlite-3.18.0::gentoo[readline]
+# required by dev-libs/nss-3.30.2::gentoo
+# required by app-office/libreoffice-5.2.7.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=sys-libs/readline-7.0_p3 abi_x86_32
+# required by www-plugins/adobe-flash-25.0.0.171::gentoo[nsplugin]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/nss-3.30.2 abi_x86_32
+# required by dev-libs/nss-3.30.2::gentoo
+# required by app-office/libreoffice-5.2.7.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=dev-libs/nspr-4.14 abi_x86_32
