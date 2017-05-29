@@ -65,4 +65,3 @@ x11-misc/sddm
 # important revdeps. Also revdeps that require 4.0.
 =dev-libs/libclc-0.2.0_pre20170118
 x11-drivers/xf86-video-intel
-sys-apps/sandbox
