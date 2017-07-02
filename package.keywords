@@ -1,4 +1,5 @@
-app-vim/llvm-vim			**
+# move app-vim/llvm-vim sys-devel/llvm-common
+sys-devel/llvm-common			**
 =kde-misc/kdiff3-9999			**
 media-libs/mesa				**
 media-libs/vulkan-demos			**
