@@ -224,3 +224,5 @@ x11-proto/xproto			abi_x86_32
 virtual/notification-daemon		kde
 dev-libs/dbus-glib			abi_x86_32
 x11-themes/oxygen-gtk			abi_x86_32
+dev-qt/qtwidgets			-gtk
+app-portage/gentoolkit			-python_targets_python3_6
