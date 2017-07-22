@@ -86,7 +86,7 @@ media-libs/opencore-amr			abi_x86_32
 media-libs/opus				abi_x86_32
 media-libs/phonon			gstreamer
 media-libs/tiff				abi_x86_32
-media-libs/vulkan-loader		abi_x86_32
+#media-libs/vulkan-loader		abi_x86_32
 media-libs/x264				abi_x86_32 -opencl
 media-libs/x265				abi_x86_32
 media-libs/xvid				abi_x86_32
@@ -228,3 +228,4 @@ dev-qt/qtwidgets			-gtk
 app-portage/gentoolkit			-python_targets_python3_6
 x11-proto/scrnsaverproto		abi_x86_32
 x11-libs/libXScrnSaver			abi_x86_32
+media-libs/libsdl2			abi_x86_32
