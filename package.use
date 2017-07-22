@@ -229,3 +229,65 @@ app-portage/gentoolkit			-python_targets_python3_6
 x11-proto/scrnsaverproto		abi_x86_32
 x11-libs/libXScrnSaver			abi_x86_32
 media-libs/libsdl2			abi_x86_32
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=gnome-base/gconf-3.2.6-r4 abi_x86_32
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=net-misc/networkmanager-1.8.0 abi_x86_32
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=sys-libs/libudev-compat-186 abi_x86_32
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[trayicon,-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libappindicator-12.10.0-r201:2 abi_x86_32
+# required by dev-libs/libappindicator-12.10.0-r201::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[trayicon,-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libdbusmenu-12.10.2-r2 abi_x86_32
+# required by dev-libs/libappindicator-12.10.0-r201::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[trayicon,-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libindicator-12.10.1-r201:0 abi_x86_32
+# required by dev-libs/libdbusmenu-12.10.2-r2::gentoo
+# required by dev-libs/libappindicator-12.10.0-r201::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[trayicon,-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/json-glib-1.2.8 abi_x86_32
+# required by net-misc/networkmanager-1.8.0::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libnl-3.3.0 abi_x86_32
+# required by net-misc/networkmanager-1.8.0::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=net-libs/libndp-1.6-r1 abi_x86_32
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=virtual/libusb-1-r2 abi_x86_32
+# required by virtual/libusb-1-r2::gentoo
+# required by games-util/steam-client-meta-0-r20160828::steam-overlay[-steamruntime]
+# required by games-util/steam-launcher-1.0.0.54-r3::steam-overlay[-steamruntime]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libusb-1.0.21 abi_x86_32
