@@ -86,7 +86,7 @@ media-libs/opencore-amr			abi_x86_32
 media-libs/opus				abi_x86_32
 media-libs/phonon			gstreamer
 media-libs/tiff				abi_x86_32
-#media-libs/vulkan-loader		abi_x86_32
+media-libs/vulkan-loader		abi_x86_32
 media-libs/x264				abi_x86_32 -opencl
 media-libs/x265				abi_x86_32
 media-libs/xvid				abi_x86_32
