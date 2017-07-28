@@ -227,3 +227,6 @@ x11-themes/oxygen-gtk			abi_x86_32
 dev-qt/qtwidgets			-gtk
 app-portage/gentoolkit			-python_targets_python3_6
 sys-devel/gdb				python_single_target_python2_7
+x11-apps/mesa-progs			abi_x86_32
+media-libs/glew				abi_x86_32
+x11-libs/libXmu				abi_x86_32
