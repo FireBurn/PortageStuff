@@ -230,4 +230,4 @@ sys-devel/gdb				python_single_target_python2_7
 x11-apps/mesa-progs			abi_x86_32
 media-libs/glew				abi_x86_32
 x11-libs/libXmu				abi_x86_32
-dev-libs/xmlsec				-gnutls
+dev-libs/xmlsec				nss -gnutls
