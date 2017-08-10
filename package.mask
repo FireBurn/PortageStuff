@@ -1,3 +1,5 @@
 virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
+=dev-java/javatoolkit-0.4.0
+=dev-java/javatoolkit-0.5.0
