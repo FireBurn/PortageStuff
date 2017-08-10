@@ -11,3 +11,4 @@ x11-base/xorg-server
 x11-misc/sddm
 =dev-libs/libclc-0.2.0_pre20170118
 x11-drivers/xf86-video-intel
+dev-libs/icu

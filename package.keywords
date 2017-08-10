@@ -7,7 +7,6 @@ media-libs/vulkan-demos			**
 <sys-libs/binutils-libs-9999		**
 sys-devel/clang				**
 sys-devel/clang-runtime			**
-sys-devel/gcc				**
 sys-devel/llvm 				**
 sys-devel/llvmgold			**
 sys-libs/compiler-rt			**
