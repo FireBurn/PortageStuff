@@ -232,3 +232,4 @@ media-libs/glew				abi_x86_32
 x11-libs/libXmu				abi_x86_32
 dev-libs/xmlsec				nss -gnutls -openssl
 dev-vcs/subversion			-kwallet
+app-emulation/winetricks		kde -gtk
