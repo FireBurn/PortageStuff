@@ -234,3 +234,4 @@ dev-libs/xmlsec				nss -gnutls -openssl
 dev-vcs/subversion			-kwallet
 app-emulation/winetricks		kde -gtk
 net-misc/networkmanager-openconnect	-gtk
+x11-libs/libva				utils
