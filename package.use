@@ -235,3 +235,4 @@ dev-vcs/subversion			-kwallet
 app-emulation/winetricks		kde -gtk
 net-misc/networkmanager-openconnect	-gtk
 x11-libs/libva				utils
+sys-devel/gdb				-python_single_target_python2_7
