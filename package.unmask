@@ -4,7 +4,7 @@ media-libs/libvpx
 media-libs/mesa
 media-video/ffmpeg
 sys-devel/llvm
-<www-client/chromium-99
+<www-client/chromium-63.0.3230.0
 www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
 x11-base/xorg-server
