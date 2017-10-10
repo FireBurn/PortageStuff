@@ -239,9 +239,5 @@ sys-devel/gdb				-python_single_target_python2_7
 net-libs/nghttp2			abi_x86_32
 dev-libs/boost				abi_x86_32
 dev-libs/jemalloc			abi_x86_32
-# required by kde-plasma/plasma-workspace-5.11.0::kde[systemd]
-# required by kde-plasma/kdeplasma-addons-5.11.0::kde
-# required by kde-plasma/plasma-meta-5.11.0::kde
-# required by @selected
-# required by @world (argument)
->=sys-apps/dbus-1.10.24 user-session
+sys-apps/dbus				user-session
+net-wireless/bluez			user-session
