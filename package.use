@@ -239,6 +239,3 @@ sys-devel/gdb				-python_single_target_python2_7
 net-libs/nghttp2			abi_x86_32
 dev-libs/boost				abi_x86_32
 dev-libs/jemalloc			abi_x86_32
-sys-apps/dbus				user-session
-net-wireless/bluez			user-session
-kde-plasma/plasma-meta			-crypt
