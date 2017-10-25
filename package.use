@@ -239,3 +239,4 @@ sys-devel/gdb				-python_single_target_python2_7
 net-libs/nghttp2			abi_x86_32
 dev-libs/boost				abi_x86_32
 dev-libs/jemalloc			abi_x86_32
+media-plugins/gst-plugins-mpg123	abi_x86_32
