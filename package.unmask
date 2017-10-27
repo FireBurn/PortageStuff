@@ -4,11 +4,10 @@ media-libs/libvpx
 media-libs/mesa
 media-video/ffmpeg
 sys-devel/llvm
-<www-client/chromium-63.0.3230.0
+www-client/chromium
 www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
 x11-base/xorg-server
 x11-misc/sddm
-=dev-libs/libclc-0.2.0_pre20170118
 x11-drivers/xf86-video-intel
 dev-libs/icu
