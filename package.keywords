@@ -15,5 +15,4 @@ sys-libs/libomp				**
 x11-libs/libvdpau-va-gl			**
 sys-devel/lld				**
 x11-drivers/xf86-video-amdgpu		**
-sys-devel/gcc				**
 <sys-libs/glibc-9999			**
