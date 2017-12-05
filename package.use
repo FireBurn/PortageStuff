@@ -241,4 +241,4 @@ dev-libs/boost				abi_x86_32
 dev-libs/jemalloc			abi_x86_32
 media-plugins/gst-plugins-mpg123	abi_x86_32
 app-emulation/wine-gecko		abi_x86_32
-sys-libs/libomp				abi_x86_32
+#sys-libs/libomp				abi_x86_32
