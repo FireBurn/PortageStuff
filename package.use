@@ -126,6 +126,7 @@ net-misc/openssh			-ldap
 net-nds/openldap			abi_x86_32 -gnutls
 net-p2p/transmission			-gtk -qt4
 net-print/cups				abi_x86_32
+net-wireless/wpa_supplicant		-gnutls
 sys-apps/attr				abi_x86_32
 sys-apps/dbus				abi_x86_32
 sys-apps/pciutils			-zlib
