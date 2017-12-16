@@ -16,8 +16,4 @@ sys-devel/lld				**
 x11-drivers/xf86-video-amdgpu		**
 <sys-libs/glibc-9999			**
 dev-python/lit				**
-# required by sys-devel/clang-runtime-9999::gentoo[openmp]
-# required by sys-devel/clang-9999::gentoo
-# required by sys-libs/compiler-rt-9999::gentoo[clang]
-# required by @live-rebuild (argument)
-=sys-libs/libomp-9999 **
+sys-libs/libomp				**
