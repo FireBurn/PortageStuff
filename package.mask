@@ -1,4 +1,4 @@
 virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
-=sys-devel/gcc-7.2.0
+#=sys-devel/gcc-7.2.0
