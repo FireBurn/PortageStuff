@@ -19,3 +19,18 @@ dev-python/lit				**
 sys-libs/libomp				**
 # required by libaom (argument)
 =media-libs/libaom-9999 **
+# required by =libreoffice-6.0.0.3 (argument)
+=app-office/libreoffice-6.0.0.3 **
+# required by app-office/libreoffice-6.0.0.3::gentoo
+# required by @selected
+# required by @world (argument)
+=app-office/libreoffice-l10n-6.0.0.3 **
+# required by app-office/libreoffice-6.0.0.3::gentoo
+# required by @selected
+# required by @world (argument)
+=dev-libs/liborcus-0.13.2 **
+# required by dev-libs/liborcus-0.13.2::gentoo[spreadsheet-model]
+# required by app-office/libreoffice-6.0.0.3::gentoo
+# required by @selected
+# required by @world (argument)
+=dev-libs/libixion-9999 **
