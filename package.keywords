@@ -14,7 +14,6 @@ sys-libs/compiler-rt-sanitizers		**
 x11-libs/libvdpau-va-gl			**
 sys-devel/lld				**
 x11-drivers/xf86-video-amdgpu		**
-<sys-libs/glibc-9999			**
 dev-python/lit				**
 sys-libs/libomp				**
 # required by libaom (argument)
