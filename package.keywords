@@ -1,6 +1,5 @@
 # move app-vim/llvm-vim sys-devel/llvm-common
 sys-devel/llvm-common			**
-=kde-misc/kdiff3-9999			**
 media-libs/mesa				**
 media-libs/vulkan-demos			**
 <sys-devel/binutils-9999		**
@@ -16,16 +15,4 @@ sys-devel/lld				**
 x11-drivers/xf86-video-amdgpu		**
 dev-python/lit				**
 sys-libs/libomp				**
-# required by libaom (argument)
-=media-libs/libaom-9999 **
-# required by app-office/libreoffice-6.0.0.3::gentoo
-# required by @selected
-# required by @world (argument)
-=dev-libs/liborcus-0.13.2 **
-# required by dev-libs/liborcus-0.13.2::gentoo[spreadsheet-model]
-# required by app-office/libreoffice-6.0.0.3::gentoo
-# required by @selected
-# required by @world (argument)
-=dev-libs/libixion-9999 **
-# required by =glibc-2.27-r1 (argument)
 <sys-libs/glibc-9999 **
