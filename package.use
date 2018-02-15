@@ -4,19 +4,27 @@ app-admin/logstash-bin			all-plugins
 app-arch/bzip2				abi_x86_32
 app-arch/lz4				abi_x86_32
 app-arch/xz-utils			abi_x86_32
+app-emulation/wine-any			custom-cflags s3tc staging
+app-emulation/wine-gecko		abi_x86_32
+app-emulation/winetricks		kde -gtk
 app-office/libreoffice			java gtk gtk3
+app-text/asciidoc			python_single_target_python2_7
 dev-db/mariadb				embedded
 dev-db/sqlite				abi_x86_32
-dev-java/icedtea			nss sunec
+dev-db/sqlite				secure-delete
+dev-java/icedtea			sunec
 dev-lang/orc				abi_x86_32
 dev-lang/python				sqlite
 dev-libs/atk				abi_x86_32
+dev-libs/boost				abi_x86_32
+dev-libs/dbus-glib			abi_x86_32
 dev-libs/elfutils			abi_x86_32 static-libs
 dev-libs/expat				abi_x86_32
 dev-libs/fribidi			abi_x86_32
 dev-libs/glib				abi_x86_32
 dev-libs/gmp				abi_x86_32
 dev-libs/icu				abi_x86_32
+dev-libs/jemalloc			abi_x86_32
 dev-libs/json-c				abi_x86_32
 dev-libs/libcroco			abi_x86_32
 dev-libs/libffi				abi_x86_32
@@ -36,14 +44,21 @@ dev-libs/nss				abi_x86_32
 dev-libs/openssl			abi_x86_32
 dev-libs/wayland			abi_x86_32
 dev-libs/weston				wayland-compositor gles2 xwayland
+dev-libs/xmlsec				nss -gnutls -openssl
+dev-qt/qtsql				-mysql
+dev-qt/qtwidgets			-gtk
 dev-util/apitrace			system-snappy
 dev-util/cmake				qt5 -qt4
 dev-util/pkgconfig			abi_x86_32
 dev-vcs/git				tk
+dev-vcs/subversion			-kwallet
 games-emulation/dolphin			-wxwidgets
 games-fps/worldofpadman			maps
+games-util/steam-client-meta		flash steamfonts trayicon
 gnome-base/librsvg			abi_x86_32
+kde-apps/kio-extras			mtp samba
 kde-plasma/plasma-desktop		gtk2 legacy-systray
+kde-plasma/powerdevil			brightness-control
 media-gfx/exiv2				xmp
 media-gfx/graphite2			abi_x86_32
 media-gfx/graphviz			python 
@@ -55,6 +70,7 @@ media-libs/fdk-aac			abi_x86_32
 media-libs/flac				abi_x86_32
 media-libs/fontconfig			abi_x86_32
 media-libs/freetype			abi_x86_32
+media-libs/glew				abi_x86_32
 media-libs/glu				abi_x86_32
 media-libs/gst-plugins-bad		abi_x86_32
 media-libs/gst-plugins-base		abi_x86_32
@@ -100,6 +116,7 @@ media-plugins/gst-plugins-libav		abi_x86_32
 media-plugins/gst-plugins-mad		abi_x86_32
 media-plugins/gst-plugins-meta		abi_x86_32
 media-plugins/gst-plugins-mpeg2dec	abi_x86_32
+media-plugins/gst-plugins-mpg123	abi_x86_32
 media-plugins/gst-plugins-opus		abi_x86_32
 media-plugins/gst-plugins-pulse		abi_x86_32
 media-plugins/gst-plugins-v4l2		abi_x86_32
@@ -109,7 +126,7 @@ media-plugins/gst-plugins-x264		abi_x86_32
 media-sound/lame			abi_x86_32
 media-sound/mpg123			abi_x86_32
 media-sound/pulseaudio			abi_x86_32 gnome
-media-video/ffmpeg			abi_x86_32 fdk -samba
+media-video/ffmpeg			abi_x86_32 amr fdk libdrm x265
 media-video/smplayer			-qt4
 media-video/vlc				-qt4
 net-dns/dnsmasq				-lua
@@ -120,8 +137,10 @@ net-fs/samba				client
 net-irc/konversation			-crypt
 net-libs/gnutls				abi_x86_32
 net-libs/libasyncns			abi_x86_32
+net-libs/nghttp2			abi_x86_32
 net-misc/curl				abi_x86_32
-net-misc/networkmanager			modemmanager -consolekit -nss
+net-misc/networkmanager			gnutls modemmanager -nss
+net-misc/networkmanager-openconnect	-gtk
 net-misc/openssh			-ldap
 net-nds/openldap			abi_x86_32 -gnutls
 net-p2p/transmission			-gtk -qt4
@@ -130,13 +149,16 @@ net-wireless/wpa_supplicant		-gnutls
 sys-apps/attr				abi_x86_32
 sys-apps/dbus				abi_x86_32
 sys-apps/pciutils			-zlib
-sys-apps/systemd			abi_x86_32
+sys-apps/systemd			abi_x86_32 sysv-utils -gcrypt
 sys-apps/tcp-wrappers			abi_x86_32
 sys-apps/util-linux			abi_x86_32
 sys-devel/clang				abi_x86_32
 sys-devel/flex				abi_x86_32
+sys-devel/gdb				-python_single_target_python2_7
+sys-devel/gdb				python_single_target_python2_7
 sys-devel/gettext			abi_x86_32
 sys-devel/llvm				abi_x86_32 -ncurses
+sys-fs/cryptsetup			-gcrypt
 sys-fs/ntfs3g				-crypt
 sys-libs/binutils-libs			abi_x86_32
 sys-libs/cracklib			abi_x86_32
@@ -160,12 +182,16 @@ virtual/libiconv			abi_x86_32
 virtual/libintl				abi_x86_32
 virtual/libudev				abi_x86_32
 virtual/mysql				embedded
+virtual/notification-daemon		kde
 virtual/opencl				abi_x86_32
 virtual/opengl				abi_x86_32
 virtual/pam				abi_x86_32
 virtual/pkgconfig			abi_x86_32
+www-client/chromium			custom-cflags hangouts proprietary-codecs system-ffmpeg system-icu system-libvpx widevine
+www-client/firefox			custom-cflags custom-optimization hwaccel system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
 www-plugins/adobe-flash			abi_x86_32
 www-servers/apache			apache2_modules_auth_digest
+x11-apps/mesa-progs			abi_x86_32
 x11-apps/mesa-progs			egl gles2
 x11-base/xorg-drivers			-video_cards_radeon -video_cards_radeonsi -video_cards_amdgpu -video_cards_intel -video_cards_i965
 x11-libs/cairo				abi_x86_32
@@ -177,6 +203,7 @@ x11-libs/libpciaccess			abi_x86_32
 x11-libs/libSM				abi_x86_32
 x11-libs/libva				abi_x86_32 
 x11-libs/libva-intel-driver		abi_x86_32
+x11-libs/libva				utils
 x11-libs/libva-vdpau-driver		abi_x86_32
 x11-libs/libvdpau			abi_x86_32
 x11-libs/libX11				abi_x86_32
@@ -192,6 +219,7 @@ x11-libs/libXft				abi_x86_32
 x11-libs/libXi				abi_x86_32
 x11-libs/libXinerama			abi_x86_32
 x11-libs/libxkbcommon			abi_x86_32
+x11-libs/libXmu				abi_x86_32
 x11-libs/libXrandr			abi_x86_32
 x11-libs/libXrender			abi_x86_32
 x11-libs/libxshmfence			abi_x86_32
@@ -222,23 +250,4 @@ x11-proto/xf86driproto			abi_x86_32
 x11-proto/xf86vidmodeproto		abi_x86_32
 x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
-virtual/notification-daemon		kde
-dev-libs/dbus-glib			abi_x86_32
 x11-themes/oxygen-gtk			abi_x86_32
-dev-qt/qtwidgets			-gtk
-sys-devel/gdb				python_single_target_python2_7
-x11-apps/mesa-progs			abi_x86_32
-media-libs/glew				abi_x86_32
-x11-libs/libXmu				abi_x86_32
-dev-libs/xmlsec				nss -gnutls -openssl
-dev-vcs/subversion			-kwallet
-app-emulation/winetricks		kde -gtk
-net-misc/networkmanager-openconnect	-gtk
-x11-libs/libva				utils
-sys-devel/gdb				-python_single_target_python2_7
-net-libs/nghttp2			abi_x86_32
-dev-libs/boost				abi_x86_32
-dev-libs/jemalloc			abi_x86_32
-media-plugins/gst-plugins-mpg123	abi_x86_32
-app-emulation/wine-gecko		abi_x86_32
-app-text/asciidoc			python_single_target_python2_7
