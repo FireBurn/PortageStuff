@@ -251,3 +251,8 @@ x11-proto/xf86vidmodeproto		abi_x86_32
 x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
 x11-themes/oxygen-gtk			abi_x86_32
+# required by dev-libs/libappindicator-12.10.0-r301::gentoo
+# required by kde-plasma/plasma-meta-5.12.3::gentoo[gtk,legacy-systray]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libdbusmenu-16.04.0 gtk3
