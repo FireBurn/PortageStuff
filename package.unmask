@@ -7,7 +7,12 @@ sys-devel/llvm
 #www-client/chromium
 #www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
-x11-base/xorg-server
+#x11-base/xorg-server
 x11-misc/sddm
 x11-drivers/xf86-video-intel
 dev-libs/icu
+# required by =xorg-server-9999 (argument)
+# /usr/portage/profiles/package.mask:
+# Sebastian Pipping <sping@gentoo.org> (11 Mar 2018)
+# Breaks XFCE, 1.19.6 was fine (in that regard). Bug #650228
+=x11-base/xorg-server-9999
