@@ -1,0 +1,35 @@
+From ea8fa2335b158eaec8f75c6b0f87ed4ca9a3d44b Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 1 Apr 2018 01:19:08 +0100
+Subject: [PATCH 2/4] radeonsi: Fix include for
+ LLVMAddPromoteMemoryToRegisterPass
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Include llvm-c/Transforms/Utils.h with the newest LLVM 7
+
+Signed-of-by: Mike Lothian <mike@fireburn.co.uk>
+Reviewed-by: Samuel Pitoiset <samuel.pitoiset@gmail.com>
+Tested-by: Dieter Nützel <Dieter@nuetzel-hh.de>
+---
+ src/gallium/drivers/radeonsi/si_shader_tgsi_setup.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/gallium/drivers/radeonsi/si_shader_tgsi_setup.c b/src/gallium/drivers/radeonsi/si_shader_tgsi_setup.c
+index 79fdebe838..622fd26950 100644
+--- a/src/gallium/drivers/radeonsi/si_shader_tgsi_setup.c
++++ b/src/gallium/drivers/radeonsi/si_shader_tgsi_setup.c
+@@ -40,6 +40,9 @@
+ #include <stdio.h>
+ #include <llvm-c/Transforms/IPO.h>
+ #include <llvm-c/Transforms/Scalar.h>
++#if HAVE_LLVM >= 0x0700
++#include <llvm-c/Transforms/Utils.h>
++#endif
+ 
+ enum si_llvm_calling_convention {
+ 	RADEON_LLVM_AMDGPU_VS = 87,
+-- 
+2.16.3
+

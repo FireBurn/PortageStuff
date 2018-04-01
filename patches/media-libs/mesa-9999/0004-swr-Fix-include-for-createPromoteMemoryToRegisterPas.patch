@@ -1,0 +1,29 @@
+From 4ab817f6bad7383f69eaa19eacac6a9018bd1c13 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 1 Apr 2018 09:06:15 +0100
+Subject: [PATCH 4/4] swr: Fix include for createPromoteMemoryToRegisterPass
+
+Include llvm/Transforms/Utils.h with the newest LLVM 7
+
+Signed-of-by: Mike Lothian <mike@fireburn.co.uk>
+---
+ src/gallium/drivers/swr/rasterizer/jitter/jit_pch.hpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/gallium/drivers/swr/rasterizer/jitter/jit_pch.hpp b/src/gallium/drivers/swr/rasterizer/jitter/jit_pch.hpp
+index 031bced8a0..d726d4844e 100644
+--- a/src/gallium/drivers/swr/rasterizer/jitter/jit_pch.hpp
++++ b/src/gallium/drivers/swr/rasterizer/jitter/jit_pch.hpp
+@@ -67,6 +67,9 @@ using PassManager = llvm::legacy::PassManager;
+ #include "llvm/Support/DynamicLibrary.h"
+ #include "llvm/Transforms/IPO.h"
+ #include "llvm/Transforms/Scalar.h"
++#if HAVE_LLVM >= 0x0700
++#include <llvm/Transforms/Utils.h>
++#endif
+ #include "llvm/Support/Host.h"
+ #include "llvm/Support/DynamicLibrary.h"
+ 
+-- 
+2.16.3
+

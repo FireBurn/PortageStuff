@@ -18,8 +18,3 @@ dev-python/lit				**
 sys-libs/libomp				**
 <sys-libs/glibc-9999			**
 dev-qt/*:5/5.11				-~amd64
-# required by =xorg-server-9999 (argument)
-=x11-base/xorg-server-9999 **
-# required by x11-base/xorg-server-9999::gentoo[xorg]
-# required by =xorg-server-9999 (argument)
-=x11-base/xorg-drivers-9999 **
