@@ -254,3 +254,11 @@ x11-themes/oxygen-gtk			abi_x86_32
 dev-libs/libdbusmenu			gtk3
 media-video/mpv				samba
 media-libs/vulkan-loader		demos layers
+# required by media-libs/vulkan-loader-1.1.70.0::gentoo[demos,layers]
+# required by @selected
+# required by @world (argument)
+>=dev-util/glslang-6.2.2596 abi_x86_32
+# required by media-libs/vulkan-loader-1.1.70.0::gentoo[layers]
+# required by @selected
+# required by @world (argument)
+>=dev-util/spirv-tools-2018.2-r1 abi_x86_32
