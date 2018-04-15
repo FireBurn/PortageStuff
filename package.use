@@ -253,3 +253,4 @@ x11-proto/xproto			abi_x86_32
 x11-themes/oxygen-gtk			abi_x86_32
 dev-libs/libdbusmenu			gtk3
 media-video/mpv				samba
+media-libs/vulkan-loader		demos layers
