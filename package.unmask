@@ -2,7 +2,6 @@ app-eselect/eselect-opengl
 dev-qt/*
 media-libs/libvpx
 media-libs/mesa
-media-video/ffmpeg
 sys-devel/llvm
 #www-client/chromium
 #www-plugins/chrome-binary-plugins
