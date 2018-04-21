@@ -18,5 +18,5 @@ dev-python/lit				**
 sys-libs/libomp				**
 <sys-libs/glibc-9999			**
 dev-qt/*:5/5.11				-~amd64
-11-base/xorg-server			**
-11-base/xorg-drivers			**
+x11-base/xorg-server			**
+x11-base/xorg-drivers			**
