@@ -9,3 +9,5 @@ x11-base/xorg-drivers
 x11-base/xorg-server
 x11-misc/sddm
 x11-drivers/xf86-video-intel
+dev-libs/icu
+net-libs/nodejs
