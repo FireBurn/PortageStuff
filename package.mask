@@ -3,3 +3,4 @@ virtual/jre:7
 dev-java/icedtea:7
 >x11-base/xorg-server-1.19.90
 >www-plugins/chrome-binary-plugins-67
+>www-client/chromium-67
