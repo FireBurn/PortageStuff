@@ -20,5 +20,3 @@ sys-libs/libomp				**
 dev-qt/*:5/5.11				-~amd64
 x11-base/xorg-server			**
 x11-base/xorg-drivers			**
-# required by =spirv-tools-9999 (argument)
-=dev-util/spirv-tools-9999 **
