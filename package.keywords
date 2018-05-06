@@ -20,5 +20,4 @@ sys-libs/libomp				**
 dev-qt/*:5/5.11				-~amd64
 x11-base/xorg-server			**
 x11-base/xorg-drivers			**
-# required by =gcc-8.1.0-r1 (argument)
-=sys-devel/gcc-8.1.0-r1 **
+=sys-devel/gcc-8*			 **
