@@ -243,7 +243,6 @@ x11-proto/randrproto			abi_x86_32
 x11-proto/recordproto			abi_x86_32
 x11-proto/renderproto			abi_x86_32
 x11-proto/videoproto			abi_x86_32
-# move x11-proto/xcb-proto x11-base/xcb-proto
 x11-base/xcb-proto			abi_x86_32
 x11-proto/xextproto			abi_x86_32
 x11-proto/xf86bigfontproto		abi_x86_32
@@ -255,11 +254,5 @@ x11-themes/oxygen-gtk			abi_x86_32
 dev-libs/libdbusmenu			gtk3
 media-video/mpv				samba
 media-libs/vulkan-loader		demos layers
-# required by media-libs/vulkan-loader-1.1.70.0::gentoo[demos,layers]
-# required by @selected
-# required by @world (argument)
->=dev-util/glslang-6.2.2596 abi_x86_32
-# required by media-libs/vulkan-loader-1.1.70.0::gentoo[layers]
-# required by @selected
-# required by @world (argument)
->=dev-util/spirv-tools-2018.2-r1 abi_x86_32
+dev-util/glslang			abi_x86_32
+dev-util/spirv-tools			abi_x86_32
