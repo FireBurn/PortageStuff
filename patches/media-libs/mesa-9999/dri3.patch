@@ -1,0 +1,67 @@
+From patchwork Tue May  8 19:47:07 2018
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+Subject: glx/dri: Take an extra reference on our own GLX drawables
+From: Adam Jackson <ajax@redhat.com>
+X-Patchwork-Id: 221566
+Message-Id: <20180508194707.22492-1-ajax@redhat.com>
+To: mesa-dev@lists.freedesktop.org
+Cc: =?UTF-8?q?Michel=20D=C3=A4nzer?= <michel.daenzer@amd.com>
+Date: Tue,  8 May 2018 15:47:07 -0400
+
+dri*_bind_context, when switching current drawables, will drop the
+reference on the old one; since that refcount has probably now gone to
+zero that means we lose all the state we applied to that drawable
+before, like when swaps are expected to complete.
+
+Dropping this reference might make some sense for drawables that aren't
+_ours_, since we don't get events for destroyed resources and need to
+rely on the server throwing errors when we name a no-longer-valid
+drawable. But if the resource is one that this client created, we can be
+reasonably sure that it will be explicitly destroyed by the same client
+- and if not, the client is likely to exit anyway, so the memory leak
+doesn't matter.
+
+So, bump the refcnt if the XID of the drawable indicates that it's one
+of ours. This is, admittedly, a hack. The proper solution would involve
+rather more surgery to the MakeCurrent path than I can type quickly, let
+alone test promptly against a wide enough range of servers and DRIs to
+have any confidence in. I'll work on the real solution, but in the
+meantime this is effectively not a memory leak for any real scenario,
+and fixes a real bug.
+
+Signed-off-by: Adam Jackson <ajax@redhat.com>
+Cc: Michel Dänzer <michel.daenzer@amd.com>
+Cc: Mike Lothian <mike@fireburn.co.uk>
+Cc: Mario Kleiner <mario.kleiner.de@gmail.com>
+Cc: Tobias Klausmann <tobias.johannes.klausmann@mni.thm.de>
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=106351
+Bugzilla: https://bugs.freedesktop.org/show_bug.cgi?id=106372
+---
+ src/glx/dri_common.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/glx/dri_common.c b/src/glx/dri_common.c
+index ab5d6c5bc0..d42ca71124 100644
+--- a/src/glx/dri_common.c
++++ b/src/glx/dri_common.c
+@@ -411,7 +411,8 @@ driInferDrawableConfig(struct glx_screen *psc, GLXDrawable draw)
+ _X_HIDDEN __GLXDRIdrawable *
+ driFetchDrawable(struct glx_context *gc, GLXDrawable glxDrawable)
+ {
+-   struct glx_display *const priv = __glXInitialize(gc->psc->dpy);
++   Display *dpy = gc->psc->dpy;
++   struct glx_display *const priv = __glXInitialize(dpy);
+    __GLXDRIdrawable *pdraw;
+    struct glx_screen *psc;
+    struct glx_config *config = gc->config;
+@@ -449,6 +450,8 @@ driFetchDrawable(struct glx_context *gc, GLXDrawable glxDrawable)
+       return NULL;
+    }
+    pdraw->refcount = 1;
++   if ((glxDrawable & ~dpy->resource_mask) == dpy->resource_base)
++      pdraw->refcount ++;
+ 
+    return pdraw;
+ }
