@@ -256,3 +256,7 @@ media-video/mpv				samba
 media-libs/vulkan-loader		demos layers
 dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
+# required by app-emulation/wine-any-3.8::FireBurn[sdl]
+# required by @selected
+# required by @world (argument)
+>=media-libs/libsdl2-2.0.8-r2 abi_x86_32
