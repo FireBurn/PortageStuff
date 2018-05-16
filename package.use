@@ -4,7 +4,7 @@ app-admin/logstash-bin			all-plugins
 app-arch/bzip2				abi_x86_32
 app-arch/lz4				abi_x86_32
 app-arch/xz-utils			abi_x86_32
-app-emulation/wine-any			custom-cflags s3tc staging
+app-emulation/wine-any			custom-cflags sdl staging
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-office/libreoffice			java gtk gtk3
