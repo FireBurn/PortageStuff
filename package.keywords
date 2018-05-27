@@ -17,7 +17,7 @@ x11-drivers/xf86-video-intel		**
 dev-python/lit				**
 sys-libs/libomp				**
 <sys-libs/glibc-9999			**
-dev-qt/*:5/5.11				-~amd64
+#dev-qt/*:5/5.11				-~amd64
 x11-base/xorg-server			**
 x11-base/xorg-drivers			**
 =sys-devel/gcc-8*			 **
