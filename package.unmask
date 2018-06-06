@@ -11,3 +11,10 @@ x11-misc/sddm
 x11-drivers/xf86-video-intel
 dev-libs/icu
 <net-libs/nodejs-10
+# required by media-libs/vulkan-loader-1.1.70.0-r1::gentoo
+# required by @selected
+# required by @world (argument)
+# /usr/portage/profiles/package.mask:
+# Matt Turner <mattst88@gentoo.org> (06 Jun 2018)
+# Temporarily masked while I make sure the blockers work
+=dev-libs/wayland-1.15.0
