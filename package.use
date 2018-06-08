@@ -260,3 +260,6 @@ dev-util/spirv-tools			abi_x86_32
 # required by @selected
 # required by @world (argument)
 >=media-libs/libsdl2-2.0.8-r2 abi_x86_32
+# required by media-libs/mesa-9999::FireBurn[gallium,lm_sensors]
+# required by mesa (argument)
+>=sys-apps/lm_sensors-3.4.0_p20180318 abi_x86_32
