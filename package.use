@@ -256,6 +256,7 @@ media-video/mpv				samba
 media-libs/vulkan-loader		demos layers
 dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
+net-wireless/crda                       gcrypt
 # required by app-emulation/wine-any-3.8::FireBurn[sdl]
 # required by @selected
 # required by @world (argument)

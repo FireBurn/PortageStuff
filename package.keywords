@@ -21,3 +21,5 @@ sys-libs/libomp				**
 x11-base/xorg-server			**
 x11-base/xorg-drivers			**
 =sys-devel/gcc-8*			 **
+# required by =libssh-9999 (argument)
+=net-libs/libssh-9999 **
