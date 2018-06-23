@@ -1,7 +1,7 @@
 From 9e8617bfb23c2c2b4820729850d7a9f5eefb861f Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:52 +1000
-Subject: [PATCH 04/11] mesa: stop hiding remaining query parameters from
+Subject: [PATCH 04/12] mesa: stop hiding remaining query parameters from
  OpenGL compat
 
 I managed to miss these two in my last pass at this.

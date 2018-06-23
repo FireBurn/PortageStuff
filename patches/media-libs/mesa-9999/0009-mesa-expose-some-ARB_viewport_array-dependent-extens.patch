@@ -1,7 +1,7 @@
 From c5fb3ac5b2f1817fdc3a908155451eeb69f7dd90 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:57 +1000
-Subject: [PATCH 09/11] mesa: expose some ARB_viewport_array dependent
+Subject: [PATCH 09/12] mesa: expose some ARB_viewport_array dependent
  extensions in compat
 
 ---

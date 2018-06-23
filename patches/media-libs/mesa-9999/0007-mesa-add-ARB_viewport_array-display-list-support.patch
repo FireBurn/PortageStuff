@@ -1,7 +1,7 @@
 From b57bba9baee6ab712f43aa250a4468f8fc4c8a10 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:55 +1000
-Subject: [PATCH 07/11] mesa: add ARB_viewport_array display list support
+Subject: [PATCH 07/12] mesa: add ARB_viewport_array display list support
 
 ---
  src/mesa/main/dlist.c | 211 ++++++++++++++++++++++++++++++++++++++++++

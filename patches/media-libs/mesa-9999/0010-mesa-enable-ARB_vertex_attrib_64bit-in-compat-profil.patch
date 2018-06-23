@@ -1,7 +1,7 @@
 From 7d97ac44e2cb11b1c610a94dd7a104b1300e8b1f Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:58 +1000
-Subject: [PATCH 10/11] mesa: enable ARB_vertex_attrib_64bit in compat profile
+Subject: [PATCH 10/12] mesa: enable ARB_vertex_attrib_64bit in compat profile
 
 ---
  src/mapi/glapi/gen/apiexec.py    | 20 ++++++++++----------

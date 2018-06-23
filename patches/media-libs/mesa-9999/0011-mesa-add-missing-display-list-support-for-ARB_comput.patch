@@ -1,7 +1,7 @@
 From 4be3556ee0f850960241bf1b4e96670e0751bfed Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:59 +1000
-Subject: [PATCH 11/11] mesa: add missing display list support for
+Subject: [PATCH 11/12] mesa: add missing display list support for
  ARB_compute_shader
 
 The extension is enabled for compat profile but there is currently

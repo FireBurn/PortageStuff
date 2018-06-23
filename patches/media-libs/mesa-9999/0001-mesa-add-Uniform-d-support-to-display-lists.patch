@@ -1,7 +1,7 @@
 From bb857f5c1c6dd2bf3548aee2cf72d969b042d5f2 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:49 +1000
-Subject: [PATCH 01/11] mesa: add Uniform*d support to display lists
+Subject: [PATCH 01/12] mesa: add Uniform*d support to display lists
 
 This is required so we can enable fp64 support in compat profile.
 ---

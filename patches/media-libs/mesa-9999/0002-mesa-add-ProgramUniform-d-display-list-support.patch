@@ -1,7 +1,7 @@
 From 7d694c4da0749233d3f76922a10b26cdb23c19ba Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:50 +1000
-Subject: [PATCH 02/11] mesa: add ProgramUniform*d display list support
+Subject: [PATCH 02/12] mesa: add ProgramUniform*d display list support
 
 This is required for fp64 to be enabled in compat profile.
 ---

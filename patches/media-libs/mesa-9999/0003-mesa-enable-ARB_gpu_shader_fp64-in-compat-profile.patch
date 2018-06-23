@@ -1,7 +1,7 @@
 From b9ee13361a920328eabb7639a768e2b13eec405d Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:51 +1000
-Subject: [PATCH 03/11] mesa: enable ARB_gpu_shader_fp64 in compat profile
+Subject: [PATCH 03/12] mesa: enable ARB_gpu_shader_fp64 in compat profile
 
 ---
  src/mesa/main/extensions_table.h | 2 +-

@@ -1,7 +1,7 @@
 From 933cf23249f35ade7067c1d8eab218ba48219d55 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:56 +1000
-Subject: [PATCH 08/11] mesa: enable ARB_viewport_array in compat profile
+Subject: [PATCH 08/12] mesa: enable ARB_viewport_array in compat profile
 
 ---
  src/mapi/glapi/gen/apiexec.py    | 16 ++++++++--------

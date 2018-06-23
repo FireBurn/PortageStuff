@@ -1,7 +1,7 @@
 From 02a86eed83df31ce61c2a2d88b160822500745b5 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Fri, 22 Jun 2018 18:47:54 +1000
-Subject: [PATCH 06/11] mesa: enable ARB_shader_subroutine in compat profile
+Subject: [PATCH 06/12] mesa: enable ARB_shader_subroutine in compat profile
 
 ---
  src/mapi/glapi/gen/apiexec.py    | 16 ++++++++--------
