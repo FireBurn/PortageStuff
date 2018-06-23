@@ -1,0 +1,35 @@
+From c5fb3ac5b2f1817fdc3a908155451eeb69f7dd90 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Fri, 22 Jun 2018 18:47:57 +1000
+Subject: [PATCH 09/11] mesa: expose some ARB_viewport_array dependent
+ extensions in compat
+
+---
+ src/mesa/main/extensions_table.h | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
+index 4cf82beffb..9100f4a04c 100644
+--- a/src/mesa/main/extensions_table.h
++++ b/src/mesa/main/extensions_table.h
+@@ -16,7 +16,7 @@ EXT(AMD_seamless_cubemap_per_texture        , AMD_seamless_cubemap_per_texture
+ EXT(AMD_shader_stencil_export               , ARB_shader_stencil_export              , GLL, GLC,  x ,  x , 2009)
+ EXT(AMD_shader_trinary_minmax               , dummy_true                             , GLL, GLC,  x ,  x , 2012)
+ EXT(AMD_vertex_shader_layer                 , AMD_vertex_shader_layer                , GLL, GLC,  x ,  x , 2012)
+-EXT(AMD_vertex_shader_viewport_index        , AMD_vertex_shader_viewport_index       ,  x , GLC,  x ,  x , 2012)
++EXT(AMD_vertex_shader_viewport_index        , AMD_vertex_shader_viewport_index       , GLL, GLC,  x ,  x , 2012)
+ 
+ EXT(ANDROID_extension_pack_es31a            , ANDROID_extension_pack_es31a           ,  x ,  x ,  x ,  31, 2014)
+ 
+@@ -64,7 +64,7 @@ EXT(ARB_enhanced_layouts                    , ARB_enhanced_layouts
+ EXT(ARB_explicit_attrib_location            , ARB_explicit_attrib_location           , GLL, GLC,  x ,  x , 2009)
+ EXT(ARB_explicit_uniform_location           , ARB_explicit_uniform_location          , GLL, GLC,  x ,  x , 2012)
+ EXT(ARB_fragment_coord_conventions          , ARB_fragment_coord_conventions         , GLL, GLC,  x ,  x , 2009)
+-EXT(ARB_fragment_layer_viewport             , ARB_fragment_layer_viewport            ,  x , GLC,  x ,  x , 2012)
++EXT(ARB_fragment_layer_viewport             , ARB_fragment_layer_viewport            , GLL, GLC,  x ,  x , 2012)
+ EXT(ARB_fragment_program                    , ARB_fragment_program                   , GLL,  x ,  x ,  x , 2002)
+ EXT(ARB_fragment_program_shadow             , ARB_fragment_program_shadow            , GLL,  x ,  x ,  x , 2003)
+ EXT(ARB_fragment_shader                     , ARB_fragment_shader                    , GLL, GLC,  x ,  x , 2002)
+-- 
+2.18.0
+

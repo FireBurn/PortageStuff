@@ -1,0 +1,53 @@
+From 933cf23249f35ade7067c1d8eab218ba48219d55 Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Fri, 22 Jun 2018 18:47:56 +1000
+Subject: [PATCH 08/11] mesa: enable ARB_viewport_array in compat profile
+
+---
+ src/mapi/glapi/gen/apiexec.py    | 16 ++++++++--------
+ src/mesa/main/extensions_table.h |  2 +-
+ 2 files changed, 9 insertions(+), 9 deletions(-)
+
+diff --git a/src/mapi/glapi/gen/apiexec.py b/src/mapi/glapi/gen/apiexec.py
+index e69c6b4df1..1a91785d37 100644
+--- a/src/mapi/glapi/gen/apiexec.py
++++ b/src/mapi/glapi/gen/apiexec.py
+@@ -131,14 +131,14 @@ functions = {
+     #
+     # Mesa does not support either of the geometry shader extensions, so
+     # OpenGL 3.2 is required.
+-    "ViewportArrayv": exec_info(core=32, es2=31),
+-    "ViewportIndexedf": exec_info(core=32, es2=31),
+-    "ViewportIndexedfv": exec_info(core=32, es2=31),
+-    "ScissorArrayv": exec_info(core=32, es2=31),
+-    "ScissorIndexed": exec_info(core=32, es2=31),
+-    "ScissorIndexedv": exec_info(core=32, es2=31),
+-    "DepthRangeArrayv": exec_info(core=32),
+-    "DepthRangeIndexed": exec_info(core=32),
++    "ViewportArrayv": exec_info(compatibility=32, core=32, es2=31),
++    "ViewportIndexedf": exec_info(compatibility=32, core=32, es2=31),
++    "ViewportIndexedfv": exec_info(compatibility=32, core=32, es2=31),
++    "ScissorArrayv": exec_info(compatibility=32, core=32, es2=31),
++    "ScissorIndexed": exec_info(compatibility=32, core=32, es2=31),
++    "ScissorIndexedv": exec_info(compatibility=32, core=32, es2=31),
++    "DepthRangeArrayv": exec_info(compatibility=32, core=32),
++    "DepthRangeIndexed": exec_info(compatibility=32, core=32),
+     # GetFloati_v also GL_ARB_shader_atomic_counters
+     # GetDoublei_v also GL_ARB_shader_atomic_counters
+ 
+diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
+index cc925eedf8..4cf82beffb 100644
+--- a/src/mesa/main/extensions_table.h
++++ b/src/mesa/main/extensions_table.h
+@@ -182,7 +182,7 @@ EXT(ARB_vertex_program                      , ARB_vertex_program
+ EXT(ARB_vertex_shader                       , ARB_vertex_shader                      , GLL, GLC,  x ,  x , 2002)
+ EXT(ARB_vertex_type_10f_11f_11f_rev         , ARB_vertex_type_10f_11f_11f_rev        , GLL, GLC,  x ,  x , 2013)
+ EXT(ARB_vertex_type_2_10_10_10_rev          , ARB_vertex_type_2_10_10_10_rev         , GLL, GLC,  x ,  x , 2009)
+-EXT(ARB_viewport_array                      , ARB_viewport_array                     ,  x , GLC,  x ,  x , 2010)
++EXT(ARB_viewport_array                      , ARB_viewport_array                     , GLL, GLC,  x ,  x , 2010)
+ EXT(ARB_window_pos                          , dummy_true                             , GLL,  x ,  x ,  x , 2001)
+ 
+ EXT(ATI_blend_equation_separate             , EXT_blend_equation_separate            , GLL, GLC,  x ,  x , 2003)
+-- 
+2.18.0
+
