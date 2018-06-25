@@ -1,11 +1,12 @@
-From b9ee13361a920328eabb7639a768e2b13eec405d Mon Sep 17 00:00:00 2001
+From 8dbea078df8f602f00dc722e306739867df35988 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Fri, 22 Jun 2018 18:47:51 +1000
-Subject: [PATCH 03/12] mesa: enable ARB_gpu_shader_fp64 in compat profile
+Date: Tue, 19 Jun 2018 19:35:17 +1000
+Subject: [PATCH 03/18] mesa: enable ARB_gpu_shader_fp64 in compat profile
 
 ---
- src/mesa/main/extensions_table.h | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ src/mesa/main/extensions_table.h        |  2 +-
+ src/mesa/main/tests/dispatch_sanity.cpp | 38 ++++++++++++-------------
+ 2 files changed, 20 insertions(+), 20 deletions(-)
 
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
 index 7af48a4ad9..7f472ee8c0 100644
@@ -20,6 +21,62 @@ index 7af48a4ad9..7f472ee8c0 100644
  EXT(ARB_gpu_shader_int64                    , ARB_gpu_shader_int64                   ,  x , GLC,  x ,  x , 2015)
  EXT(ARB_half_float_pixel                    , dummy_true                             , GLL, GLC,  x ,  x , 2003)
  EXT(ARB_half_float_vertex                   , ARB_half_float_vertex                  , GLL, GLC,  x ,  x , 2008)
+diff --git a/src/mesa/main/tests/dispatch_sanity.cpp b/src/mesa/main/tests/dispatch_sanity.cpp
+index 96ace53920..6b319d8b03 100644
+--- a/src/mesa/main/tests/dispatch_sanity.cpp
++++ b/src/mesa/main/tests/dispatch_sanity.cpp
+@@ -575,6 +575,25 @@ const struct function common_desktop_functions_possible[] = {
+    { "glBlendFunci", 40, -1 },
+    { "glBlendFuncSeparatei", 40, -1 },
+ 
++   { "glUniform1d", 40, -1 },
++   { "glUniform2d", 40, -1 },
++   { "glUniform3d", 40, -1 },
++   { "glUniform4d", 40, -1 },
++   { "glUniform1dv", 40, -1 },
++   { "glUniform2dv", 40, -1 },
++   { "glUniform3dv", 40, -1 },
++   { "glUniform4dv", 40, -1 },
++   { "glUniformMatrix2dv", 40, -1 },
++   { "glUniformMatrix3dv", 40, -1 },
++   { "glUniformMatrix4dv", 40, -1 },
++   { "glUniformMatrix2x3dv", 40, -1 },
++   { "glUniformMatrix2x4dv", 40, -1 },
++   { "glUniformMatrix3x2dv", 40, -1 },
++   { "glUniformMatrix3x4dv", 40, -1 },
++   { "glUniformMatrix4x2dv", 40, -1 },
++   { "glUniformMatrix4x3dv", 40, -1 },
++   { "glGetUniformdv", 43, -1 },
++
+    /* GL 4.3 */
+    { "glIsRenderbuffer", 43, -1 },
+    { "glBindRenderbuffer", 43, -1 },
+@@ -1658,25 +1677,6 @@ const struct function gl_core_functions_possible[] = {
+    { "glDrawArraysIndirect", 43, -1 },
+    { "glDrawElementsIndirect", 43, -1 },
+ 
+-   { "glUniform1d", 40, -1 },
+-   { "glUniform2d", 40, -1 },
+-   { "glUniform3d", 40, -1 },
+-   { "glUniform4d", 40, -1 },
+-   { "glUniform1dv", 40, -1 },
+-   { "glUniform2dv", 40, -1 },
+-   { "glUniform3dv", 40, -1 },
+-   { "glUniform4dv", 40, -1 },
+-   { "glUniformMatrix2dv", 40, -1 },
+-   { "glUniformMatrix3dv", 40, -1 },
+-   { "glUniformMatrix4dv", 40, -1 },
+-   { "glUniformMatrix2x3dv", 40, -1 },
+-   { "glUniformMatrix2x4dv", 40, -1 },
+-   { "glUniformMatrix3x2dv", 40, -1 },
+-   { "glUniformMatrix3x4dv", 40, -1 },
+-   { "glUniformMatrix4x2dv", 40, -1 },
+-   { "glUniformMatrix4x3dv", 40, -1 },
+-   { "glGetUniformdv", 43, -1 },
+-
+    { "glBindTransformFeedback", 43, -1 },
+    { "glDeleteTransformFeedbacks", 43, -1 },
+    { "glGenTransformFeedbacks", 43, -1 },
 -- 
 2.18.0
 

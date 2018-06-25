@@ -1,12 +1,13 @@
-From 933cf23249f35ade7067c1d8eab218ba48219d55 Mon Sep 17 00:00:00 2001
+From 5de24b4bce9fc514a9b8073dc129834c86d703d2 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Fri, 22 Jun 2018 18:47:56 +1000
-Subject: [PATCH 08/12] mesa: enable ARB_viewport_array in compat profile
+Date: Wed, 20 Jun 2018 13:03:40 +1000
+Subject: [PATCH 08/18] mesa: enable ARB_viewport_array in compat profile
 
 ---
- src/mapi/glapi/gen/apiexec.py    | 16 ++++++++--------
- src/mesa/main/extensions_table.h |  2 +-
- 2 files changed, 9 insertions(+), 9 deletions(-)
+ src/mapi/glapi/gen/apiexec.py           | 16 ++++++++--------
+ src/mesa/main/extensions_table.h        |  2 +-
+ src/mesa/main/tests/dispatch_sanity.cpp | 17 +++++++++--------
+ 3 files changed, 18 insertions(+), 17 deletions(-)
 
 diff --git a/src/mapi/glapi/gen/apiexec.py b/src/mapi/glapi/gen/apiexec.py
 index e69c6b4df1..1a91785d37 100644
@@ -48,6 +49,41 @@ index cc925eedf8..4cf82beffb 100644
  EXT(ARB_window_pos                          , dummy_true                             , GLL,  x ,  x ,  x , 2001)
  
  EXT(ATI_blend_equation_separate             , EXT_blend_equation_separate            , GLL, GLC,  x ,  x , 2003)
+diff --git a/src/mesa/main/tests/dispatch_sanity.cpp b/src/mesa/main/tests/dispatch_sanity.cpp
+index ed99f1a195..085b1f7dd5 100644
+--- a/src/mesa/main/tests/dispatch_sanity.cpp
++++ b/src/mesa/main/tests/dispatch_sanity.cpp
+@@ -884,6 +884,15 @@ const struct function common_desktop_functions_possible[] = {
+ // { "glTextureStorage2DMultisampleEXT", 43, -1 },      // XXX: Add to xml
+ // { "glTextureStorage3DMultisampleEXT", 43, -1 },      // XXX: Add to xml
+ 
++   { "glViewportArrayv", 43, -1 },
++   { "glViewportIndexedf", 43, -1 },
++   { "glViewportIndexedfv", 43, -1 },
++   { "glScissorArrayv", 43, -1 },
++   { "glScissorIndexed", 43, -1 },
++   { "glScissorIndexedv", 43, -1 },
++   { "glDepthRangeArrayv", 43, -1 },
++   { "glDepthRangeIndexed", 43, -1 },
++
+ /* GL 4.5 */
+    /* aliased versions checked above */
+    //{ "glGetGraphicsResetStatus", 45, -1 },
+@@ -1766,14 +1775,6 @@ const struct function gl_core_functions_possible[] = {
+    { "glVertexAttribL4dv", 41, -1 },
+    { "glVertexAttribLPointer", 41, -1 },
+    { "glGetVertexAttribLdv", 41, -1 },
+-   { "glViewportArrayv", 43, -1 },
+-   { "glViewportIndexedf", 43, -1 },
+-   { "glViewportIndexedfv", 43, -1 },
+-   { "glScissorArrayv", 43, -1 },
+-   { "glScissorIndexed", 43, -1 },
+-   { "glScissorIndexedv", 43, -1 },
+-   { "glDepthRangeArrayv", 43, -1 },
+-   { "glDepthRangeIndexed", 43, -1 },
+ 
+ // { "glCreateSyncFromCLeventARB", 43, -1 },            // XXX: Add to xml
+ 
 -- 
 2.18.0
 

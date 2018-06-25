@@ -1,0 +1,41 @@
+From 36f9325e7d56d90ce8857b2b6b8ab8f3ede6f81a Mon Sep 17 00:00:00 2001
+From: Timothy Arceri <tarceri@itsqueeze.com>
+Date: Mon, 25 Jun 2018 19:10:28 +1000
+Subject: [PATCH 17/18] fix enable ARB_vertex_attrib_64bit
+
+---
+ src/mesa/main/vtxfmt.c       | 2 +-
+ src/mesa/vbo/vbo_exec_draw.c | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/mesa/main/vtxfmt.c b/src/mesa/main/vtxfmt.c
+index 61629a40fd..3e96c7d2fb 100644
+--- a/src/mesa/main/vtxfmt.c
++++ b/src/mesa/main/vtxfmt.c
+@@ -211,7 +211,7 @@ install_vtxfmt(struct gl_context *ctx, struct _glapi_table *tab,
+       SET_VertexAttribL1ui64vARB(tab, vfmt->VertexAttribL1ui64vARB);
+    }
+ 
+-   if (ctx->API == API_OPENGL_CORE) {
++   if (_mesa_is_desktop_gl(ctx)) {
+       /* GL_ARB_vertex_attrib_64bit */
+       SET_VertexAttribL1d(tab, vfmt->VertexAttribL1d);
+       SET_VertexAttribL2d(tab, vfmt->VertexAttribL2d);
+diff --git a/src/mesa/vbo/vbo_exec_draw.c b/src/mesa/vbo/vbo_exec_draw.c
+index 8d74725db3..90926730cb 100644
+--- a/src/mesa/vbo/vbo_exec_draw.c
++++ b/src/mesa/vbo/vbo_exec_draw.c
+@@ -214,8 +214,9 @@ vbo_exec_bind_arrays(struct gl_context *ctx)
+       const int vao_attr = u_bit_scan(&mask);
+       const GLubyte vbo_attr = vao_to_vbo_map[vao_attr];
+ 
+-      const GLubyte size = exec->vtx.attrsz[vbo_attr];
+       const GLenum16 type = exec->vtx.attrtype[vbo_attr];
++      const GLubyte size = vbo_attrtype_to_double_flag(type) ?
++         exec->vtx.attrsz[vbo_attr] / 2 : exec->vtx.attrsz[vbo_attr];;
+       const GLuint offset = (GLuint)((GLbyte *)exec->vtx.attrptr[vbo_attr] -
+                                      (GLbyte *)exec->vtx.vertex);
+       assert(offset <= ctx->Const.MaxVertexAttribRelativeOffset);
+-- 
+2.18.0
+

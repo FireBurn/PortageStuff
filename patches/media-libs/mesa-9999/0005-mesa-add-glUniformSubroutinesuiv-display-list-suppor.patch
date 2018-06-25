@@ -1,7 +1,7 @@
-From 8ed824a04ed31b6ad5943f53b23b62487cdd8082 Mon Sep 17 00:00:00 2001
+From bca3819d2c418e001fe873f7586db61c70e74f8a Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Fri, 22 Jun 2018 18:47:53 +1000
-Subject: [PATCH 05/12] mesa: add glUniformSubroutinesuiv() display list
+Date: Wed, 20 Jun 2018 11:08:35 +1000
+Subject: [PATCH 05/18] mesa: add glUniformSubroutinesuiv() display list
  support
 
 ---

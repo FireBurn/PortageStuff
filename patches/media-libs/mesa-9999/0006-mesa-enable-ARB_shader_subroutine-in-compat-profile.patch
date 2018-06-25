@@ -1,12 +1,13 @@
-From 02a86eed83df31ce61c2a2d88b160822500745b5 Mon Sep 17 00:00:00 2001
+From da4de6f54df93218176b0c68242ff90eb9c2287d Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Fri, 22 Jun 2018 18:47:54 +1000
-Subject: [PATCH 06/12] mesa: enable ARB_shader_subroutine in compat profile
+Date: Wed, 20 Jun 2018 10:55:34 +1000
+Subject: [PATCH 06/18] mesa: enable ARB_shader_subroutine in compat profile
 
 ---
- src/mapi/glapi/gen/apiexec.py    | 16 ++++++++--------
- src/mesa/main/extensions_table.h |  2 +-
- 2 files changed, 9 insertions(+), 9 deletions(-)
+ src/mapi/glapi/gen/apiexec.py           | 16 ++++++++--------
+ src/mesa/main/extensions_table.h        |  2 +-
+ src/mesa/main/tests/dispatch_sanity.cpp | 19 +++++++++----------
+ 3 files changed, 18 insertions(+), 19 deletions(-)
 
 diff --git a/src/mapi/glapi/gen/apiexec.py b/src/mapi/glapi/gen/apiexec.py
 index 00c8017127..e69c6b4df1 100644
@@ -48,6 +49,43 @@ index 7f472ee8c0..cc925eedf8 100644
  EXT(ARB_shader_texture_image_samples        , ARB_shader_texture_image_samples       , GLL, GLC,  x ,  x , 2014)
  EXT(ARB_shader_texture_lod                  , ARB_shader_texture_lod                 , GLL, GLC,  x ,  x , 2009)
  EXT(ARB_shader_viewport_layer_array         , ARB_shader_viewport_layer_array        ,  x , GLC,  x ,  x , 2015)
+diff --git a/src/mesa/main/tests/dispatch_sanity.cpp b/src/mesa/main/tests/dispatch_sanity.cpp
+index 6b319d8b03..ed99f1a195 100644
+--- a/src/mesa/main/tests/dispatch_sanity.cpp
++++ b/src/mesa/main/tests/dispatch_sanity.cpp
+@@ -575,6 +575,15 @@ const struct function common_desktop_functions_possible[] = {
+    { "glBlendFunci", 40, -1 },
+    { "glBlendFuncSeparatei", 40, -1 },
+ 
++   { "glGetSubroutineUniformLocation", 40, -1 },
++   { "glGetSubroutineIndex", 40, -1 },
++   { "glGetActiveSubroutineUniformiv", 40, -1 },
++   { "glGetActiveSubroutineUniformName", 40, -1 },
++   { "glGetActiveSubroutineName", 40, -1 },
++   { "glUniformSubroutinesuiv", 40, -1 },
++   { "glGetUniformSubroutineuiv", 40, -1 },
++   { "glGetProgramStageiv", 40, -1 },
++
+    { "glUniform1d", 40, -1 },
+    { "glUniform2d", 40, -1 },
+    { "glUniform3d", 40, -1 },
+@@ -1547,16 +1556,6 @@ const struct function gl_core_functions_possible[] = {
+    /* GL 3.2 */
+    { "glFramebufferTexture", 32, -1 },
+ 
+-   /* GL 4.0 */
+-   { "glGetSubroutineUniformLocation", 40, -1 },
+-   { "glGetSubroutineIndex", 40, -1 },
+-   { "glGetActiveSubroutineUniformiv", 40, -1 },
+-   { "glGetActiveSubroutineUniformName", 40, -1 },
+-   { "glGetActiveSubroutineName", 40, -1 },
+-   { "glUniformSubroutinesuiv", 40, -1 },
+-   { "glGetUniformSubroutineuiv", 40, -1 },
+-   { "glGetProgramStageiv", 40, -1 },
+-
+    /* GL 4.3 */
+    { "glIsRenderbuffer", 43, -1 },
+    { "glBindRenderbuffer", 43, -1 },
 -- 
 2.18.0
 
