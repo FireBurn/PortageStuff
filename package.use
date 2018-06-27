@@ -257,19 +257,6 @@ media-libs/vulkan-loader		demos layers
 dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
 net-wireless/crda                       gcrypt
-# required by app-emulation/wine-any-3.8::FireBurn[sdl]
-# required by @selected
-# required by @world (argument)
->=media-libs/libsdl2-2.0.8-r2 abi_x86_32
-# required by media-libs/mesa-9999::FireBurn[gallium,lm_sensors]
-# required by mesa (argument)
->=sys-apps/lm_sensors-3.4.0_p20180318 abi_x86_32
-# required by media-libs/gst-plugins-bad-1.14.1::gentoo[gtk]
-# required by media-plugins/gst-plugins-faad-1.14.1::gentoo
-# required by media-plugins/gst-plugins-meta-1.12.4::gentoo[aac]
-# required by media-libs/phonon-gstreamer-4.9.0-r2::gentoo
-# required by media-libs/phonon-4.10.1::gentoo[gstreamer]
-# required by net-irc/konversation-1.7.4-r1::gentoo
-# required by @selected
-# required by @world (argument)
->=media-plugins/gst-plugins-gtk-1.14.1 abi_x86_32
+media-libs/libsdl2			abi_x86_32
+sys-apps/lm_sensors			abi_x86_32
+media-plugins/gst-plugins-gtk		abi_x86_32
