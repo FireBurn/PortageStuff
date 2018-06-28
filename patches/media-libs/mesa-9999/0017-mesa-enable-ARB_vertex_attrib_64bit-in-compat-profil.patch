@@ -1,12 +1,14 @@
-From c31f2f347fbae38c661ace0de2ed72bef9b81643 Mon Sep 17 00:00:00 2001
+From 12dc2ad3208f997f42c61de3f6950362a376b8aa Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 20 Jun 2018 13:05:05 +1000
-Subject: [PATCH 16/18] mesa: enable ARB_vertex_attrib_64bit in compat profile
+Subject: [PATCH 17/18] mesa: enable ARB_vertex_attrib_64bit in compat profile
 
 ---
- src/mapi/glapi/gen/apiexec.py    | 20 ++++++++++----------
- src/mesa/main/extensions_table.h |  2 +-
- 2 files changed, 11 insertions(+), 11 deletions(-)
+ src/mapi/glapi/gen/apiexec.py           | 20 ++++++++++----------
+ src/mesa/main/extensions_table.h        |  2 +-
+ src/mesa/main/tests/dispatch_sanity.cpp | 23 ++++++++++++-----------
+ src/mesa/main/vtxfmt.c                  |  2 +-
+ 4 files changed, 24 insertions(+), 23 deletions(-)
 
 diff --git a/src/mapi/glapi/gen/apiexec.py b/src/mapi/glapi/gen/apiexec.py
 index 1a91785d37..44552f43f2 100644
@@ -40,7 +42,7 @@ index 1a91785d37..44552f43f2 100644
      # OpenGL 4.1 / GL_ARB_viewport_array.  The extension spec says:
      #
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index 1a4014c646..326e047df9 100644
+index 12b796777d..8ed1308182 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -175,7 +175,7 @@ EXT(ARB_transpose_matrix                    , dummy_true
@@ -48,10 +50,64 @@ index 1a4014c646..326e047df9 100644
  EXT(ARB_vertex_array_bgra                   , EXT_vertex_array_bgra                  , GLL, GLC,  x ,  x , 2008)
  EXT(ARB_vertex_array_object                 , dummy_true                             , GLL, GLC,  x ,  x , 2006)
 -EXT(ARB_vertex_attrib_64bit                 , ARB_vertex_attrib_64bit                ,  x , GLC,  x ,  x , 2010)
-+EXT(ARB_vertex_attrib_64bit                 , ARB_vertex_attrib_64bit                , GLL, GLC,  x ,  x , 2010)
++EXT(ARB_vertex_attrib_64bit                 , ARB_vertex_attrib_64bit                ,  32, GLC,  x ,  x , 2010)
  EXT(ARB_vertex_attrib_binding               , dummy_true                             , GLL, GLC,  x ,  x , 2012)
  EXT(ARB_vertex_buffer_object                , dummy_true                             , GLL,  x ,  x ,  x , 2003)
  EXT(ARB_vertex_program                      , ARB_vertex_program                     , GLL,  x ,  x ,  x , 2002)
+diff --git a/src/mesa/main/tests/dispatch_sanity.cpp b/src/mesa/main/tests/dispatch_sanity.cpp
+index 085b1f7dd5..542dbbdee0 100644
+--- a/src/mesa/main/tests/dispatch_sanity.cpp
++++ b/src/mesa/main/tests/dispatch_sanity.cpp
+@@ -603,6 +603,18 @@ const struct function common_desktop_functions_possible[] = {
+    { "glUniformMatrix4x3dv", 40, -1 },
+    { "glGetUniformdv", 43, -1 },
+ 
++   /* GL 4.1 */
++   { "glVertexAttribL1d", 41, -1 },
++   { "glVertexAttribL2d", 41, -1 },
++   { "glVertexAttribL3d", 41, -1 },
++   { "glVertexAttribL4d", 41, -1 },
++   { "glVertexAttribL1dv", 41, -1 },
++   { "glVertexAttribL2dv", 41, -1 },
++   { "glVertexAttribL3dv", 41, -1 },
++   { "glVertexAttribL4dv", 41, -1 },
++   { "glVertexAttribLPointer", 41, -1 },
++   { "glGetVertexAttribLdv", 41, -1 },
++
+    /* GL 4.3 */
+    { "glIsRenderbuffer", 43, -1 },
+    { "glBindRenderbuffer", 43, -1 },
+@@ -1765,17 +1777,6 @@ const struct function gl_core_functions_possible[] = {
+    { "glValidateProgramPipeline", 43, -1 },
+    { "glGetProgramPipelineInfoLog", 43, -1 },
+ 
+-   { "glVertexAttribL1d", 41, -1 },
+-   { "glVertexAttribL2d", 41, -1 },
+-   { "glVertexAttribL3d", 41, -1 },
+-   { "glVertexAttribL4d", 41, -1 },
+-   { "glVertexAttribL1dv", 41, -1 },
+-   { "glVertexAttribL2dv", 41, -1 },
+-   { "glVertexAttribL3dv", 41, -1 },
+-   { "glVertexAttribL4dv", 41, -1 },
+-   { "glVertexAttribLPointer", 41, -1 },
+-   { "glGetVertexAttribLdv", 41, -1 },
+-
+ // { "glCreateSyncFromCLeventARB", 43, -1 },            // XXX: Add to xml
+ 
+    { "glDrawArraysInstancedBaseInstance", 43, -1 },
+diff --git a/src/mesa/main/vtxfmt.c b/src/mesa/main/vtxfmt.c
+index 61629a40fd..3e96c7d2fb 100644
+--- a/src/mesa/main/vtxfmt.c
++++ b/src/mesa/main/vtxfmt.c
+@@ -211,7 +211,7 @@ install_vtxfmt(struct gl_context *ctx, struct _glapi_table *tab,
+       SET_VertexAttribL1ui64vARB(tab, vfmt->VertexAttribL1ui64vARB);
+    }
+ 
+-   if (ctx->API == API_OPENGL_CORE) {
++   if (_mesa_is_desktop_gl(ctx)) {
+       /* GL_ARB_vertex_attrib_64bit */
+       SET_VertexAttribL1d(tab, vfmt->VertexAttribL1d);
+       SET_VertexAttribL2d(tab, vfmt->VertexAttribL2d);
 -- 
 2.18.0
 

@@ -1,6 +1,6 @@
-From 15a9a6f5057eddf5ddf9ac11b3ecfb08d7fed216 Mon Sep 17 00:00:00 2001
+From 545c2b9c3104521097786c7a2c4c4a001ec31715 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Mon, 25 Jun 2018 10:35:33 +1000
+Date: Mon, 25 Jun 2018 20:31:02 +1000
 Subject: [PATCH 18/18] radeonsi: enable OpenGL 4.4 compat profile
 
 ---
@@ -8,7 +8,7 @@ Subject: [PATCH 18/18] radeonsi: enable OpenGL 4.4 compat profile
  1 file changed, 3 insertions(+), 4 deletions(-)
 
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index a99626416e..96ff2a9e46 100644
+index 0e8617d0fe..96ff2a9e46 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
 +++ b/src/gallium/drivers/radeonsi/si_get.c
 @@ -210,13 +210,12 @@ static int si_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
@@ -23,7 +23,7 @@ index a99626416e..96ff2a9e46 100644
  		return 420;
  
 -	case PIPE_CAP_GLSL_FEATURE_LEVEL_COMPATIBILITY:
--		return 400;
+-		return 330;
 -
  	case PIPE_CAP_MAX_TEXTURE_BUFFER_SIZE:
  		return MIN2(sscreen->info.max_alloc_size, INT_MAX);

@@ -1,81 +1,34 @@
-From 92c3514abbdd46a99015c4f1f9012726abab3acd Mon Sep 17 00:00:00 2001
+From a221f11c02e0beecb17f48d1a41ecd1a7ff40e78 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
-Date: Thu, 21 Jun 2018 20:42:28 +1000
+Date: Thu, 28 Jun 2018 10:25:17 +1000
 Subject: [PATCH 10/18] mesa: add missing display list support for
  ARB_compute_shader
 
 The extension is enabled for compat profile but there is currently
 no display list support.
+
+I filed a spec bug and it has been agreed that
+glDispatchComputeIndirect should generate an INVALID_OPERATION
+error when called during display list compilation.
 ---
- src/mesa/main/dlist.c | 87 +++++++++++++++++++++++++++++++++++++++++++
- 1 file changed, 87 insertions(+)
+ src/mesa/main/dlist.c | 39 +++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 39 insertions(+)
 
 diff --git a/src/mesa/main/dlist.c b/src/mesa/main/dlist.c
-index b2b1f723a1..c11b4c06fe 100644
+index b2b1f723a1..e2ab2eb8aa 100644
 --- a/src/mesa/main/dlist.c
 +++ b/src/mesa/main/dlist.c
-@@ -510,6 +510,10 @@ typedef enum
+@@ -510,6 +510,9 @@ typedef enum
     OPCODE_SAMPLER_PARAMETERIIV,
     OPCODE_SAMPLER_PARAMETERUIV,
  
 +   /* ARB_compute_shader */
 +   OPCODE_DISPATCH_COMPUTE,
-+   OPCODE_DISPATCH_COMPUTE_INDIRECT,
 +
     /* GL_ARB_sync */
     OPCODE_WAIT_SYNC,
  
-@@ -604,6 +608,7 @@ typedef union gl_dlist_node Node;
- union pointer
- {
-    void *ptr;
-+   GLintptr intptr;
-    GLuint dwords[POINTER_DWORDS];
- };
- 
-@@ -643,6 +648,41 @@ get_pointer(const Node *node)
- }
- 
- 
-+/**
-+ * Save a 4 or 8-byte pointer at dest (and dest+1).
-+ */
-+static inline void
-+save_intpointer(Node *dest, GLintptr src)
-+{
-+   union pointer p;
-+   unsigned i;
-+
-+   STATIC_ASSERT(POINTER_DWORDS == 1 || POINTER_DWORDS == 2);
-+   STATIC_ASSERT(sizeof(Node) == 4);
-+
-+   p.intptr = src;
-+
-+   for (i = 0; i < POINTER_DWORDS; i++)
-+      dest[i].ui = p.dwords[i];
-+}
-+
-+
-+/**
-+ * Retrieve a 4 or 8-byte pointer from node (node+1).
-+ */
-+static inline GLintptr
-+get_intpointer(const Node *node)
-+{
-+   union pointer p;
-+   unsigned i;
-+
-+   for (i = 0; i < POINTER_DWORDS; i++)
-+      p.dwords[i] = node[i].ui;
-+
-+   return p.intptr;
-+}
-+
-+
- /**
-  * Used to store a 64-bit uint in a pair of "Nodes" for the sake of 32-bit
-  * environment.
-@@ -6570,6 +6610,41 @@ save_DrawTransformFeedbackStreamInstanced(GLenum mode, GLuint name,
+@@ -6570,6 +6573,33 @@ save_DrawTransformFeedbackStreamInstanced(GLenum mode, GLuint name,
     }
  }
  
@@ -102,22 +55,14 @@ index b2b1f723a1..c11b4c06fe 100644
 +save_DispatchComputeIndirect(GLintptr indirect)
 +{
 +   GET_CURRENT_CONTEXT(ctx);
-+   Node *n;
-+   ASSERT_OUTSIDE_SAVE_BEGIN_END_AND_FLUSH(ctx);
-+   n = alloc_instruction(ctx, OPCODE_DISPATCH_COMPUTE_INDIRECT,
-+                         POINTER_DWORDS);
-+   if (n) {
-+      save_intpointer(&n[1], indirect);
-+   }
-+   if (ctx->ExecuteFlag) {
-+      CALL_DispatchComputeIndirect(ctx->Exec, (indirect));
-+   }
++   _mesa_error(ctx, GL_INVALID_OPERATION,
++               "glDispatchComputeIndirect() during display list compile");
 +}
 +
  static void GLAPIENTRY
  save_UseProgram(GLuint program)
  {
-@@ -10429,6 +10504,14 @@ execute_list(struct gl_context *ctx, GLuint list)
+@@ -10429,6 +10459,11 @@ execute_list(struct gl_context *ctx, GLuint list)
              }
              break;
  
@@ -125,14 +70,11 @@ index b2b1f723a1..c11b4c06fe 100644
 +         case OPCODE_DISPATCH_COMPUTE:
 +            CALL_DispatchCompute(ctx->Exec, (n[1].ui, n[2].ui, n[3].ui));
 +            break;
-+         case OPCODE_DISPATCH_COMPUTE_INDIRECT:
-+            CALL_DispatchComputeIndirect(ctx->Exec, (get_intpointer(&n[1])));
-+            break;
 +
           /* GL_ARB_sync */
           case OPCODE_WAIT_SYNC:
              {
-@@ -11138,6 +11221,10 @@ _mesa_initialize_save_table(const struct gl_context *ctx)
+@@ -11138,6 +11173,10 @@ _mesa_initialize_save_table(const struct gl_context *ctx)
     SET_DepthRangeArrayv(table, save_DepthRangeArrayv);
     SET_DepthRangeIndexed(table, save_DepthRangeIndexed);
  

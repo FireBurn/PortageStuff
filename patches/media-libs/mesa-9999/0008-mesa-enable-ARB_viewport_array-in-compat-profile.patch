@@ -1,4 +1,4 @@
-From 5de24b4bce9fc514a9b8073dc129834c86d703d2 Mon Sep 17 00:00:00 2001
+From 767d238ad7f4efd9c96134d17fa729e7c0f220ef Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 20 Jun 2018 13:03:40 +1000
 Subject: [PATCH 08/18] mesa: enable ARB_viewport_array in compat profile
@@ -37,7 +37,7 @@ index e69c6b4df1..1a91785d37 100644
      # GetDoublei_v also GL_ARB_shader_atomic_counters
  
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index cc925eedf8..4cf82beffb 100644
+index 11345febe2..f04fea9e3b 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -182,7 +182,7 @@ EXT(ARB_vertex_program                      , ARB_vertex_program

@@ -1,4 +1,4 @@
-From 8dbea078df8f602f00dc722e306739867df35988 Mon Sep 17 00:00:00 2001
+From 039f5a6b1d482383ad6a094d305563bfa6384e7d Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Tue, 19 Jun 2018 19:35:17 +1000
 Subject: [PATCH 03/18] mesa: enable ARB_gpu_shader_fp64 in compat profile
@@ -9,7 +9,7 @@ Subject: [PATCH 03/18] mesa: enable ARB_gpu_shader_fp64 in compat profile
  2 files changed, 20 insertions(+), 20 deletions(-)
 
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index 7af48a4ad9..7f472ee8c0 100644
+index 7af48a4ad9..5fe2e88fe9 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -76,7 +76,7 @@ EXT(ARB_get_program_binary                  , dummy_true
@@ -17,7 +17,7 @@ index 7af48a4ad9..7f472ee8c0 100644
  EXT(ARB_gl_spirv                            , ARB_gl_spirv                           ,  x,  GLC,  x ,  x , 2016)
  EXT(ARB_gpu_shader5                         , ARB_gpu_shader5                        , GLL, GLC,  x ,  x , 2010)
 -EXT(ARB_gpu_shader_fp64                     , ARB_gpu_shader_fp64                    ,  x , GLC,  x ,  x , 2010)
-+EXT(ARB_gpu_shader_fp64                     , ARB_gpu_shader_fp64                    , GLL, GLC,  x ,  x , 2010)
++EXT(ARB_gpu_shader_fp64                     , ARB_gpu_shader_fp64                    ,  32, GLC,  x ,  x , 2010)
  EXT(ARB_gpu_shader_int64                    , ARB_gpu_shader_int64                   ,  x , GLC,  x ,  x , 2015)
  EXT(ARB_half_float_pixel                    , dummy_true                             , GLL, GLC,  x ,  x , 2003)
  EXT(ARB_half_float_vertex                   , ARB_half_float_vertex                  , GLL, GLC,  x ,  x , 2008)

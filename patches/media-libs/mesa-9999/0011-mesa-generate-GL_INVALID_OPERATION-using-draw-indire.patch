@@ -1,4 +1,4 @@
-From 5f34bf8cccde8e61f26aac83865a45a36941be13 Mon Sep 17 00:00:00 2001
+From 192508b6331b9b28e48f5474b55f4c480adfedd2 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Sat, 23 Jun 2018 12:29:50 +1000
 Subject: [PATCH 11/18] mesa: generate GL_INVALID_OPERATION using draw indirect
@@ -12,10 +12,10 @@ sense to do it for these functions also.
  1 file changed, 47 insertions(+)
 
 diff --git a/src/mesa/main/dlist.c b/src/mesa/main/dlist.c
-index c11b4c06fe..7098f19d84 100644
+index e2ab2eb8aa..5ff0a23018 100644
 --- a/src/mesa/main/dlist.c
 +++ b/src/mesa/main/dlist.c
-@@ -1950,6 +1950,47 @@ save_DrawElementsInstancedBaseVertexBaseInstance(UNUSED GLenum mode,
+@@ -1913,6 +1913,47 @@ save_DrawElementsInstancedBaseVertexBaseInstance(UNUSED GLenum mode,
                 "glDrawElementsInstancedBaseVertexBaseInstance() during display list compile");
  }
  
@@ -63,7 +63,7 @@ index c11b4c06fe..7098f19d84 100644
  
  /**
   * While building a display list we cache some OpenGL state.
-@@ -11458,6 +11499,12 @@ _mesa_initialize_save_table(const struct gl_context *ctx)
+@@ -11410,6 +11451,12 @@ _mesa_initialize_save_table(const struct gl_context *ctx)
     SET_DrawElementsInstancedBaseInstance(table, save_DrawElementsInstancedBaseInstance);
     SET_DrawElementsInstancedBaseVertexBaseInstance(table, save_DrawElementsInstancedBaseVertexBaseInstance);
  

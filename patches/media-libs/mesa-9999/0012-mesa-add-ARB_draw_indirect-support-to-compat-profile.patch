@@ -1,4 +1,4 @@
-From 88330cec4917664a33c454a221d9040b048966f1 Mon Sep 17 00:00:00 2001
+From 04c6f06753e73e6169f3ee76fa49c6e800163cb7 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Sat, 23 Jun 2018 17:09:13 +1000
 Subject: [PATCH 12/18] mesa: add ARB_draw_indirect support to compat profile
@@ -24,7 +24,7 @@ index 67f9cd0a90..1d1e51bc01 100644
           return &ctx->DrawIndirectBuffer;
        }
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index 9100f4a04c..cba1ef6ba7 100644
+index f79a52cee8..1446a4bd42 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -58,7 +58,7 @@ EXT(ARB_direct_state_access                 , dummy_true

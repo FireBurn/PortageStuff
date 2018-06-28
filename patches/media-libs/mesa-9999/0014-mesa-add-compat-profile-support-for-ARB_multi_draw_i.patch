@@ -1,4 +1,4 @@
-From 18805b021387efed7e4a472a1e05658b5869a358 Mon Sep 17 00:00:00 2001
+From 11b9de3b2fc9fe9fa809445f2009fc434f1d2f9e Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Mon, 25 Jun 2018 10:32:58 +1000
 Subject: [PATCH 14/18] mesa: add compat profile support for
@@ -10,7 +10,7 @@ Subject: [PATCH 14/18] mesa: add compat profile support for
  2 files changed, 74 insertions(+), 3 deletions(-)
 
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index cba1ef6ba7..1a4014c646 100644
+index 1446a4bd42..12b796777d 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -88,7 +88,7 @@ EXT(ARB_invalidate_subdata                  , dummy_true

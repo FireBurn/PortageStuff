@@ -1,4 +1,4 @@
-From 11cc19111f34952a7a36cec9a1b54848aa7bd9f5 Mon Sep 17 00:00:00 2001
+From aeee0931d936566767c697ae38d6d8c7f0a704ca Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Mon, 25 Jun 2018 10:31:34 +1000
 Subject: [PATCH 13/18] mesa: make valid_draw_indirect_multi() accessible

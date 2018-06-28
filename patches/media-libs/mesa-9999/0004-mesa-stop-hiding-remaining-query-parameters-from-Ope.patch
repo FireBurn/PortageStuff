@@ -1,4 +1,4 @@
-From cfe3ae2b53f286a0abb1cc3c65d914b2d41eacac Mon Sep 17 00:00:00 2001
+From 054b7bd7f899619f7127414afaa1d10560fb8f14 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 20 Jun 2018 10:16:20 +1000
 Subject: [PATCH 04/18] mesa: stop hiding remaining query parameters from

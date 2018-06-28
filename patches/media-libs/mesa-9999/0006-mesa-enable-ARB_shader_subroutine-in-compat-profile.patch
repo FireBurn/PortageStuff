@@ -1,4 +1,4 @@
-From da4de6f54df93218176b0c68242ff90eb9c2287d Mon Sep 17 00:00:00 2001
+From cd2b328a31dcad6fc500cc294b4aab4f063f40d8 Mon Sep 17 00:00:00 2001
 From: Timothy Arceri <tarceri@itsqueeze.com>
 Date: Wed, 20 Jun 2018 10:55:34 +1000
 Subject: [PATCH 06/18] mesa: enable ARB_shader_subroutine in compat profile
@@ -37,7 +37,7 @@ index 00c8017127..e69c6b4df1 100644
      # OpenGL 4.0 / GL_ARB_gpu_shader_fp64.  The extension spec says:
      #
 diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
-index 7f472ee8c0..cc925eedf8 100644
+index 5fe2e88fe9..11345febe2 100644
 --- a/src/mesa/main/extensions_table.h
 +++ b/src/mesa/main/extensions_table.h
 @@ -123,7 +123,7 @@ EXT(ARB_shader_objects                      , dummy_true
