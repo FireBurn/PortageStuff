@@ -2,8 +2,6 @@
 sys-devel/llvm-common			**
 media-libs/mesa				**
 media-libs/vulkan-demos			**
-<sys-devel/binutils-9999		**
-<sys-libs/binutils-libs-9999		**
 sys-devel/clang				**
 sys-devel/clang-runtime			**
 sys-devel/llvm 				**
