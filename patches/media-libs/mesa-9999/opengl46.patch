@@ -1,0 +1,3014 @@
+diff --git a/src/compiler/Makefile.sources b/src/compiler/Makefile.sources
+index db4dd1e89f4..832111b0b56 100644
+--- a/src/compiler/Makefile.sources
++++ b/src/compiler/Makefile.sources
+@@ -28,9 +28,12 @@ LIBGLSL_FILES = \
+ 	glsl/gl_nir_lower_atomics.c \
+ 	glsl/gl_nir_lower_samplers.c \
+ 	glsl/gl_nir_lower_samplers_as_deref.c \
++	glsl/gl_nir_lower_vulkan_resource_index.c \
+ 	glsl/gl_nir_link_atomics.c \
+ 	glsl/gl_nir_link_uniform_initializers.c \
+ 	glsl/gl_nir_link_uniforms.c \
++	glsl/gl_nir_link_uniform_blocks.c \
++	glsl/gl_nir_link_xfb.c \
+ 	glsl/gl_nir_linker.c \
+ 	glsl/gl_nir_linker.h \
+ 	glsl/gl_nir.h \
+@@ -315,6 +318,8 @@ SPIRV_FILES = \
+ 	spirv/gl_spirv.c \
+ 	spirv/nir_spirv.h \
+ 	spirv/spirv.h \
++	spirv/spirv_extensions.c \
++	spirv/spirv_extensions.h \
+ 	spirv/spirv_info.h \
+ 	spirv/spirv_to_nir.c \
+ 	spirv/vtn_alu.c \
+diff --git a/src/compiler/glsl/gl_nir.h b/src/compiler/glsl/gl_nir.h
+index 59d5f65e659..80f56039952 100644
+--- a/src/compiler/glsl/gl_nir.h
++++ b/src/compiler/glsl/gl_nir.h
+@@ -30,6 +30,7 @@ extern "C" {
+ 
+ struct nir_shader;
+ struct gl_shader_program;
++struct gl_linked_shader;
+ 
+ bool gl_nir_lower_atomics(nir_shader *shader,
+                           const struct gl_shader_program *shader_program,
+@@ -40,6 +41,9 @@ bool gl_nir_lower_samplers(nir_shader *shader,
+ bool gl_nir_lower_samplers_as_deref(nir_shader *shader,
+                                     const struct gl_shader_program *shader_program);
+ 
++bool gl_nir_lower_vulkan_resource_index(nir_shader *shader,
++                                        struct gl_linked_shader *linked_shader);
++
+ #ifdef __cplusplus
+ }
+ #endif
+diff --git a/src/compiler/glsl/gl_nir_link_atomics.c b/src/compiler/glsl/gl_nir_link_atomics.c
+index 887ac1b9d0f..ece0c8de450 100644
+--- a/src/compiler/glsl/gl_nir_link_atomics.c
++++ b/src/compiler/glsl/gl_nir_link_atomics.c
+@@ -131,6 +131,27 @@ process_atomic_variable(const struct glsl_type *t,
+    }
+ }
+ 
++static int
++cmp_actives(const void *a, const void *b)
++{
++   const struct active_atomic_counter_uniform *const first =
++      (struct active_atomic_counter_uniform *) a;
++   const struct active_atomic_counter_uniform *const second =
++      (struct active_atomic_counter_uniform *) b;
++
++   return (int) first->var->data.offset - (int) second->var->data.offset;
++}
++
++static bool
++check_atomic_counters_overlap(const nir_variable *x,
++                              const nir_variable *y)
++{
++   return ((x->data.offset >= y->data.offset &&
++            x->data.offset < y->data.offset + glsl_atomic_size(y->type)) ||
++           (y->data.offset >= x->data.offset &&
++            y->data.offset < x->data.offset + glsl_atomic_size(x->type)));
++}
++
+ static struct active_atomic_buffer *
+ find_active_atomic_counters(struct gl_context *ctx,
+                             struct gl_shader_program *prog,
+@@ -167,6 +188,36 @@ find_active_atomic_counters(struct gl_context *ctx,
+       }
+    }
+ 
++   for (unsigned i = 0; i < ctx->Const.MaxAtomicBufferBindings; i++) {
++      if (buffers[i].size == 0)
++         continue;
++
++      qsort(buffers[i].uniforms,
++            buffers[i].num_uniforms,
++            sizeof (struct active_atomic_counter_uniform),
++            cmp_actives);
++
++      for (unsigned j = 1; j < buffers[i].num_uniforms; j++) {
++         /* If an overlapping counter found, it must be a reference to the
++          * same counter from a different shader stage.
++          *
++          * TODO: What about uniforms with no name?
++          */
++         if (check_atomic_counters_overlap(buffers[i].uniforms[j - 1].var,
++                                           buffers[i].uniforms[j].var) &&
++             buffers[i].uniforms[j - 1].var->name &&
++             buffers[i].uniforms[j].var->name &&
++             strcmp(buffers[i].uniforms[j - 1].var->name,
++                    buffers[i].uniforms[j].var->name) != 0) {
++            linker_error(prog,
++                         "Atomic counter %s declared at offset %d which is "
++                         "already in use.",
++                         buffers[i].uniforms[j].var->name,
++                         buffers[i].uniforms[j].var->data.offset);
++         }
++      }
++   }
++
+    return buffers;
+ }
+ 
+diff --git a/src/compiler/glsl/gl_nir_link_uniform_blocks.c b/src/compiler/glsl/gl_nir_link_uniform_blocks.c
+new file mode 100644
+index 00000000000..0420ca29839
+--- /dev/null
++++ b/src/compiler/glsl/gl_nir_link_uniform_blocks.c
+@@ -0,0 +1,720 @@
++/*
++ * Copyright © 2017 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#include "nir.h"
++#include "gl_nir_linker.h"
++#include "ir_uniform.h" /* for gl_uniform_storage */
++#include "linker_util.h"
++#include "main/shaderobj.h" /* _mesa_delete_linked_shader */
++#include "main/mtypes.h"
++
++/* Summary: This file contains code to do a nir-based linking for uniform
++ * blocks. This includes ubos and ssbos.
++ *
++ * More details:
++ *
++ * 1. Note that it is tailored to ARB_gl_spirv needs. Uniform block name,
++ * fields names, and other names are considered optional debug infor so could
++ * not be present. So the linking should work without it, and it is optional
++ * to not handle them at all. From ARB_gl_spirv:
++ *
++ *    "19. How should the program interface query operations behave for program
++ *         objects created from SPIR-V shaders?
++ *
++ *     DISCUSSION: we previously said we didn't need reflection to work for
++ *     SPIR-V shaders (at least for the first version), however we are left
++ *     with specifying how it should "not work". The primary issue is that
++ *     SPIR-V binaries are not required to have names associated with
++ *     variables. They can be associated in debug information, but there is no
++ *     requirement for that to be present, and it should not be relied upon.
++ *
++ *     Options:
++ *
++ *     <skip>
++ *
++ *    C) Allow as much as possible to work "naturally". You can query for the
++ *    number of active resources, and for details about them. Anything that
++ *    doesn't query by name will work as expected. Queries for maximum length
++ *    of names return one. Queries for anything "by name" return INVALID_INDEX
++ *    (or -1). Querying the name property of a resource returns an empty
++ *    string. This may allow many queries to work, but it's not clear how
++ *    useful it would be if you can't actually know which specific variable
++ *    you are retrieving information on. If everything is specified a-priori
++ *    by location/binding/offset/index/component in the shader, this may be
++ *    sufficient.
++ *
++ *  RESOLVED.  Pick (c), but also allow debug names to be returned if an
++ *  implementation wants to."
++ *
++ * This implemention doesn't care for the names, as the main objective is
++ * functional, and not support optional debug features.
++ *
++ * 2. As mentioned, the code on this file handles both ubo and ssbo. In some
++ * terminology they are called "buffer-backed blocks", and don't consider ssbo
++ * as "real uniforms". And for example, on nir, the mode for ubos are
++ * nir_var_uniform but for ssbo are nir_var_shader_storage.
++ *
++ * But from ARB_gl_spirv spec:
++ *   "Mapping of Storage Classes:
++ *     <skip>
++ *     uniform blockN { ... } ...;  -> Uniform, with Block decoration
++ *     <skip>
++ *     buffer  blockN { ... } ...;  -> Uniform, with BufferBlock decoration"
++ *
++ * Additionally, the GLSL (IR) path is already handling and calling them
++ * uniform blocks (ie: struct gl_uniform_block can be a individual ubo or
++ * ssbo), so for consistency we are doing the same here.
++ *
++ * 3. The code assumes that all structure members have an Offset decoration,
++ * all arrays have an ArrayStride and all matrices have a MatrixStride, even
++ * for nested structures. That way we don’t have to worry about the different
++ * layout modes. This is explicitly required in the SPIR-V spec:
++ *
++ *   "Composite objects in the UniformConstant, Uniform, and PushConstant
++ *    Storage Classes must be explicitly laid out. The following apply to all
++ *    the aggregate and matrix types describing such an object, recursively
++ *    through their nested types:
++ *
++ *    – Each structure-type member must have an Offset Decoration.
++ *    – Each array type must have an ArrayStride Decoration.
++ *    – Each structure-type member that is a matrix or array-of-matrices must
++ *      have be decorated with a MatrixStride Decoration, and one of the
++ *      RowMajor or ColMajor Decorations."
++ *
++ * Additionally, the structure members are expected to be presented in
++ * increasing offset order:
++ *
++ *   "a structure has lower-numbered members appearing at smaller offsets than
++ *    higher-numbered members"
++ */
++
++/*
++ * As we reuse some methods for ubos and ssbos, it is good to mark what we are
++ * handling at each moment.
++ */
++enum block_type {
++   BLOCK_UBO,
++   BLOCK_SSBO
++};
++
++static bool
++_glsl_type_is_leaf(const struct glsl_type *type)
++{
++   if (glsl_type_is_struct(type) ||
++       (glsl_type_is_array(type) &&
++        (glsl_type_is_array(glsl_get_array_element(type)) ||
++         glsl_type_is_struct(glsl_get_array_element(type))))) {
++      return false;
++   } else {
++      return true;
++   }
++}
++
++static unsigned
++_get_type_size(const struct glsl_type *type,
++               bool row_major,
++               enum glsl_interface_packing packing)
++{
++   /* If the type is a struct then the members are supposed to presented in
++    * increasing order of offset so we can just look at the last member.
++    */
++   if (glsl_type_is_struct(type)) {
++      unsigned length = glsl_get_length(type);
++      if (length > 0) {
++         return (glsl_get_struct_field_offset(type, length - 1) +
++                 _get_type_size(glsl_get_struct_field(type, length - 1),
++                                row_major, packing));
++      } else {
++         return 0;
++      }
++   }
++
++   /* FIXME, this is not correct for SPIR-V because in that case the shader
++    * can have completely custom packing with its own array and matrix stride.
++    */
++
++   switch(packing) {
++   case GLSL_INTERFACE_PACKING_STD140:
++      return glsl_type_std140_size(type, row_major);
++   case GLSL_INTERFACE_PACKING_STD430:
++      return glsl_type_std430_size(type, row_major);
++   default:
++      /* gl_spirv doesn't support packed/shared */
++      unreachable("Wrong interface packing");
++   }
++}
++
++static bool
++link_blocks_are_compatible(const struct gl_uniform_block *a,
++                           const struct gl_uniform_block *b)
++{
++   /*
++    * Names on ARB_gl_spirv are optional, so we are ignoring them. So
++    * meanwhile on the equivalent GLSL method the matching is done using the
++    * name, here we use the binding, that for SPIR-V binaries should be
++    * explicit. FIXME: spec quote, still missing, see
++    * https://gitlab.khronos.org/opengl/API/issues/55
++    */
++   if (a->Binding != b->Binding)
++      return false;
++
++   /* We are explicitly ignoring the names, so it would be good to check that
++    * this is happening. TODO: But perhaps this is not the best place for the
++    * assert */
++   assert(a->Name == NULL);
++   assert(b->Name == NULL);
++
++   if (a->NumUniforms != b->NumUniforms)
++      return false;
++
++   if (a->_Packing != b->_Packing)
++      return false;
++
++   if (a->_RowMajor != b->_RowMajor)
++      return false;
++
++   for (unsigned i = 0; i < a->NumUniforms; i++) {
++      if (a->Uniforms[i].Type != b->Uniforms[i].Type)
++         return false;
++
++      if (a->Uniforms[i].RowMajor != b->Uniforms[i].RowMajor)
++         return false;
++
++      /* See comment on previous assert */
++      assert(a->Uniforms[i].Name == NULL);
++      assert(b->Uniforms[i].Name == NULL);
++   }
++
++   return true;
++}
++
++/**
++ * Merges a buffer block into an array of buffer blocks that may or may not
++ * already contain a copy of it.
++ *
++ * Returns the index of the new block in the array.
++ */
++static int
++_link_cross_validate_uniform_block(void *mem_ctx,
++                                   struct gl_uniform_block **linked_blocks,
++                                   unsigned int *num_linked_blocks,
++                                   struct gl_uniform_block *new_block)
++{
++   for (unsigned int i = 0; i < *num_linked_blocks; i++) {
++      struct gl_uniform_block *old_block = &(*linked_blocks)[i];
++
++      if (old_block->Binding == new_block->Binding)
++         return link_blocks_are_compatible(old_block, new_block) ? i : -1;
++   }
++
++   *linked_blocks = reralloc(mem_ctx, *linked_blocks,
++                             struct gl_uniform_block,
++                             *num_linked_blocks + 1);
++   int linked_block_index = (*num_linked_blocks)++;
++   struct gl_uniform_block *linked_block = &(*linked_blocks)[linked_block_index];
++
++   memcpy(linked_block, new_block, sizeof(*new_block));
++   linked_block->Uniforms = ralloc_array(*linked_blocks,
++                                         struct gl_uniform_buffer_variable,
++                                         linked_block->NumUniforms);
++
++   memcpy(linked_block->Uniforms,
++          new_block->Uniforms,
++          sizeof(*linked_block->Uniforms) * linked_block->NumUniforms);
++
++   return linked_block_index;
++}
++
++
++/**
++ * Accumulates the array of buffer blocks and checks that all definitions of
++ * blocks agree on their contents.
++ *
++ * TODO: right now this is really similar to its GLSL counter-part, but
++ * calling our binding-based (instead of name-based)
++ * _link_cross_validate_uniform_block and some C++ cleaning. Candidate for
++ * refactoring.
++ */
++static bool
++_nir_interstage_cross_validate_uniform_blocks(struct gl_shader_program *prog,
++                                              enum block_type block_type)
++{
++   int *InterfaceBlockStageIndex[MESA_SHADER_STAGES];
++   struct gl_uniform_block *blks = NULL;
++   unsigned *num_blks = block_type == BLOCK_SSBO ? &prog->data->NumShaderStorageBlocks :
++      &prog->data->NumUniformBlocks;
++
++   unsigned max_num_buffer_blocks = 0;
++   for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
++      if (prog->_LinkedShaders[i]) {
++         if (block_type == BLOCK_SSBO) {
++            max_num_buffer_blocks +=
++               prog->_LinkedShaders[i]->Program->info.num_ssbos;
++         } else {
++            max_num_buffer_blocks +=
++               prog->_LinkedShaders[i]->Program->info.num_ubos;
++         }
++      }
++   }
++
++   for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
++      struct gl_linked_shader *sh = prog->_LinkedShaders[i];
++
++      InterfaceBlockStageIndex[i] = malloc(max_num_buffer_blocks * sizeof(int));
++      for (unsigned int j = 0; j < max_num_buffer_blocks; j++)
++         InterfaceBlockStageIndex[i][j] = -1;
++
++      if (sh == NULL)
++         continue;
++
++      unsigned sh_num_blocks;
++      struct gl_uniform_block **sh_blks;
++      if (block_type == BLOCK_SSBO) {
++         sh_num_blocks = prog->_LinkedShaders[i]->Program->info.num_ssbos;
++         sh_blks = sh->Program->sh.ShaderStorageBlocks;
++      } else {
++         sh_num_blocks = prog->_LinkedShaders[i]->Program->info.num_ubos;
++         sh_blks = sh->Program->sh.UniformBlocks;
++      }
++
++      for (unsigned int j = 0; j < sh_num_blocks; j++) {
++         int index = _link_cross_validate_uniform_block(prog->data, &blks,
++                                                        num_blks, sh_blks[j]);
++
++         if (index == -1) {
++            /* We use the binding as we are ignoring the names */
++            linker_error(prog, "buffer block with binding `%i' has mismatching "
++                         "definitions\n", sh_blks[j]->Binding);
++
++            for (unsigned k = 0; k <= i; k++) {
++               free(InterfaceBlockStageIndex[k]);
++            }
++
++            /* Reset the block count. This will help avoid various segfaults
++             * from api calls that assume the array exists due to the count
++             * being non-zero.
++             */
++            *num_blks = 0;
++            return false;
++         }
++
++         InterfaceBlockStageIndex[i][index] = j;
++      }
++   }
++
++   /* Update per stage block pointers to point to the program list.
++    */
++   for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
++      for (unsigned j = 0; j < *num_blks; j++) {
++         int stage_index = InterfaceBlockStageIndex[i][j];
++
++         if (stage_index != -1) {
++            struct gl_linked_shader *sh = prog->_LinkedShaders[i];
++
++            struct gl_uniform_block **sh_blks = block_type == BLOCK_SSBO ?
++               sh->Program->sh.ShaderStorageBlocks :
++               sh->Program->sh.UniformBlocks;
++
++            blks[j].stageref |= sh_blks[stage_index]->stageref;
++            sh_blks[stage_index] = &blks[j];
++         }
++      }
++   }
++
++   for (unsigned i = 0; i < MESA_SHADER_STAGES; i++) {
++      free(InterfaceBlockStageIndex[i]);
++   }
++
++   if (block_type == BLOCK_SSBO)
++      prog->data->ShaderStorageBlocks = blks;
++   else
++      prog->data->UniformBlocks = blks;
++
++   return true;
++}
++
++static bool
++_var_is_ubo(nir_variable *var)
++{
++   return (var->data.mode == nir_var_uniform &&
++           var->interface_type != NULL);
++}
++
++static bool
++_var_is_ssbo(nir_variable *var)
++{
++   return (var->data.mode == nir_var_shader_storage);
++}
++
++/*
++ * Iterates @type in order to compute how many individual leaf variables
++ * contains.
++ *
++ * FIXME: probably we want to expand this to a kind of visitor, as with the
++ * glsl linker, as this could be useful for filling the variables of each
++ * block.
++ */
++static void
++iterate_type_count_variables(const struct glsl_type *type,
++                             unsigned int *num_variables)
++{
++   for (unsigned i = 0; i < glsl_get_length(type); i++) {
++      const struct glsl_type *field_type;
++
++      if (glsl_type_is_struct(type))
++         field_type = glsl_get_struct_field(type, i);
++      else
++         field_type = glsl_get_array_element(type);
++
++      /* FIXME: this would the the placeholder for something more generic that
++       * just count variables.
++       */
++      if (_glsl_type_is_leaf(field_type))
++         (*num_variables)++;
++      else
++         iterate_type_count_variables(field_type, num_variables);
++   }
++}
++
++
++static void
++fill_individual_variable(const struct glsl_type *type,
++                         const struct glsl_type *parent_type,
++                         unsigned int index_in_parent,
++                         struct gl_uniform_buffer_variable *variables,
++                         unsigned int *variable_index,
++                         unsigned int *offset,
++                         struct gl_shader_program *prog,
++                         struct gl_uniform_block *block)
++{
++   /* ARB_gl_spirv: allowed to ignore names */
++   variables[*variable_index].Name = NULL;
++   variables[*variable_index].IndexName = NULL;
++
++   variables[*variable_index].Type = type;
++
++   /* FIXME: pending to manage INHERITED, although probably it doesn't make
++    * sense on SPIR-V (see comment at _RowMajor filling) */
++   if (glsl_type_is_matrix(type)) {
++      /* See comments on _RowMajor. RowMajor is a decoration that member
++       * structure type. Right now we are not getting it directly from the type,
++       * but from the parent type (FIXME: that is somewhat out of sync, and
++       * perhaps it should be fixed)
++       */
++      variables[*variable_index].RowMajor =
++         (glsl_get_struct_field_matrix_layout(parent_type, index_in_parent) ==
++          GLSL_MATRIX_LAYOUT_ROW_MAJOR);
++   } else {
++      /* default value, better that potential meaningless garbage */
++      variables[*variable_index].RowMajor = false;
++   }
++
++   /**
++    * Although ARB_gl_spirv points that the offsets need to be included (see
++    * "Mappings of layouts"), in the end those are only valid for
++    * root-variables, and we would need to recompute offsets when we iterate
++    * over non-trivial types, like aoa. So we compute the offset always.
++    */
++   variables[*variable_index].Offset = *offset;
++   (*offset) += _get_type_size(type, variables[*variable_index].RowMajor,
++                               block->_Packing);
++
++   (*variable_index)++;
++}
++
++static void
++iterate_type_fill_variables(const struct glsl_type *type,
++                            struct gl_uniform_buffer_variable *variables,
++                            unsigned int *variable_index,
++                            unsigned int *offset,
++                            struct gl_shader_program *prog,
++                            struct gl_uniform_block *block)
++{
++   unsigned int base_offset = *offset;
++
++   for (unsigned i = 0; i < glsl_get_length(type); i++) {
++      const struct glsl_type *field_type;
++
++      if (glsl_type_is_struct(type)) {
++         field_type = glsl_get_struct_field(type, i);
++         *offset = base_offset + glsl_get_struct_field_offset(type, i);
++      } else {
++         field_type = glsl_get_array_element(type);
++      }
++
++
++      /* FIXME: this would the the placeholder for something more generic that
++       * just fill variables.
++       */
++      if (_glsl_type_is_leaf(field_type)) {
++         fill_individual_variable(field_type, type, i, variables, variable_index, offset, prog, block);
++      } else {
++         iterate_type_fill_variables(field_type, variables, variable_index, offset, prog, block);
++      }
++   }
++}
++
++/*
++ * In opposite to the equivalent glsl one, this one only allocates the needed
++ * space. We do a initial count here, just to avoid re-allocating for each one
++ * we find.
++ */
++static void
++_allocate_uniform_blocks(void *mem_ctx,
++                         struct gl_linked_shader *shader,
++                         struct gl_uniform_block **out_blks, unsigned *num_blocks,
++                         struct gl_uniform_buffer_variable **out_variables, unsigned *num_variables,
++                         enum block_type block_type)
++{
++   *num_variables = 0;
++   *num_blocks = 0;
++
++   nir_foreach_variable(var, &shader->Program->nir->uniforms) {
++      if (block_type == BLOCK_UBO && !_var_is_ubo(var))
++         continue;
++
++      if (block_type == BLOCK_SSBO && !_var_is_ssbo(var))
++         continue;
++
++      const struct glsl_type *type = glsl_without_array(var->type);
++      unsigned aoa_size = glsl_type_arrays_of_arrays_size(var->type);
++      unsigned buffer_count = aoa_size == 0 ? 1 : aoa_size;
++
++      *num_blocks += buffer_count;
++
++      unsigned int block_variables = 0;
++      iterate_type_count_variables(type, &block_variables);
++
++      *num_variables += block_variables * buffer_count;
++   }
++
++   if (*num_blocks == 0) {
++      assert(*num_variables == 0);
++      return;
++   }
++
++   assert(*num_variables != 0);
++
++   struct gl_uniform_block *blocks =
++      rzalloc_array(mem_ctx, struct gl_uniform_block, *num_blocks);
++
++   struct gl_uniform_buffer_variable *variables =
++      ralloc_array(blocks, struct gl_uniform_buffer_variable, *num_variables);
++
++   *out_blks = blocks;
++   *out_variables = variables;
++}
++
++/*
++ * FIXME: reusing this method for both ubo and ssbo, but there are probably
++ * differences pending to take into account (ie std430/std140 on the size),
++ * etc.
++ */
++static void
++_fill_block(struct gl_uniform_block *block,
++            nir_variable *var,
++            struct gl_uniform_buffer_variable *variables,
++            unsigned *variable_index,
++            unsigned array_index,
++            struct gl_shader_program *prog)
++{
++   const struct glsl_type *type = glsl_without_array(var->type);
++
++   block->Name = NULL; /* ARB_gl_spirv: allowed to ignore names */
++   /* From ARB_gl_spirv spec:
++    *    "Vulkan uses only one binding point for a resource array,
++    *     while OpenGL still uses multiple binding points, so binding
++    *     numbers are counted differently for SPIR-V used in Vulkan
++    *     and OpenGL
++    */
++   block->Binding = var->data.binding + array_index;
++   block->Uniforms = &variables[*variable_index];
++
++
++   /* From SPIR-V 1.0 spec, 3.20, Decoration:
++    *    "RowMajor
++    *     Applies only to a member of a structure type.
++    *     Only valid on a matrix or array whose most basic
++    *     element is a matrix. Indicates that components
++    *     within a row are contiguous in memory."
++    *
++    * So the SPIR-V binary doesn't report if the block was defined as RowMajor
++    * or not. In any case, for the components it is mandatory to set it, so it
++    * is not needed a default RowMajor value to know it.
++    *
++    * Setting to the default, but it should be ignored.
++    */
++   block->_RowMajor = false;
++   block->_Packing = glsl_get_interface_packing(type);
++
++   /* FIXME: default values pending to fill  */
++   block->linearized_array_index = 0;
++
++   unsigned old_variable_index = *variable_index;
++   unsigned offset = 0;
++   iterate_type_fill_variables(type, variables, variable_index, &offset, prog, block);
++   block->NumUniforms = *variable_index - old_variable_index;
++
++   block->UniformBufferSize =  _get_type_size(type, block->_RowMajor, block->_Packing);
++   block->UniformBufferSize = glsl_align(block->UniformBufferSize, 16);
++}
++
++/*
++ * Link ubos/ssbos for a given linked_shader/stage.
++ */
++static void
++_link_linked_shader_uniform_blocks(void *mem_ctx,
++                                   struct gl_context *ctx,
++                                   struct gl_shader_program *prog,
++                                   struct gl_linked_shader *shader,
++                                   struct gl_uniform_block **blocks,
++                                   unsigned *num_blocks,
++                                   enum block_type block_type)
++{
++   struct gl_uniform_buffer_variable *variables = NULL;
++
++   /* In opposite to GLSL IR linking we don't compute which uniform blocks are
++    * inactive. From ARB_gl_spirv spec:
++    *   " Removal of features from GLSL, as removed by GL_KHR_vulkan_glsl:
++    *     <skip>
++    *    - *shared* and *packed* block layouts"
++    *
++    * And as std430 was never allowed for ubos, only std140 remains as
++    * allowed. From 4.6 spec (and before), section 7.6, "Uniform Variables":
++    *   "All members of a named uniform block declared with a shared or std140
++    *    layout qualifier are considered active, even if they are not
++    *    referenced in any shader in the program. The uniform block itself is
++    *    also considered active, even if no member of the block is referenced"
++    *
++    * Conclusion: alls ubos coming from a SPIR-V shader should be considered
++    * as active, so we just count them.
++    */
++   unsigned num_variables = 0;
++
++   _allocate_uniform_blocks(mem_ctx, shader,
++                            blocks, num_blocks,
++                            &variables, &num_variables,
++                            block_type);
++
++   /* Fill the content of uniforms and variables */
++   unsigned block_index = 0;
++   unsigned variable_index = 0;
++   struct gl_uniform_block *blks = *blocks;
++
++   nir_foreach_variable(var, &shader->Program->nir->uniforms) {
++      if (block_type == BLOCK_UBO && !_var_is_ubo(var))
++         continue;
++
++      if (block_type == BLOCK_SSBO && !_var_is_ssbo(var))
++         continue;
++
++      unsigned aoa_size = glsl_type_arrays_of_arrays_size(var->type);
++      unsigned buffer_count = aoa_size == 0 ? 1 : aoa_size;
++
++      for (unsigned array_index = 0; array_index < buffer_count; array_index++) {
++         _fill_block(&blks[block_index], var, variables, &variable_index,
++                     array_index, prog);
++         block_index++;
++      }
++   }
++
++   assert(block_index == *num_blocks);
++   assert(variable_index == num_variables);
++}
++
++bool
++gl_nir_link_uniform_blocks(struct gl_context *ctx,
++                           struct gl_shader_program *prog)
++{
++   void *mem_ctx = ralloc_context(NULL); // temporary linker context
++
++   for (int stage = 0; stage < MESA_SHADER_STAGES; stage++) {
++      struct gl_linked_shader *const linked = prog->_LinkedShaders[stage];
++      struct gl_uniform_block *ubo_blocks = NULL;
++      unsigned num_ubo_blocks = 0;
++      struct gl_uniform_block *ssbo_blocks = NULL;
++      unsigned num_ssbo_blocks = 0;
++
++      if (!linked)
++         continue;
++
++      _link_linked_shader_uniform_blocks(mem_ctx, ctx, prog, linked,
++                                         &ubo_blocks, &num_ubo_blocks,
++                                         BLOCK_UBO);
++
++      _link_linked_shader_uniform_blocks(mem_ctx, ctx, prog, linked,
++                                         &ssbo_blocks, &num_ssbo_blocks,
++                                         BLOCK_SSBO);
++
++      if (!prog->data->LinkStatus) {
++         if (linked)
++            _mesa_delete_linked_shader(ctx, linked);
++
++         return false;
++      }
++
++      prog->_LinkedShaders[stage] = linked;
++      prog->data->linked_stages |= 1 << stage;
++
++      /* Copy ubo blocks to linked shader list */
++      linked->Program->sh.UniformBlocks =
++         ralloc_array(linked, struct gl_uniform_block *, num_ubo_blocks);
++      ralloc_steal(linked, ubo_blocks);
++      for (unsigned i = 0; i < num_ubo_blocks; i++) {
++         linked->Program->sh.UniformBlocks[i] = &ubo_blocks[i];
++      }
++      linked->Program->nir->info.num_ubos = num_ubo_blocks;
++      /* This value will get overwritten by the one from nir in
++       * brw_shader_gather_info
++       */
++      linked->Program->info.num_ubos = num_ubo_blocks;
++
++      /* Copy ssbo blocks to linked shader list */
++      linked->Program->sh.ShaderStorageBlocks =
++         ralloc_array(linked, struct gl_uniform_block *, num_ssbo_blocks);
++      ralloc_steal(linked, ssbo_blocks);
++      for (unsigned i = 0; i < num_ssbo_blocks; i++) {
++         linked->Program->sh.ShaderStorageBlocks[i] = &ssbo_blocks[i];
++      }
++      /* See previous comment on num_ubo_blocks
++       *
++       * FIXME: in general this is somewhat ugly. It would be better to try to
++       * find a way to set the info once, and being able to properly gather
++       * the info.
++       */
++      linked->Program->nir->info.num_ssbos = num_ssbo_blocks;
++      linked->Program->info.num_ssbos = num_ssbo_blocks;
++   }
++
++   /* Process UBOs */
++   if (!_nir_interstage_cross_validate_uniform_blocks(prog, BLOCK_UBO)) {
++      return false;
++   }
++
++   /* Process SSBOs */
++   if (!_nir_interstage_cross_validate_uniform_blocks(prog, BLOCK_SSBO)) {
++      return false;
++   }
++
++   return true;
++}
+diff --git a/src/compiler/glsl/gl_nir_link_uniforms.c b/src/compiler/glsl/gl_nir_link_uniforms.c
+index f729fa988e2..969b16fab3d 100644
+--- a/src/compiler/glsl/gl_nir_link_uniforms.c
++++ b/src/compiler/glsl/gl_nir_link_uniforms.c
+@@ -272,6 +272,12 @@ get_next_index(struct nir_link_uniforms_state *state,
+ }
+ 
+ 
++static bool
++_var_is_ssbo(nir_variable *var)
++{
++   return (var->data.mode == nir_var_shader_storage);
++}
++
+ /**
+  * Creates the neccessary entries in UniformStorage for the uniform. Returns
+  * the number of locations used or -1 on failure.
+@@ -365,6 +371,8 @@ nir_link_uniform(struct gl_context *ctx,
+          uniform->remap_location = UNMAPPED_UNIFORM_LOC;
+       }
+ 
++      uniform->is_shader_storage = _var_is_ssbo(state->current_var);
++
+       /* @FIXME: the initialization of the following will be done as we
+        * implement support for their specific features, like SSBO, atomics,
+        * etc.
+@@ -376,7 +384,6 @@ nir_link_uniform(struct gl_context *ctx,
+       uniform->row_major = false;
+       uniform->hidden = false;
+       uniform->builtin = false;
+-      uniform->is_shader_storage = false;
+       uniform->atomic_buffer_index = -1;
+       uniform->top_level_array_size = 0;
+       uniform->top_level_array_stride = 0;
+@@ -443,10 +450,132 @@ nir_link_uniform(struct gl_context *ctx,
+    }
+ }
+ 
++/*
++ * We need this wrapper in order to maintain a new exec_node for a given
++ * nir_variable, as this only maintain one, so can't belong to two different
++ * lists.
++ */
++typedef struct wrapped_variable {
++   struct exec_node node;
++   nir_variable *var;
++} wrapped_variable;
++
++static struct wrapped_variable*
++wrapped_variable_create(void *mem_ctx,
++                          nir_variable *var)
++{
++   wrapped_variable *variable = rzalloc(mem_ctx, wrapped_variable);
++
++   variable->var = var;
++
++   return variable;
++}
++
++
++static nir_variable*
++nir_search_variable(struct exec_list *variables,
++                    unsigned location)
++{
++   foreach_list_typed(wrapped_variable, wrapped_var, node, variables) {
++      if (wrapped_var->var->data.location == location)
++         return wrapped_var->var;
++   }
++   return NULL;
++}
++
++static bool
++nir_uniforms_are_compatible(struct gl_shader_program *prog,
++                            nir_variable *new,
++                            nir_variable *existing)
++{
++   /* FIXME: As we didn't modify how the names are created, right now
++    * spirv_to_nir is bringing the names from SPIR-V to the types. So the
++    * following check would not be true if the names are different on one
++    * stage to the other. That is technically possible as SPIR-V names are
++    * debug. To prevent that we would need to do a type-compatible check that
++    * ignored the name. Avoiding that corner case for now.
++    */
++   if (existing->type != new->type) {
++      linker_error(prog, "uniform with location %i declared as "
++                   "type `%s' and type `%s'\n", new->data.location,
++                   glsl_get_type_name(new->type),
++                   glsl_get_type_name(existing->type));
++
++      return false;
++   }
++
++   return true;
++}
++
++/*
++ * Validate if all the uniforms on different stages are defined in a
++ * consistent way.
++ *
++ * GLSL linker has a more complete validation method, so probably this bit
++ * will be moved later to a more general one.
++ */
++static bool
++nir_cross_validate_uniforms(struct gl_context *ctx,
++                            struct gl_shader_program *prog)
++{
++   /* Already processed variables. GLSL equivalent uses glsl_symbol_table, for
++    * now we just use a list
++    */
++   struct exec_list variables;
++   exec_list_make_empty(&variables);
++
++   for (unsigned stage = 0; stage < MESA_SHADER_STAGES; stage++) {
++      struct gl_linked_shader *sh = prog->_LinkedShaders[stage];
++      if (!sh)
++         continue;
++
++      nir_shader *nir = sh->Program->nir;
++      assert(nir);
++
++      nir_foreach_variable(var, &nir->uniforms) {
++         /* Although in general uniforms should have a explicit location,
++          * there are still cases without them, like UBOs, uniform atomic
++          * counters, etc*/
++         if (var->data.location < 0)
++            continue;
++
++         /* We are not interested on cross-stage uniforms that are implicitly
++          * introduced by the compiler
++          */
++         if (var->data.how_declared == nir_var_hidden)
++            continue;
++
++         /* We search on the list of processed variables if we have a variable
++          * with the same location. We can't use name as GLSL linker, as
++          * SPIR-V names are optional. See issue 12 at ARB_gl_spirv spec.
++          */
++         nir_variable *existing = nir_search_variable(&variables, var->data.location);
++         if (existing != NULL) {
++            if (!nir_uniforms_are_compatible(prog, var, existing)) {
++               return false;
++            }
++         } else {
++            wrapped_variable *wrapper = wrapped_variable_create(ctx, var);
++            exec_list_push_tail(&variables, &wrapper->node);
++         }
++      }
++   }
++
++   exec_list_make_empty(&variables);
++
++   return true;
++}
++
+ bool
+ gl_nir_link_uniforms(struct gl_context *ctx,
+                      struct gl_shader_program *prog)
+ {
++   /* We do an initial cross-validation based on the nir variables, to avoid
++    * the work of creating gl_uniform_storage variables for individual
++    * shaders */
++   if (!nir_cross_validate_uniforms(ctx, prog))
++      return false;
++
+    /* First free up any previous UniformStorage items */
+    ralloc_free(prog->data->UniformStorage);
+    prog->data->UniformStorage = NULL;
+@@ -472,12 +601,20 @@ gl_nir_link_uniforms(struct gl_context *ctx,
+       nir_foreach_variable(var, &nir->uniforms) {
+          struct gl_uniform_storage *uniform = NULL;
+ 
++         if (var->data.how_declared == nir_var_hidden)
++            continue;
++
+          /* Check if the uniform has been processed already for
+           * other stage. If so, validate they are compatible and update
+           * the active stage mask.
+           */
+          uniform = find_previous_uniform_storage(prog, var->data.location);
+          if (uniform) {
++            /* We don't need to check if the previous uniform is compatible
++             * with the current one. That was already done at
++             * nir_cross_validate_uniforms
++             */
++
+             uniform->active_shader_mask |= 1 << shader_type;
+             var->data.location = uniform - prog->data->UniformStorage;
+ 
+diff --git a/src/compiler/glsl/gl_nir_link_xfb.c b/src/compiler/glsl/gl_nir_link_xfb.c
+new file mode 100644
+index 00000000000..7b6106ee1d4
+--- /dev/null
++++ b/src/compiler/glsl/gl_nir_link_xfb.c
+@@ -0,0 +1,289 @@
++/*
++ * Copyright © 2018 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#include "nir.h"
++#include "gl_nir_linker.h"
++#include "ir_uniform.h" /* for gl_uniform_storage */
++#include "linker_util.h"
++#include "main/context.h"
++
++/* This file do the common link for GLSL transform feedback, using NIR,
++ * instead of IR as the counter-part glsl/link_varyings.cpp
++ *
++ * Also note that this is tailored for ARB_gl_spirv needs and particularities
++ */
++
++struct active_xfb_varying {
++   nir_variable *var;
++};
++
++struct active_xfb_buffer {
++   GLuint stride;
++   GLuint num_varyings;
++};
++
++struct active_xfb_varying_array {
++   unsigned num_varyings;
++   unsigned num_outputs;
++   unsigned buffer_size;
++   struct active_xfb_varying *varyings;
++   struct active_xfb_buffer buffers[MAX_FEEDBACK_BUFFERS];
++};
++
++static unsigned
++get_num_outputs(nir_variable *var)
++{
++   return glsl_count_attribute_slots(var->type,
++                                     false /* is_vertex_input */);
++}
++
++static void
++add_xfb_varying(struct active_xfb_varying_array *array,
++                nir_variable *var)
++{
++   if (array->num_varyings >= array->buffer_size) {
++      if (array->buffer_size == 0)
++         array->buffer_size = 1;
++      else
++         array->buffer_size *= 2;
++
++      array->varyings = realloc(array->varyings,
++                                sizeof(*array->varyings) *
++                                array->buffer_size);
++   }
++
++   array->varyings[array->num_varyings].var = var;
++   array->num_varyings++;
++
++   array->num_outputs += get_num_outputs(var);
++}
++
++static int
++cmp_xfb_offset(const void *x_generic, const void *y_generic)
++{
++   const struct active_xfb_varying *x = x_generic;
++   const struct active_xfb_varying *y = y_generic;
++
++   if (x->var->data.xfb_buffer != y->var->data.xfb_buffer)
++      return x->var->data.xfb_buffer - y->var->data.xfb_buffer;
++   return x->var->data.offset - y->var->data.offset;
++}
++
++static void
++get_active_xfb_varyings(struct gl_shader_program *prog,
++                        struct active_xfb_varying_array *array)
++{
++   for (unsigned i = 0; i < MESA_SHADER_STAGES; ++i) {
++      struct gl_linked_shader *sh = prog->_LinkedShaders[i];
++      if (sh == NULL)
++         continue;
++
++      nir_shader *nir = sh->Program->nir;
++
++      nir_foreach_variable(var, &nir->outputs) {
++         if (var->data.explicit_xfb_buffer &&
++             var->data.explicit_xfb_stride &&
++             var->data.xfb_buffer < MAX_FEEDBACK_BUFFERS) {
++            array->buffers[var->data.xfb_buffer].stride =
++               var->data.xfb_stride;
++         }
++
++         if (!var->data.explicit_xfb_buffer ||
++             !var->data.explicit_offset)
++            continue;
++
++         array->buffers[var->data.xfb_buffer].num_varyings++;
++
++         add_xfb_varying(array, var);
++      }
++   }
++
++   qsort(array->varyings,
++         array->num_varyings,
++         sizeof(*array->varyings),
++         cmp_xfb_offset);
++}
++
++static unsigned
++add_varying_outputs(nir_variable *var,
++                    const struct glsl_type *type,
++                    unsigned location_offset,
++                    unsigned dest_offset,
++                    struct gl_transform_feedback_output *output)
++{
++   unsigned num_outputs = 0;
++
++   if (glsl_type_is_array(type) || glsl_type_is_matrix(type)) {
++      unsigned length = glsl_get_length(type);
++      const struct glsl_type *child_type = glsl_get_array_element(type);
++      unsigned component_slots = glsl_get_component_slots(child_type);
++
++      for (unsigned i = 0; i < length; i++) {
++         unsigned child_outputs = add_varying_outputs(var,
++                                                      child_type,
++                                                      location_offset,
++                                                      dest_offset,
++                                                      output + num_outputs);
++         num_outputs += child_outputs;
++         location_offset += child_outputs;
++         dest_offset += component_slots;
++      }
++   } else if (glsl_type_is_struct(type)) {
++      unsigned length = glsl_get_length(type);
++      for (unsigned i = 0; i < length; i++) {
++         const struct glsl_type *child_type = glsl_get_struct_field(type, i);
++         unsigned child_outputs = add_varying_outputs(var,
++                                                      child_type,
++                                                      location_offset,
++                                                      dest_offset,
++                                                      output + num_outputs);
++         num_outputs += child_outputs;
++         location_offset += child_outputs;
++         dest_offset += glsl_get_component_slots(child_type);
++      }
++   } else {
++      unsigned location = var->data.location + location_offset;
++      unsigned location_frac = var->data.location_frac;
++      unsigned num_components = glsl_get_component_slots(type);
++
++      while (num_components > 0) {
++         unsigned output_size = MIN2(num_components, 4 - location_frac);
++
++         output->OutputRegister = location;
++         output->OutputBuffer = var->data.xfb_buffer;
++         output->NumComponents = output_size;
++         output->StreamId = var->data.stream;
++         output->DstOffset = var->data.offset / 4 + dest_offset;
++         output->ComponentOffset = location_frac;
++
++         dest_offset += output_size;
++         num_components -= output_size;
++         num_outputs++;
++         output++;
++         location++;
++         location_frac = 0;
++      }
++   }
++
++   return num_outputs;
++}
++
++void
++gl_nir_link_assign_xfb_resources(struct gl_context *ctx,
++                                 struct gl_shader_program *prog)
++{
++   /* This is intended to work with SPIR-V shaders so it makes the following
++    * assumptions provided by the GL spec:
++    *
++    * - All captured varyings have both an explicit buffer and offset. That
++    *   means that no calculation of the offset is necessary.
++    * - All buffers will have at least one captured varying with an explicit
++    *   stride so there is no need to calculate it.
++    */
++
++   struct gl_program *xfb_prog = prog->last_vert_prog;
++
++   if (xfb_prog == NULL)
++      return;
++
++   /* free existing varyings, if any */
++   for (unsigned i = 0; i < prog->TransformFeedback.NumVarying; i++)
++      free(prog->TransformFeedback.VaryingNames[i]);
++   free(prog->TransformFeedback.VaryingNames);
++
++   struct active_xfb_varying_array array = { 0 };
++
++   get_active_xfb_varyings(prog, &array);
++
++   for (unsigned buf = 0; buf < MAX_FEEDBACK_BUFFERS; buf++)
++      prog->TransformFeedback.BufferStride[buf] = array.buffers[buf].stride;
++   prog->TransformFeedback.BufferMode = GL_INTERLEAVED_ATTRIBS;
++
++   prog->TransformFeedback.NumVarying = array.num_varyings;
++   prog->TransformFeedback.VaryingNames =
++      malloc(sizeof(GLchar *) * array.num_varyings);
++
++   struct gl_transform_feedback_info *linked_xfb =
++      rzalloc(xfb_prog, struct gl_transform_feedback_info);
++   xfb_prog->sh.LinkedTransformFeedback = linked_xfb;
++
++   linked_xfb->Outputs =
++      rzalloc_array(xfb_prog,
++                    struct gl_transform_feedback_output,
++                    array.num_outputs);
++   linked_xfb->NumOutputs = array.num_outputs;
++
++   linked_xfb->Varyings =
++      rzalloc_array(xfb_prog,
++                    struct gl_transform_feedback_varying_info,
++                    array.num_varyings);
++   linked_xfb->NumVarying = array.num_varyings;
++
++   for (unsigned i = 0, output_pos = 0; i < array.num_varyings; i++) {
++      struct nir_variable *var = array.varyings[i].var;
++
++      /* ARB_gl_spirv: names are considered optional debug info, so the linker
++       * needs to work without them, and returning them is optional. For
++       * simplicity we ignore names.
++       */
++      prog->TransformFeedback.VaryingNames[i] = NULL;
++
++      struct gl_transform_feedback_output *output =
++         linked_xfb->Outputs + output_pos;
++      unsigned varying_outputs = add_varying_outputs(var,
++                                                     var->type,
++                                                     0, /* location_offset */
++                                                     0, /* dest_offset */
++                                                     output);
++      assert(varying_outputs == get_num_outputs(var));
++      output_pos += varying_outputs;
++
++      struct gl_transform_feedback_varying_info *varying =
++         linked_xfb->Varyings + i;
++
++      /* ARB_gl_spirv: see above. */
++      varying->Name = NULL;
++      varying->Type = glsl_get_gl_type(var->type);
++      varying->BufferIndex = var->data.xfb_buffer;
++      varying->Size = glsl_get_length(var->type);
++      varying->Offset = var->data.offset;
++   }
++
++   /* Make sure MaxTransformFeedbackBuffers is <= 32 so the bitmask for
++    * tracking the number of buffers doesn't overflow.
++    */
++   unsigned buffers = 0;
++   assert(ctx->Const.MaxTransformFeedbackBuffers <= sizeof(buffers) * 8);
++
++   for (unsigned buf = 0; buf < MAX_FEEDBACK_BUFFERS; buf++) {
++      if (array.buffers[buf].stride > 0) {
++         linked_xfb->Buffers[buf].Stride = array.buffers[buf].stride / 4;
++         linked_xfb->Buffers[buf].NumVaryings = array.buffers[buf].num_varyings;
++         buffers |= 1 << buf;
++      }
++   }
++
++   linked_xfb->ActiveBuffers = buffers;
++
++   free(array.varyings);
++}
+diff --git a/src/compiler/glsl/gl_nir_linker.c b/src/compiler/glsl/gl_nir_linker.c
+index d09a2c0a6c5..dcce1b6edb6 100644
+--- a/src/compiler/glsl/gl_nir_linker.c
++++ b/src/compiler/glsl/gl_nir_linker.c
+@@ -56,12 +56,55 @@ nir_build_program_resource_list(struct gl_context *ctx,
+    for (unsigned i = 0; i < prog->data->NumUniformStorage; i++) {
+       struct gl_uniform_storage *uniform = &prog->data->UniformStorage[i];
+ 
++      /* FIXME: ubo and ssbo resource count is different. Here is missing a
++       * equivalent to should_add_buffer_variable (linker.cpp)
++       */
+       if (!link_util_add_program_resource(prog, resource_set, GL_UNIFORM, uniform,
+                                           uniform->active_shader_mask)) {
+          return;
+       }
+    }
+ 
++   /* Add inputs */
++   struct gl_linked_shader *sh = prog->_LinkedShaders[MESA_SHADER_VERTEX];
++   if (sh) {
++      nir_shader *nir = sh->Program->nir;
++      assert(nir);
++
++      nir_foreach_variable(var, &nir->inputs) {
++         struct gl_shader_variable *sh_var =
++            rzalloc(prog, struct gl_shader_variable);
++
++         /* ARB_gl_spirv: names are considered optional debug info, so the linker
++          * needs to work without them, and returning them is optional. For
++          * simplicity we ignore names.
++          */
++         sh_var->name = NULL;
++         sh_var->type = var->type;
++         sh_var->location = var->data.location;
++
++         /* @TODO: Fill in the rest of gl_shader_variable data. */
++
++         if (!link_util_add_program_resource(prog, resource_set, GL_PROGRAM_INPUT,
++                                             sh_var, 1 << MESA_SHADER_VERTEX)) {
++            return;
++         }
++      }
++   }
++
++   /* Add program uniform blocks. */
++   for (unsigned i = 0; i < prog->data->NumUniformBlocks; i++) {
++      if (!link_util_add_program_resource(prog, resource_set, GL_UNIFORM_BLOCK,
++                                          &prog->data->UniformBlocks[i], 0))
++         return;
++   }
++
++   /* Add program shader storage blocks. */
++   for (unsigned i = 0; i < prog->data->NumShaderStorageBlocks; i++) {
++      if (!link_util_add_program_resource(prog, resource_set, GL_SHADER_STORAGE_BLOCK,
++                                          &prog->data->ShaderStorageBlocks[i], 0))
++         return;
++   }
+ 
+    _mesa_set_destroy(resource_set, NULL);
+ }
+diff --git a/src/compiler/glsl/gl_nir_linker.h b/src/compiler/glsl/gl_nir_linker.h
+index e1d493071ea..86de54ecc2c 100644
+--- a/src/compiler/glsl/gl_nir_linker.h
++++ b/src/compiler/glsl/gl_nir_linker.h
+@@ -43,6 +43,12 @@ void nir_build_program_resource_list(struct gl_context *ctx,
+ void gl_nir_link_assign_atomic_counter_resources(struct gl_context *ctx,
+                                                  struct gl_shader_program *prog);
+ 
++bool gl_nir_link_uniform_blocks(struct gl_context *ctx,
++                                struct gl_shader_program *prog);
++
++void gl_nir_link_assign_xfb_resources(struct gl_context *ctx,
++                                      struct gl_shader_program *prog);
++
+ #ifdef __cplusplus
+ } /* extern "C" */
+ #endif
+diff --git a/src/compiler/glsl/gl_nir_lower_vulkan_resource_index.c b/src/compiler/glsl/gl_nir_lower_vulkan_resource_index.c
+new file mode 100644
+index 00000000000..561d2a03de2
+--- /dev/null
++++ b/src/compiler/glsl/gl_nir_lower_vulkan_resource_index.c
+@@ -0,0 +1,163 @@
++/*
++ * Copyright © 2018 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ *
++ * Authors:
++ *    Neil Roberts (nroberts@igalia.com)
++ *
++ */
++
++#include "nir.h"
++#include "gl_nir.h"
++#include "nir_builder.h"
++#include "main/mtypes.h"
++
++/*
++ * This pass lowers the vulkan_resource_index intrinsic to a surface index. It
++ * is intended to be used with GL_ARB_gl_spirv. Unlike Vulkan, in that case it
++ * is not necessary to wait for the complete pipeline state to lower it.
++ */
++
++static unsigned
++find_block_by_binding(unsigned num_blocks,
++                      struct gl_uniform_block **blocks,
++                      unsigned binding)
++{
++   for (unsigned i = 0; i < num_blocks; i++) {
++      if (blocks[i]->Binding == binding)
++         return i;
++   }
++
++   unreachable("No block found with the given binding");
++}
++
++static bool
++find_intrinsic_usage(nir_ssa_def *def,
++                     bool *is_ubo_usage)
++{
++   nir_foreach_use_safe(use_src, def) {
++      if (use_src->parent_instr->type == nir_instr_type_alu) {
++         nir_alu_instr *alu = nir_instr_as_alu(use_src->parent_instr);
++
++         if (find_intrinsic_usage(&alu->dest.dest.ssa, is_ubo_usage))
++            return true;
++
++         continue;
++      }
++
++      if (use_src->parent_instr->type != nir_instr_type_intrinsic)
++         continue;
++
++      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(use_src->parent_instr);
++
++      if (intr == NULL)
++         continue;
++
++      *is_ubo_usage = intr->intrinsic == nir_intrinsic_load_ubo;
++      return true;
++   }
++
++   return false;
++}
++
++static bool
++convert_block(nir_block *block,
++              struct gl_linked_shader *linked_shader,
++              nir_builder *b)
++{
++   bool progress = false;
++
++   nir_foreach_instr_safe(instr, block) {
++      if (instr->type != nir_instr_type_intrinsic)
++         continue;
++
++      nir_intrinsic_instr *res_index = nir_instr_as_intrinsic(instr);
++
++      if (res_index->intrinsic != nir_intrinsic_vulkan_resource_index)
++         continue;
++
++      bool is_ubo_usage;
++      if (!find_intrinsic_usage(&res_index->dest.ssa, &is_ubo_usage))
++         continue;
++
++      b->cursor = nir_after_instr(instr);
++
++      /* The descriptor set should always be zero for GL */
++      assert(nir_intrinsic_desc_set(res_index) == 0);
++      unsigned binding = nir_intrinsic_binding(res_index);
++
++      unsigned num_blocks;
++      struct gl_uniform_block **blocks;
++
++      if (is_ubo_usage) {
++         num_blocks = linked_shader->Program->info.num_ubos;
++         blocks = linked_shader->Program->sh.UniformBlocks;
++      } else {
++         num_blocks = linked_shader->Program->info.num_ssbos;
++         blocks = linked_shader->Program->sh.ShaderStorageBlocks;
++      }
++
++      unsigned block = find_block_by_binding(num_blocks, blocks, binding);
++
++      nir_ssa_def *surface =
++         nir_iadd(b,
++                  nir_imm_int(b, block),
++                  nir_ssa_for_src(b, res_index->src[0], 1));
++
++      nir_ssa_def_rewrite_uses(&res_index->dest.ssa, nir_src_for_ssa(surface));
++      nir_instr_remove(instr);
++
++      progress = true;
++   }
++
++   return progress;
++}
++
++static bool
++convert_impl(nir_function_impl *impl,
++             struct gl_linked_shader *linked_shader)
++{
++   bool progress = false;
++   nir_builder builder;
++   nir_builder_init(&builder, impl);
++
++   nir_foreach_block(block, impl) {
++      progress |= convert_block(block, linked_shader, &builder);
++   }
++
++   nir_metadata_preserve(impl, nir_metadata_block_index |
++                               nir_metadata_dominance);
++   return progress;
++}
++
++bool
++gl_nir_lower_vulkan_resource_index(nir_shader *shader,
++                                   struct gl_linked_shader *linked_shader)
++{
++   bool progress = false;
++
++   nir_foreach_function(function, shader) {
++      if (function->impl)
++         progress = convert_impl(function->impl, linked_shader) || progress;
++   }
++
++   return progress;
++}
+diff --git a/src/compiler/glsl/glsl_to_nir.cpp b/src/compiler/glsl/glsl_to_nir.cpp
+index 2d76c7e6cfe..b1d1da89111 100644
+--- a/src/compiler/glsl/glsl_to_nir.cpp
++++ b/src/compiler/glsl/glsl_to_nir.cpp
+@@ -128,23 +128,6 @@ private:
+ 
+ } /* end of anonymous namespace */
+ 
+-static void
+-nir_remap_attributes(nir_shader *shader,
+-                     const nir_shader_compiler_options *options)
+-{
+-   if (options->vs_inputs_dual_locations) {
+-      nir_foreach_variable(var, &shader->inputs) {
+-         var->data.location +=
+-            _mesa_bitcount_64(shader->info.vs.double_inputs &
+-                              BITFIELD64_MASK(var->data.location));
+-      }
+-   }
+-
+-   /* Once the remap is done, reset double_inputs_read, so later it will have
+-    * which location/slots are doubles */
+-   shader->info.vs.double_inputs = 0;
+-}
+-
+ nir_shader *
+ glsl_to_nir(const struct gl_shader_program *shader_prog,
+             gl_shader_stage stage,
+@@ -440,6 +423,10 @@ nir_visitor::visit(ir_variable *ir)
+    var->data.image.restrict_flag = ir->data.memory_restrict;
+    var->data.image.format = ir->data.image_format;
+    var->data.fb_fetch_output = ir->data.fb_fetch_output;
++   var->data.explicit_xfb_buffer = ir->data.explicit_xfb_buffer;
++   var->data.explicit_xfb_stride = ir->data.explicit_xfb_stride;
++   var->data.xfb_buffer = ir->data.xfb_buffer;
++   var->data.xfb_stride = ir->data.xfb_stride;
+ 
+    var->num_state_slots = ir->get_num_state_slots();
+    if (var->num_state_slots > 0) {
+diff --git a/src/compiler/glsl/meson.build b/src/compiler/glsl/meson.build
+index 96536b80168..5c77b67074c 100644
+--- a/src/compiler/glsl/meson.build
++++ b/src/compiler/glsl/meson.build
+@@ -69,9 +69,12 @@ files_libglsl = files(
+   'gl_nir_lower_atomics.c',
+   'gl_nir_lower_samplers.c',
+   'gl_nir_lower_samplers_as_deref.c',
++  'gl_nir_lower_vulkan_resource_index.c',
+   'gl_nir_link_atomics.c',
+   'gl_nir_link_uniform_initializers.c',
+   'gl_nir_link_uniforms.c',
++  'gl_nir_link_uniform_blocks.c',
++  'gl_nir_link_xfb.c',
+   'gl_nir_linker.c',
+   'gl_nir_linker.h',
+   'gl_nir.h',
+diff --git a/src/compiler/glsl_types.cpp b/src/compiler/glsl_types.cpp
+index d11c365e191..e59396606cd 100644
+--- a/src/compiler/glsl_types.cpp
++++ b/src/compiler/glsl_types.cpp
+@@ -1699,12 +1699,18 @@ glsl_type::std140_size(bool row_major) const
+          const struct glsl_type *field_type = this->fields.structure[i].type;
+          unsigned align = field_type->std140_base_alignment(field_row_major);
+ 
+-         /* Ignore unsized arrays when calculating size */
+-         if (field_type->is_unsized_array())
+-            continue;
++         const struct glsl_type *type_for_size = field_type;
++         if (field_type->is_unsized_array()) {
++            if (i < this->length - 1) {
++               /* only the last element can be an unsized array */
++               assert(!"unsized array is not the final element");
++               return -1;
++            }
++            type_for_size = field_type->fields.array;
++         }
+ 
+          size = glsl_align(size, align);
+-         size += field_type->std140_size(field_row_major);
++         size += type_for_size->std140_size(field_row_major);
+ 
+          max_align = MAX2(align, max_align);
+ 
+@@ -1917,8 +1923,19 @@ glsl_type::std430_size(bool row_major) const
+ 
+          const struct glsl_type *field_type = this->fields.structure[i].type;
+          unsigned align = field_type->std430_base_alignment(field_row_major);
++
++         const struct glsl_type *type_for_size = field_type;
++         if (field_type->is_unsized_array()) {
++            if (i < this->length - 1) {
++               /* only the last element can be an unsized array */
++               assert(!"unsized array is not the final element");
++               return -1;
++            }
++            type_for_size = field_type->fields.array;
++         }
++
+          size = glsl_align(size, align);
+-         size += field_type->std430_size(field_row_major);
++         size += type_for_size->std430_size(field_row_major);
+ 
+          max_align = MAX2(align, max_align);
+       }
+diff --git a/src/compiler/nir/meson.build b/src/compiler/nir/meson.build
+index 28aa8de7014..bff69931de2 100644
+--- a/src/compiler/nir/meson.build
++++ b/src/compiler/nir/meson.build
+@@ -193,6 +193,8 @@ files_libnir = files(
+   '../spirv/gl_spirv.c',
+   '../spirv/nir_spirv.h',
+   '../spirv/spirv.h',
++  '../spirv/spirv_extensions.c',
++  '../spirv/spirv_extensions.h',
+   '../spirv/spirv_info.h',
+   '../spirv/spirv_to_nir.c',
+   '../spirv/vtn_alu.c',
+diff --git a/src/compiler/nir/nir.c b/src/compiler/nir/nir.c
+index c515a30b626..0effac9d2f4 100644
+--- a/src/compiler/nir/nir.c
++++ b/src/compiler/nir/nir.c
+@@ -32,6 +32,9 @@
+ #include <assert.h>
+ #include <math.h>
+ 
++#include "main/imports.h"
++#include "main/mtypes.h"
++
+ nir_shader *
+ nir_shader_create(void *mem_ctx,
+                   gl_shader_stage stage,
+@@ -162,6 +165,7 @@ nir_variable_create(nir_shader *shader, nir_variable_mode mode,
+    var->name = ralloc_strdup(var, name);
+    var->type = type;
+    var->data.mode = mode;
++   var->data.how_declared = nir_var_declared_normally;
+ 
+    if ((mode == nir_var_shader_in &&
+         shader->info.stage != MESA_SHADER_VERTEX) ||
+@@ -1843,3 +1847,24 @@ nir_system_value_from_intrinsic(nir_intrinsic_op intrin)
+       unreachable("intrinsic doesn't produce a system value");
+    }
+ }
++
++/* OpenGL utility method that remaps the location attributes if they are
++ * doubles. Not needed for vulkan due the differences on the input location
++ * count for doubles on vulkan vs OpenGL
++ */
++void
++nir_remap_attributes(nir_shader *shader,
++                     const nir_shader_compiler_options *options)
++{
++   if (options->vs_inputs_dual_locations) {
++      nir_foreach_variable(var, &shader->inputs) {
++         var->data.location +=
++            _mesa_bitcount_64(shader->info.vs.double_inputs &
++                              BITFIELD64_MASK(var->data.location));
++      }
++   }
++
++   /* Once the remap is done, reset double_inputs_read, so later it will have
++    * which location/slots are doubles */
++   shader->info.vs.double_inputs = 0;
++}
+diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
+index 92ab3a699cc..0797d11ea85 100644
+--- a/src/compiler/nir/nir.h
++++ b/src/compiler/nir/nir.h
+@@ -160,6 +160,22 @@ typedef enum {
+     nir_depth_layout_unchanged
+ } nir_depth_layout;
+ 
++/**
++ * Enum keeping track of how a variable was declared.
++ */
++typedef enum {
++   /**
++    * Normal declaration.
++    */
++   nir_var_declared_normally = 0,
++
++   /**
++    * Variable is implicitly generated by the compiler and should not be
++    * visible via the API.
++    */
++   nir_var_hidden,
++} nir_var_declaration_type;
++
+ /**
+  * Either a uniform, global variable, shader input, or shader output. Based on
+  * ir_variable - it should be easy to translate between the two.
+@@ -257,6 +273,21 @@ typedef struct nir_variable {
+        */
+       unsigned explicit_binding:1;
+ 
++      /**
++       * Was a transfer feedback buffer set in the shader?
++       */
++      unsigned explicit_xfb_buffer:1;
++
++      /**
++       * Was a transfer feedback stride set in the shader?
++       */
++      unsigned explicit_xfb_stride:1;
++
++      /**
++       * Was an explicit offset set in the shader?
++       */
++      unsigned explicit_offset:1;
++
+       /**
+        * \brief Layout qualifier for gl_FragDepth.
+        *
+@@ -318,10 +349,28 @@ typedef struct nir_variable {
+       int binding;
+ 
+       /**
+-       * Location an atomic counter is stored at.
++       * Location an atomic counter or transform feedback is stored at.
+        */
+       unsigned offset;
+ 
++      /**
++       * Transform feedback buffer.
++       */
++      unsigned xfb_buffer;
++
++      /**
++       * Transform feedback stride.
++       */
++      unsigned xfb_stride;
++
++      /**
++       * How the variable was declared.  See nir_var_declaration_type.
++       *
++       * This is used to detect variables generated by the compiler, so should
++       * not be visible via the API.
++       */
++      unsigned how_declared:2;
++
+       /**
+        * ARB_shader_image_load_store qualifiers.
+        */
+@@ -2930,6 +2979,9 @@ bool nir_opt_conditional_discard(nir_shader *shader);
+ 
+ void nir_sweep(nir_shader *shader);
+ 
++void nir_remap_attributes(nir_shader *shader,
++                          const nir_shader_compiler_options *options);
++
+ nir_intrinsic_op nir_intrinsic_from_system_value(gl_system_value val);
+ gl_system_value nir_system_value_from_intrinsic(nir_intrinsic_op intrin);
+ 
+diff --git a/src/compiler/nir/nir_lower_wpos_ytransform.c b/src/compiler/nir/nir_lower_wpos_ytransform.c
+index f6f642c8cf9..f7117b1f5ad 100644
+--- a/src/compiler/nir/nir_lower_wpos_ytransform.c
++++ b/src/compiler/nir/nir_lower_wpos_ytransform.c
+@@ -61,7 +61,7 @@ get_transform(lower_wpos_ytransform_state *state)
+       var->state_slots[0].swizzle = SWIZZLE_XYZW;
+       memcpy(var->state_slots[0].tokens, state->options->state_tokens,
+              sizeof(var->state_slots[0].tokens));
+-
++      var->data.how_declared = nir_var_hidden;
+       state->transform = var;
+    }
+    return nir_load_var(&state->b, state->transform);
+diff --git a/src/compiler/nir_types.cpp b/src/compiler/nir_types.cpp
+index 6f1182b742c..bc5e2b6cb0f 100644
+--- a/src/compiler/nir_types.cpp
++++ b/src/compiler/nir_types.cpp
+@@ -63,10 +63,26 @@ glsl_get_struct_field(const glsl_type *type, unsigned index)
+    return type->fields.structure[index].type;
+ }
+ 
++const int
++glsl_get_struct_field_offset(const struct glsl_type *type,
++                             unsigned index)
++{
++   return type->fields.structure[index].offset;
++}
++
++const unsigned
++glsl_get_struct_field_matrix_layout(const struct glsl_type *type,
++                                    unsigned index)
++{
++   return type->fields.structure[index].matrix_layout;
++}
++
++
+ const glsl_type *
+ glsl_get_function_return_type(const glsl_type *type)
+ {
+    return type->fields.parameters[0].type;
++
+ }
+ 
+ const glsl_function_param *
+@@ -81,6 +97,12 @@ glsl_get_column_type(const struct glsl_type *type)
+    return type->column_type();
+ }
+ 
++GLenum
++glsl_get_gl_type(const struct glsl_type *type)
++{
++   return type->gl_type;
++}
++
+ enum glsl_base_type
+ glsl_get_base_type(const struct glsl_type *type)
+ {
+@@ -551,3 +573,35 @@ glsl_contains_atomic(const struct glsl_type *type)
+ {
+    return type->contains_atomic();
+ }
++
++enum glsl_interface_packing
++glsl_get_interface_packing(const struct glsl_type *type)
++{
++   return type->get_interface_packing();
++}
++
++bool
++glsl_get_row_major(const struct glsl_type *type)
++{
++   return type->get_interface_row_major();
++}
++
++unsigned
++glsl_type_arrays_of_arrays_size(const struct glsl_type *type)
++{
++   return type->arrays_of_arrays_size();
++}
++
++unsigned
++glsl_type_std430_size(const struct glsl_type *type,
++                      bool row_major)
++{
++   return type->std430_size(row_major);
++}
++
++unsigned
++glsl_type_std140_size(const struct glsl_type *type,
++                      bool row_major)
++{
++   return type->std140_size(row_major);
++}
+diff --git a/src/compiler/nir_types.h b/src/compiler/nir_types.h
+index c128250c7d3..ab51b5ad2a4 100644
+--- a/src/compiler/nir_types.h
++++ b/src/compiler/nir_types.h
+@@ -46,6 +46,11 @@ const char *glsl_get_type_name(const struct glsl_type *type);
+ const struct glsl_type *glsl_get_struct_field(const struct glsl_type *type,
+                                               unsigned index);
+ 
++const int glsl_get_struct_field_offset(const struct glsl_type *type,
++                                       unsigned index);
++
++const unsigned glsl_get_struct_field_matrix_layout(const struct glsl_type *type,
++                                                   unsigned index);
+ const struct glsl_type *glsl_get_array_element(const struct glsl_type *type);
+ const struct glsl_type *glsl_without_array(const struct glsl_type *type);
+ const struct glsl_type *glsl_get_array_instance(const struct glsl_type *type,
+@@ -59,6 +64,8 @@ glsl_get_function_return_type(const struct glsl_type *type);
+ const struct glsl_function_param *
+ glsl_get_function_param(const struct glsl_type *type, unsigned index);
+ 
++GLenum glsl_get_gl_type(const struct glsl_type *type);
++
+ enum glsl_base_type glsl_get_base_type(const struct glsl_type *type);
+ 
+ unsigned glsl_get_vector_elements(const struct glsl_type *type);
+@@ -87,6 +94,15 @@ unsigned glsl_get_record_location_offset(const struct glsl_type *type,
+ 
+ unsigned glsl_atomic_size(const struct glsl_type *type);
+ 
++enum glsl_interface_packing glsl_get_interface_packing(const struct glsl_type *type);
++
++bool glsl_get_row_major(const struct glsl_type *type);
++
++unsigned glsl_type_arrays_of_arrays_size(const struct glsl_type *type);
++
++unsigned glsl_type_std430_size(const struct glsl_type *type, bool row_major);
++unsigned glsl_type_std140_size(const struct glsl_type *type, bool row_major);
++
+ static inline unsigned
+ glsl_get_bit_size(const struct glsl_type *type)
+ {
+diff --git a/src/compiler/spirv/nir_spirv.h b/src/compiler/spirv/nir_spirv.h
+index d2766abb7f9..6759b2fe9fb 100644
+--- a/src/compiler/spirv/nir_spirv.h
++++ b/src/compiler/spirv/nir_spirv.h
+@@ -68,6 +68,8 @@ struct spirv_to_nir_options {
+                    const char *message);
+       void *private_data;
+    } debug;
++
++   bool arb_gl_spirv;
+ };
+ 
+ bool gl_spirv_validation(const uint32_t *words, size_t word_count,
+diff --git a/src/compiler/spirv/spirv_extensions.c b/src/compiler/spirv/spirv_extensions.c
+new file mode 100644
+index 00000000000..6a7e8e4fe11
+--- /dev/null
++++ b/src/compiler/spirv/spirv_extensions.c
+@@ -0,0 +1,80 @@
++/*
++ * Copyright © 2017 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#include <stdbool.h>
++#include "spirv_extensions.h"
++#include "util/macros.h"
++
++const char *
++spirv_extensions_to_string(enum SpvExtension ext)
++{
++#define STR(x) case x: return #x;
++   switch (ext) {
++   STR(SPV_KHR_16bit_storage);
++   STR(SPV_KHR_device_group);
++   STR(SPV_KHR_multiview);
++   STR(SPV_KHR_shader_ballot);
++   STR(SPV_KHR_shader_draw_parameters);
++   STR(SPV_KHR_storage_buffer_storage_class);
++   STR(SPV_KHR_subgroup_vote);
++   STR(SPV_KHR_variable_pointers);
++   STR(SPV_AMD_gcn_shader);
++   case SPV_EXTENSIONS_COUNT:
++      unreachable("Unknown SPIR-V extension");
++   }
++#undef STR
++
++   return "unknown";
++}
++
++/**
++ * Sets the supported flags for known SPIR-V extensions based on the
++ * capabilites supported (spirv capabilities based on the spirv to nir
++ * support).
++ *
++ * One could argue that makes more sense in the other way around, as from the
++ * spec pov capabilities are enable for a given extension. But from our pov,
++ * we support or not (depending on the driver) some given capability, and
++ * spirv_to_nir check for capabilities not extensions. Also we usually fill
++ * first the supported capabilities, that are not always related to an
++ * extension.
++ */
++void
++spirv_fill_supported_spirv_extensions(struct spirv_supported_extensions *ext,
++                                      const struct spirv_supported_capabilities *cap)
++{
++   for (unsigned i = 0; i < SPV_EXTENSIONS_COUNT; i++)
++      ext->supported[i] = false;
++
++   ext->count = 0;
++
++   ext->supported[SPV_KHR_shader_draw_parameters] = cap->draw_parameters;
++   ext->supported[SPV_KHR_multiview] = cap->multiview;
++   ext->supported[SPV_KHR_variable_pointers] = cap->variable_pointers;
++   ext->supported[SPV_AMD_gcn_shader] = cap->gcn_shader;
++
++   for (unsigned i = 0; i < SPV_EXTENSIONS_COUNT; i++) {
++      if (ext->supported[i])
++         ext->count++;
++   }
++}
+diff --git a/src/compiler/spirv/spirv_extensions.h b/src/compiler/spirv/spirv_extensions.h
+new file mode 100644
+index 00000000000..80a5a4699e9
+--- /dev/null
++++ b/src/compiler/spirv/spirv_extensions.h
+@@ -0,0 +1,63 @@
++/*
++ * Copyright © 2017 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
++ * and/or sell copies of the Software, and to permit persons to whom the
++ * Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
++ * IN THE SOFTWARE.
++ */
++
++#ifndef _SPIRV_EXTENSIONS_H_
++#define _SPIRV_EXTENSIONS_H_
++
++#include "compiler/shader_info.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++enum SpvExtension {
++   SPV_KHR_16bit_storage = 0,
++   SPV_KHR_device_group,
++   SPV_KHR_multiview,
++   SPV_KHR_shader_ballot,
++   SPV_KHR_shader_draw_parameters,
++   SPV_KHR_storage_buffer_storage_class,
++   SPV_KHR_subgroup_vote,
++   SPV_KHR_variable_pointers,
++   SPV_AMD_gcn_shader,
++   SPV_EXTENSIONS_COUNT
++};
++
++struct spirv_supported_extensions {
++   /** Flags the supported extensions. Array to make it easier to iterate. */
++   bool supported[SPV_EXTENSIONS_COUNT];
++
++   /** Number of supported extensions */
++   unsigned int count;
++};
++
++const char *spirv_extensions_to_string(enum SpvExtension ext);
++
++void spirv_fill_supported_spirv_extensions(struct spirv_supported_extensions *ext,
++                                           const struct spirv_supported_capabilities *cap);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* SPIRV_EXTENSIONS */
+diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
+index 80a35b1b750..c3a87efd73a 100644
+--- a/src/compiler/spirv/spirv_to_nir.c
++++ b/src/compiler/spirv/spirv_to_nir.c
+@@ -715,7 +715,7 @@ struct_member_decoration_cb(struct vtn_builder *b,
+       ctx->type->builtin_block = true;
+       break;
+    case SpvDecorationOffset:
+-      ctx->type->offsets[member] = dec->literals[0];
++      ctx->type->offsets[member] = ctx->fields[member].offset = dec->literals[0];
+       break;
+    case SpvDecorationMatrixStride:
+       /* Handled as a second pass */
+@@ -724,6 +724,7 @@ struct_member_decoration_cb(struct vtn_builder *b,
+       break; /* Nothing to do here.  Column-major is the default. */
+    case SpvDecorationRowMajor:
+       mutable_matrix_member(b, ctx->type, member)->row_major = true;
++      ctx->fields[member].matrix_layout = GLSL_MATRIX_LAYOUT_ROW_MAJOR;
+       break;
+ 
+    case SpvDecorationPatch:
+@@ -3177,6 +3178,7 @@ vtn_handle_barrier(struct vtn_builder *b, SpvOp opcode,
+       case SpvOpEndPrimitive:
+       case SpvOpEndStreamPrimitive:
+          intrinsic_op = nir_intrinsic_end_primitive;
++         b->shader->info.gs.uses_end_primitive = true;
+          break;
+       default:
+          unreachable("Invalid opcode");
+@@ -3187,9 +3189,18 @@ vtn_handle_barrier(struct vtn_builder *b, SpvOp opcode,
+ 
+       switch (opcode) {
+       case SpvOpEmitStreamVertex:
+-      case SpvOpEndStreamPrimitive:
+-         nir_intrinsic_set_stream_id(intrin, w[1]);
++      case SpvOpEndStreamPrimitive: {
++         struct vtn_value *stream_value =
++            vtn_value(b, w[1], vtn_value_type_constant);
++         unsigned stream = stream_value->constant->values[0].u32[0];
++         nir_intrinsic_set_stream_id(intrin, stream);
++
++         if (stream > 0)
++            b->shader->info.gs.uses_streams = true;
++
+          break;
++      }
++
+       default:
+          break;
+       }
+@@ -3381,6 +3392,7 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
+       case SpvCapabilityInputAttachment:
+       case SpvCapabilityImageGatherExtended:
+       case SpvCapabilityStorageImageExtendedFormats:
++      case SpvCapabilityStorageImageMultisample:
+          break;
+ 
+       case SpvCapabilityGeometryStreams:
+@@ -3389,7 +3401,6 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
+       case SpvCapabilityFloat16Buffer:
+       case SpvCapabilityFloat16:
+       case SpvCapabilityInt64Atomics:
+-      case SpvCapabilityStorageImageMultisample:
+       case SpvCapabilityInt8:
+       case SpvCapabilitySparseResidency:
+       case SpvCapabilityMinLod:
+@@ -3544,7 +3555,8 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
+       break;
+ 
+    case SpvOpName:
+-      b->values[w[1]].name = vtn_string_literal(b, &w[2], count - 2, NULL);
++      if (!b->options->arb_gl_spirv)
++         b->values[w[1]].name = vtn_string_literal(b, &w[2], count - 2, NULL);
+       break;
+ 
+    case SpvOpMemberName:
+@@ -3641,6 +3653,8 @@ vtn_handle_execution_mode(struct vtn_builder *b, struct vtn_value *entry_point,
+          vtn_assert(b->shader->info.stage == MESA_SHADER_GEOMETRY);
+          b->shader->info.gs.vertices_in =
+             vertices_in_from_spv_execution_mode(b, mode->exec_mode);
++         b->shader->info.gs.input_primitive =
++            gl_primitive_from_spv_execution_mode(b, mode->exec_mode);
+       }
+       break;
+ 
+@@ -3688,7 +3702,7 @@ vtn_handle_execution_mode(struct vtn_builder *b, struct vtn_value *entry_point,
+       break;
+ 
+    case SpvExecutionModeXfb:
+-      vtn_fail("Unhandled execution mode");
++      b->shader->info.has_transform_feedback_varyings = true;
+       break;
+ 
+    case SpvExecutionModeVecTypeHint:
+diff --git a/src/compiler/spirv/vtn_variables.c b/src/compiler/spirv/vtn_variables.c
+index b7c9e6f2f70..29122522fa9 100644
+--- a/src/compiler/spirv/vtn_variables.c
++++ b/src/compiler/spirv/vtn_variables.c
+@@ -1011,15 +1011,16 @@ vtn_get_builtin_location(struct vtn_builder *b,
+    case SpvBuiltInCullDistance:
+       *location = VARYING_SLOT_CULL_DIST0;
+       break;
+-   case SpvBuiltInVertexIndex:
+-      *location = SYSTEM_VALUE_VERTEX_ID;
+-      set_mode_system_value(b, mode);
+-      break;
+    case SpvBuiltInVertexId:
+-      /* Vulkan defines VertexID to be zero-based and reserves the new
+-       * builtin keyword VertexIndex to indicate the non-zero-based value.
++   case SpvBuiltInVertexIndex:
++      /* For whatever reason, both of these are defined in the SPIR-V spec.
++       * The Vulkan spec defines VertexIndex to be non-zero-based and doesn’t
++       * mention VertexId. The ARB_gl_spirv spec defines VertexId to be the
++       * same as gl_VertexID, which is non-zero-based, and removes
++       * VertexIndex. Assuming there is no use for VertexId in Vulkan yet, we
++       * can just make them both be the same.
+        */
+-      *location = SYSTEM_VALUE_VERTEX_ID_ZERO_BASE;
++      *location = SYSTEM_VALUE_VERTEX_ID;
+       set_mode_system_value(b, mode);
+       break;
+    case SpvBuiltInInstanceIndex:
+@@ -1290,8 +1291,6 @@ apply_var_decoration(struct vtn_builder *b,
+    case SpvDecorationMatrixStride:
+    case SpvDecorationAliased:
+    case SpvDecorationUniform:
+-   case SpvDecorationStream:
+-   case SpvDecorationOffset:
+    case SpvDecorationLinkageAttributes:
+       break; /* Do nothing with these here */
+ 
+@@ -1318,9 +1317,20 @@ apply_var_decoration(struct vtn_builder *b,
+       break;
+ 
+    case SpvDecorationXfbBuffer:
++      var_data->explicit_xfb_buffer = true;
++      var_data->xfb_buffer = dec->literals[0];
++      break;
+    case SpvDecorationXfbStride:
+-      vtn_warn("Vulkan does not have transform feedback: %s",
+-               spirv_decoration_to_string(dec->decoration));
++      var_data->explicit_xfb_stride = true;
++      var_data->xfb_stride = dec->literals[0];
++      break;
++   case SpvDecorationOffset:
++      var_data->explicit_offset = true;
++      var_data->offset = dec->literals[0];
++      break;
++
++   case SpvDecorationStream:
++      var_data->stream = dec->literals[0];
+       break;
+ 
+    case SpvDecorationCPacked:
+@@ -1464,10 +1474,10 @@ vtn_storage_class_to_mode(struct vtn_builder *b,
+    case SpvStorageClassUniform:
+       if (interface_type->block) {
+          mode = vtn_variable_mode_ubo;
+-         nir_mode = 0;
++         nir_mode = nir_var_uniform;
+       } else if (interface_type->buffer_block) {
+          mode = vtn_variable_mode_ssbo;
+-         nir_mode = 0;
++         nir_mode = nir_var_shader_storage;
+       } else {
+          /* Default-block uniforms, coming from gl_spirv */
+          mode = vtn_variable_mode_uniform;
+@@ -1662,6 +1672,8 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
+    case vtn_variable_mode_local:
+    case vtn_variable_mode_global:
+    case vtn_variable_mode_uniform:
++   case vtn_variable_mode_ubo:
++   case vtn_variable_mode_ssbo:
+       /* For these, we create the variable normally */
+       var->var = rzalloc(b->shader, nir_variable);
+       var->var->name = ralloc_strdup(var->var, val->name);
+@@ -1677,7 +1689,16 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
+       }
+       var->var->data.mode = nir_mode;
+       var->var->data.location = -1;
+-      var->var->interface_type = NULL;
++
++      switch (var->mode) {
++      case vtn_variable_mode_ubo:
++      case vtn_variable_mode_ssbo:
++         var->var->interface_type = without_array->type;
++         break;
++      default:
++         var->var->interface_type = NULL;
++         break;
++      }
+       break;
+ 
+    case vtn_variable_mode_workgroup:
+@@ -1755,6 +1776,8 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
+             var->var->members[i].mode = nir_mode;
+             var->var->members[i].patch = var->patch;
+          }
++      } else {
++         var->var->interface_type = NULL;
+       }
+ 
+       /* For inputs and outputs, we need to grab locations and builtin
+@@ -1766,8 +1789,6 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
+       break;
+    }
+ 
+-   case vtn_variable_mode_ubo:
+-   case vtn_variable_mode_ssbo:
+    case vtn_variable_mode_push_constant:
+       /* These don't need actual variables. */
+       break;
+@@ -1780,7 +1801,9 @@ vtn_create_variable(struct vtn_builder *b, struct vtn_value *val,
+ 
+    vtn_foreach_decoration(b, val, var_decoration_cb, var);
+ 
+-   if (var->mode == vtn_variable_mode_uniform) {
++   if (var->mode == vtn_variable_mode_uniform ||
++       var->mode == vtn_variable_mode_ubo ||
++       var->mode == vtn_variable_mode_ssbo) {
+       /* XXX: We still need the binding information in the nir_variable
+        * for these. We should fix that.
+        */
+diff --git a/src/mapi/glapi/gen/ARB_spirv_extensions.xml b/src/mapi/glapi/gen/ARB_spirv_extensions.xml
+new file mode 100644
+index 00000000000..103393104c2
+--- /dev/null
++++ b/src/mapi/glapi/gen/ARB_spirv_extensions.xml
+@@ -0,0 +1,13 @@
++<?xml version="1.0"?>
++<!DOCTYPE OpenGLAPI SYSTEM "gl_API.dtd">
++
++<OpenGLAPI>
++
++<category name="GL_ARB_spirv_extensions" number="194">
++
++    <enum name="SPIR_V_EXTENSIONS" value="0x9553"/>
++    <enum name="NUM_SPIR_V_EXTENSIONS" value="0x9554"/>
++
++</category>
++
++</OpenGLAPI>
+diff --git a/src/mapi/glapi/gen/Makefile.am b/src/mapi/glapi/gen/Makefile.am
+index 93acabd968b..1fe0bda603f 100644
+--- a/src/mapi/glapi/gen/Makefile.am
++++ b/src/mapi/glapi/gen/Makefile.am
+@@ -168,6 +168,7 @@ API_XML = \
+ 	ARB_shader_subroutine.xml \
+ 	ARB_shader_storage_buffer_object.xml \
+ 	ARB_sparse_buffer.xml \
++	ARB_spirv_extensions.xml \
+ 	ARB_sync.xml \
+ 	ARB_tessellation_shader.xml \
+ 	ARB_texture_barrier.xml \
+diff --git a/src/mapi/glapi/gen/gl_API.xml b/src/mapi/glapi/gen/gl_API.xml
+index 49807e1ea52..e0cd7aa6c59 100644
+--- a/src/mapi/glapi/gen/gl_API.xml
++++ b/src/mapi/glapi/gen/gl_API.xml
+@@ -8404,6 +8404,10 @@
+ 
+ <xi:include href="ARB_gl_spirv.xml" xmlns:xi="http://www.w3.org/2001/XInclude"/>
+ 
++<!-- ARB extensions 191 - 193 -->
++
++<xi:include href="ARB_spirv_extensions.xml" xmlns:xi="http://www.w3.org/2001/XInclude"/>
++
+ <!-- Non-ARB extensions sorted by extension number. -->
+ 
+ <category name="GL_EXT_blend_color" number="2">
+diff --git a/src/mapi/glapi/gen/meson.build b/src/mapi/glapi/gen/meson.build
+index a6a93cc83be..bfc766f7944 100644
+--- a/src/mapi/glapi/gen/meson.build
++++ b/src/mapi/glapi/gen/meson.build
+@@ -75,6 +75,7 @@ api_xml_files = files(
+   'ARB_shader_subroutine.xml',
+   'ARB_shader_storage_buffer_object.xml',
+   'ARB_sparse_buffer.xml',
++  'ARB_spirv_extensions.xml',
+   'ARB_sync.xml',
+   'ARB_tessellation_shader.xml',
+   'ARB_texture_barrier.xml',
+diff --git a/src/mesa/Makefile.sources b/src/mesa/Makefile.sources
+index 63f3734c322..9e55bb8ba52 100644
+--- a/src/mesa/Makefile.sources
++++ b/src/mesa/Makefile.sources
+@@ -207,6 +207,8 @@ MAIN_FILES = \
+ 	main/shader_query.cpp \
+ 	main/shared.c \
+ 	main/shared.h \
++	main/spirv_extensions.c \
++	main/spirv_extensions.h \
+ 	main/state.c \
+ 	main/state.h \
+ 	main/stencil.c \
+diff --git a/src/mesa/drivers/dri/i965/brw_context.c b/src/mesa/drivers/dri/i965/brw_context.c
+index 968fc1d43d6..727fdedc0ff 100644
+--- a/src/mesa/drivers/dri/i965/brw_context.c
++++ b/src/mesa/drivers/dri/i965/brw_context.c
+@@ -79,6 +79,8 @@
+ #include "common/gen_defines.h"
+ 
+ #include "compiler/spirv/nir_spirv.h"
++#include "compiler/spirv/spirv_extensions.h"
++
+ /***************************************
+  * Mesa's Driver Functions
+  ***************************************/
+@@ -1080,9 +1082,17 @@ brwCreateContext(gl_api api,
+    _mesa_compute_version(ctx);
+ 
+    /* GL_ARB_gl_spirv */
+-   if (ctx->Extensions.ARB_gl_spirv)
++   if (ctx->Extensions.ARB_gl_spirv) {
+       brw_initialize_spirv_supported_capabilities(brw);
+ 
++      if (ctx->Extensions.ARB_spirv_extensions) {
++         /* GL_ARB_spirv_extensions */
++         ctx->Const.SpirVExtensions = MALLOC_STRUCT(spirv_supported_extensions);
++         spirv_fill_supported_spirv_extensions(ctx->Const.SpirVExtensions,
++                                               &ctx->Const.SpirVCapabilities);
++      }
++   }
++
+    _mesa_initialize_dispatch_tables(ctx);
+    _mesa_initialize_vbo_vtxfmt(ctx);
+ 
+diff --git a/src/mesa/drivers/dri/i965/brw_disk_cache.c b/src/mesa/drivers/dri/i965/brw_disk_cache.c
+index c478753d4ad..683839d4fde 100644
+--- a/src/mesa/drivers/dri/i965/brw_disk_cache.c
++++ b/src/mesa/drivers/dri/i965/brw_disk_cache.c
+@@ -235,6 +235,9 @@ brw_disk_cache_upload_program(struct brw_context *brw, gl_shader_stage stage)
+    if (prog == NULL)
+       return false;
+ 
++   if (prog->sh.data->spirv)
++      return false;
++
+    if (brw->ctx._Shader->Flags & GLSL_CACHE_FALLBACK)
+       goto fail;
+ 
+diff --git a/src/mesa/drivers/dri/i965/brw_link.cpp b/src/mesa/drivers/dri/i965/brw_link.cpp
+index ae4f63e33af..f4ada6bc4e4 100644
+--- a/src/mesa/drivers/dri/i965/brw_link.cpp
++++ b/src/mesa/drivers/dri/i965/brw_link.cpp
+@@ -266,7 +266,12 @@ brw_link_shader(struct gl_context *ctx, struct gl_shader_program *shProg)
+       if (!gl_nir_link_uniforms(ctx, shProg))
+          return false;
+ 
++      if (!gl_nir_link_uniform_blocks(ctx, shProg)) {
++         return GL_FALSE;
++      }
++
+       gl_nir_link_assign_atomic_counter_resources(ctx, shProg);
++      gl_nir_link_assign_xfb_resources(ctx, shProg);
+    }
+ 
+    /* Determine first and last stage. */
+@@ -316,6 +321,8 @@ brw_link_shader(struct gl_context *ctx, struct gl_shader_program *shProg)
+       NIR_PASS_V(prog->nir, gl_nir_lower_atomics, shProg, false);
+       NIR_PASS_V(prog->nir, nir_lower_atomics_to_ssbo,
+                  prog->nir->info.num_abos);
++      if (shProg->data->spirv)
++         NIR_PASS_V(prog->nir, gl_nir_lower_vulkan_resource_index, shader);
+ 
+       infos[stage] = &prog->nir->info;
+ 
+diff --git a/src/mesa/drivers/dri/i965/brw_program.c b/src/mesa/drivers/dri/i965/brw_program.c
+index 9fa1b4b9bb7..c6c0de6cef7 100644
+--- a/src/mesa/drivers/dri/i965/brw_program.c
++++ b/src/mesa/drivers/dri/i965/brw_program.c
+@@ -123,7 +123,8 @@ brw_create_nir(struct brw_context *brw,
+       assert(shader_prog->_LinkedShaders[MESA_SHADER_TESS_CTRL]);
+       struct gl_linked_shader *linked_tcs =
+          shader_prog->_LinkedShaders[MESA_SHADER_TESS_CTRL];
+-      uint32_t patch_vertices = linked_tcs->Program->info.tess.tcs_vertices_out;
++      uint32_t patch_vertices =
++         linked_tcs->Program->nir->info.tess.tcs_vertices_out;
+       nir_lower_tes_patch_vertices(nir, patch_vertices);
+    }
+ 
+diff --git a/src/mesa/drivers/dri/i965/intel_extensions.c b/src/mesa/drivers/dri/i965/intel_extensions.c
+index f8373564783..3d3d37c2630 100644
+--- a/src/mesa/drivers/dri/i965/intel_extensions.c
++++ b/src/mesa/drivers/dri/i965/intel_extensions.c
+@@ -264,6 +264,9 @@ intelInitExtensions(struct gl_context *ctx)
+             ctx->Extensions.ARB_indirect_parameters = true;
+          }
+       }
++
++      ctx->Extensions.ARB_gl_spirv = true;
++      ctx->Extensions.ARB_spirv_extensions = true;
+    }
+ 
+    if (devinfo->gen >= 8 || devinfo->is_haswell) {
+diff --git a/src/mesa/main/context.c b/src/mesa/main/context.c
+index 4243e03c5cd..7052dce5ab7 100644
+--- a/src/mesa/main/context.c
++++ b/src/mesa/main/context.c
+@@ -1388,6 +1388,8 @@ _mesa_free_context_data( struct gl_context *ctx )
+    if (ctx == _mesa_get_current_context()) {
+       _mesa_make_current(NULL, NULL, NULL);
+    }
++
++   free(ctx->Const.SpirVExtensions);
+ }
+ 
+ 
+diff --git a/src/mesa/main/extensions_table.h b/src/mesa/main/extensions_table.h
+index e24287b8581..70bb1798b2e 100644
+--- a/src/mesa/main/extensions_table.h
++++ b/src/mesa/main/extensions_table.h
+@@ -132,6 +132,7 @@ EXT(ARB_shading_language_420pack            , ARB_shading_language_420pack
+ EXT(ARB_shading_language_packing            , ARB_shading_language_packing           , GLL, GLC,  x ,  x , 2011)
+ EXT(ARB_shadow                              , ARB_shadow                             , GLL,  x ,  x ,  x , 2001)
+ EXT(ARB_sparse_buffer                       , ARB_sparse_buffer                      , GLL, GLC,  x ,  x , 2014)
++EXT(ARB_spirv_extensions                    , ARB_spirv_extensions                   ,  x,  GLC,  x ,  x , 2016)
+ EXT(ARB_stencil_texturing                   , ARB_stencil_texturing                  , GLL, GLC,  x ,  x , 2012)
+ EXT(ARB_sync                                , ARB_sync                               , GLL, GLC,  x ,  x , 2003)
+ EXT(ARB_tessellation_shader                 , ARB_tessellation_shader                , GLL, GLC,  x ,  x , 2009)
+diff --git a/src/mesa/main/get.c b/src/mesa/main/get.c
+index db0079beb51..b76c5115324 100644
+--- a/src/mesa/main/get.c
++++ b/src/mesa/main/get.c
+@@ -34,6 +34,7 @@
+ #include "get.h"
+ #include "macros.h"
+ #include "mtypes.h"
++#include "spirv_extensions.h"
+ #include "state.h"
+ #include "texcompress.h"
+ #include "texstate.h"
+@@ -518,6 +519,7 @@ EXTRA_EXT(NV_conservative_raster);
+ EXTRA_EXT(NV_conservative_raster_dilate);
+ EXTRA_EXT(NV_conservative_raster_pre_snap_triangles);
+ EXTRA_EXT(ARB_sample_locations);
++EXTRA_EXT(ARB_spirv_extensions);
+ 
+ static const int
+ extra_ARB_color_buffer_float_or_glcore[] = {
+@@ -1189,6 +1191,10 @@ find_custom_value(struct gl_context *ctx, const struct value_desc *d, union valu
+          v->value_int_n.ints[0] = GL_PROGRAM_BINARY_FORMAT_MESA;
+       }
+       break;
++   /* ARB_spirv_extensions */
++   case GL_NUM_SPIR_V_EXTENSIONS:
++      v->value_int = _mesa_get_spirv_extension_count(ctx);
++      break;
+    /* GL_EXT_disjoint_timer_query */
+    case GL_GPU_DISJOINT_EXT:
+       {
+diff --git a/src/mesa/main/get_hash_params.py b/src/mesa/main/get_hash_params.py
+index 618e306e509..0f630ff535f 100644
+--- a/src/mesa/main/get_hash_params.py
++++ b/src/mesa/main/get_hash_params.py
+@@ -401,6 +401,9 @@ descriptor=[
+ # GL_ARB_sampler_objects / GL 3.3 / GLES 3.0
+   [ "SAMPLER_BINDING", "LOC_CUSTOM, TYPE_INT, GL_SAMPLER_BINDING, NO_EXTRA" ],
+ 
++# GL_ARB_spirv_extensions
++  [ "NUM_SPIR_V_EXTENSIONS", "LOC_CUSTOM, TYPE_INT, 0, extra_ARB_spirv_extensions" ],
++
+ # GL_ARB_sync
+   [ "MAX_SERVER_WAIT_TIMEOUT", "CONTEXT_INT64(Const.MaxServerWaitTimeout), extra_ARB_sync" ],
+ 
+diff --git a/src/mesa/main/getstring.c b/src/mesa/main/getstring.c
+index 3d5ae0b694b..e2f5af29b37 100644
+--- a/src/mesa/main/getstring.c
++++ b/src/mesa/main/getstring.c
+@@ -33,6 +33,7 @@
+ #include "mtypes.h"
+ #include "macros.h"
+ #include "version.h"
++#include "spirv_extensions.h"
+ 
+ /**
+  * Return the string for a glGetString(GL_SHADING_LANGUAGE_VERSION) query.
+@@ -206,6 +207,18 @@ _mesa_GetStringi(GLenum name, GLuint index)
+          }
+          return (const GLubyte *) version;
+       }
++   case GL_SPIR_V_EXTENSIONS:
++      if (!ctx->Extensions.ARB_spirv_extensions) {
++         _mesa_error(ctx, GL_INVALID_ENUM, "glGetStringi");
++         return (const GLubyte *) 0;
++      }
++
++      if (index >= _mesa_get_spirv_extension_count(ctx)) {
++         _mesa_error(ctx, GL_INVALID_VALUE, "glGetStringi(index=%u)", index);
++         return (const GLubyte *) 0;
++      }
++      return _mesa_get_enabled_spirv_extension(ctx, index);
++
+    default:
+       _mesa_error(ctx, GL_INVALID_ENUM, "glGetStringi");
+       return (const GLubyte *) 0;
+diff --git a/src/mesa/main/glspirv.c b/src/mesa/main/glspirv.c
+index 8ad6c373914..d707596ac20 100644
+--- a/src/mesa/main/glspirv.c
++++ b/src/mesa/main/glspirv.c
+@@ -173,6 +173,67 @@ _mesa_spirv_link_shaders(struct gl_context *ctx, struct gl_shader_program *prog)
+       prog->_LinkedShaders[shader_type] = linked;
+       prog->data->linked_stages |= 1 << shader_type;
+    }
++
++   int last_vert_stage =
++      util_last_bit(prog->data->linked_stages &
++                    (((1 << (MESA_SHADER_GEOMETRY + 1)) - 1) ^
++                     ((1 << MESA_SHADER_VERTEX) - 1)));
++   if (last_vert_stage)
++      prog->last_vert_prog = prog->_LinkedShaders[last_vert_stage - 1]->Program;
++
++   /* Some shaders have to be linked with some other shaders present.
++    */
++   if (!prog->SeparateShader) {
++      static const struct {
++         gl_shader_stage a, b;
++      } stage_pairs[] = {
++         { MESA_SHADER_GEOMETRY, MESA_SHADER_VERTEX },
++         { MESA_SHADER_TESS_EVAL, MESA_SHADER_VERTEX },
++         { MESA_SHADER_TESS_CTRL, MESA_SHADER_VERTEX },
++         { MESA_SHADER_TESS_CTRL, MESA_SHADER_TESS_EVAL },
++      };
++
++      for (unsigned i = 0; i < ARRAY_SIZE(stage_pairs); i++) {
++         gl_shader_stage a = stage_pairs[i].a;
++         gl_shader_stage b = stage_pairs[i].b;
++         if ((prog->data->linked_stages & ((1 << a) | (1 << b))) == (1 << a)) {
++            ralloc_asprintf_append(&prog->data->InfoLog,
++                                   "%s shader must be linked with %s shader\n",
++                                   _mesa_shader_stage_to_string(a),
++                                   _mesa_shader_stage_to_string(b));
++            prog->data->LinkStatus = LINKING_FAILURE;
++            return;
++         }
++      }
++   }
++
++   /* Compute shaders have additional restrictions. */
++   if ((prog->data->linked_stages & (1 << MESA_SHADER_COMPUTE)) &&
++       (prog->data->linked_stages & ~(1 << MESA_SHADER_COMPUTE))) {
++      ralloc_asprintf_append(&prog->data->InfoLog,
++                             "Compute shaders may not be linked with any other "
++                             "type of shader\n");
++      prog->data->LinkStatus = LINKING_FAILURE;
++      return;
++   }
++}
++
++/*
++ * This could be added on spirv_to_nir pass. But as it is only needed by
++ * gl_spirv, we prefer to compute it here.
++ */
++static void
++nir_compute_double_inputs(nir_shader *shader,
++                          const nir_shader_compiler_options *options)
++{
++   nir_foreach_variable(var, &shader->inputs) {
++      if (glsl_type_is_dual_slot(glsl_without_array(var->type))) {
++         for (uint i = 0; i < glsl_count_attribute_slots(var->type, true); i++) {
++            uint64_t bitfield = BITFIELD64_BIT(var->data.location + i);
++            shader->info.vs.double_inputs |= bitfield;
++         }
++      }
++   }
+ }
+ 
+ nir_shader *
+@@ -207,7 +268,8 @@ _mesa_spirv_to_nir(struct gl_context *ctx,
+ 
+    const struct spirv_to_nir_options spirv_options = {
+       .lower_workgroup_access_to_offsets = true,
+-      .caps = ctx->Const.SpirVCapabilities
++      .caps = ctx->Const.SpirVCapabilities,
++      .arb_gl_spirv = true
+    };
+ 
+    nir_function *entry_point =
+@@ -231,6 +293,37 @@ _mesa_spirv_to_nir(struct gl_context *ctx,
+                       prog->Name);
+    nir_validate_shader(nir);
+ 
++   nir->info.separate_shader = linked_shader->Program->info.separate_shader;
++
++   /* We have to lower away local constant initializers right before we
++    * inline functions.  That way they get properly initialized at the top
++    * of the function and not at the top of its caller.
++    */
++   NIR_PASS_V(nir, nir_lower_constant_initializers, nir_var_local);
++
++   /* Split member structs.  We do this before lower_io_to_temporaries so that
++    * it doesn't lower system values to temporaries by accident.
++    */
++   NIR_PASS_V(nir, nir_split_var_copies);
++   NIR_PASS_V(nir, nir_split_per_member_structs);
++
++   NIR_PASS_V(nir, nir_lower_returns);
++   NIR_PASS_V(nir, nir_inline_functions);
++   NIR_PASS_V(nir, nir_copy_prop);
++
++   /* Pick off the single entrypoint that we want */
++   foreach_list_typed_safe(nir_function, func, node, &nir->functions) {
++      if (func != entry_point)
++         exec_node_remove(&func->node);
++   }
++   assert(exec_list_length(&nir->functions) == 1);
++   entry_point->name = ralloc_strdup(entry_point, "main");
++
++   if (nir->info.stage == MESA_SHADER_VERTEX) {
++      nir_compute_double_inputs(nir, options);
++      nir_remap_attributes(nir, options);
++   }
++
+    return nir;
+ }
+ 
+diff --git a/src/mesa/main/mtypes.h b/src/mesa/main/mtypes.h
+index 7ef7a3f1106..693b673ddfe 100644
+--- a/src/mesa/main/mtypes.h
++++ b/src/mesa/main/mtypes.h
+@@ -4054,6 +4054,9 @@ struct gl_constants
+ 
+    /** GL_ARB_gl_spirv */
+    struct spirv_supported_capabilities SpirVCapabilities;
++
++   /** GL_ARB_spirv_extensions */
++   struct spirv_supported_extensions *SpirVExtensions;
+ };
+ 
+ 
+@@ -4146,6 +4149,7 @@ struct gl_extensions
+    GLboolean ARB_shadow;
+    GLboolean ARB_sparse_buffer;
+    GLboolean ARB_stencil_texturing;
++   GLboolean ARB_spirv_extensions;
+    GLboolean ARB_sync;
+    GLboolean ARB_tessellation_shader;
+    GLboolean ARB_texture_border_clamp;
+diff --git a/src/mesa/main/shader_query.cpp b/src/mesa/main/shader_query.cpp
+index 11ecd71c575..0a85e183a0c 100644
+--- a/src/mesa/main/shader_query.cpp
++++ b/src/mesa/main/shader_query.cpp
+@@ -244,9 +244,17 @@ _mesa_longest_attribute_name_length(struct gl_shader_program *shProg)
+       if (res->Type == GL_PROGRAM_INPUT &&
+           res->StageReferences & (1 << MESA_SHADER_VERTEX)) {
+ 
+-          const size_t length = strlen(RESOURCE_VAR(res)->name);
++         /* From ARB_gl_spirv spec:
++          *   "If pname is ACTIVE_ATTRIBUTE_MAX_LENGTH, the length of the
++          *    longest active attribute name, including a null terminator, is
++          *    returned.  If no active attributes exist, zero is returned. If
++          *    no name reflection information is available, one is returned."
++          */
++          const size_t length = RESOURCE_VAR(res)->name != NULL ?
++             strlen(RESOURCE_VAR(res)->name) : 1;
++
+           if (length >= longest)
+-             longest = length + 1;
++             longest = RESOURCE_VAR(res)->name != NULL ? length + 1 : length;
+       }
+    }
+ 
+@@ -1013,11 +1021,16 @@ get_buffer_property(struct gl_shader_program *shProg,
+          *val = 0;
+          for (unsigned i = 0; i < RESOURCE_UBO(res)->NumUniforms; i++) {
+             const char *iname = RESOURCE_UBO(res)->Uniforms[i].IndexName;
+-            struct gl_program_resource *uni =
+-               _mesa_program_resource_find_name(shProg, GL_UNIFORM, iname,
+-                                                NULL);
+-            if (!uni)
+-               continue;
++            /* IndexName can be NULL if we are using a SPIR-V shader
++             * (ARB_gl_spirv).
++             */
++            if (iname != NULL) {
++               struct gl_program_resource *uni =
++                  _mesa_program_resource_find_name(shProg, GL_UNIFORM, iname,
++                                                   NULL);
++               if (!uni)
++                  continue;
++            }
+             (*val)++;
+          }
+          return 1;
+@@ -1049,11 +1062,16 @@ get_buffer_property(struct gl_shader_program *shProg,
+          *val = 0;
+          for (unsigned i = 0; i < RESOURCE_UBO(res)->NumUniforms; i++) {
+             const char *iname = RESOURCE_UBO(res)->Uniforms[i].IndexName;
+-            struct gl_program_resource *uni =
+-               _mesa_program_resource_find_name(shProg, GL_BUFFER_VARIABLE,
+-                                                iname, NULL);
+-            if (!uni)
+-               continue;
++            /* IndexName can be NULL if we are using a SPIR-V shader
++             * (ARB_gl_spirv).
++             */
++            if (iname != NULL) {
++               struct gl_program_resource *uni =
++                  _mesa_program_resource_find_name(shProg, GL_BUFFER_VARIABLE,
++                                                   iname, NULL);
++               if (!uni)
++                  continue;
++            }
+             (*val)++;
+          }
+          return 1;
+diff --git a/src/mesa/main/shaderapi.c b/src/mesa/main/shaderapi.c
+index f7080847cc1..b6da5c850dd 100644
+--- a/src/mesa/main/shaderapi.c
++++ b/src/mesa/main/shaderapi.c
+@@ -728,11 +728,22 @@ get_programiv(struct gl_context *ctx, GLuint program, GLenum pname,
+          if (shProg->data->UniformStorage[i].is_shader_storage)
+             continue;
+ 
++         /* From ARB_gl_spirv spec:
++          *   "If pname is ACTIVE_UNIFORM_MAX_LENGTH, the length of the
++          *    longest active uniform name, including a null terminator, is
++          *    returned. If no active uniforms exist, zero is returned. If no
++          *    name reflection information is available, one is returned."
++          *
++          * We are setting 0 here, as below it will add 1 for the NUL character.
++          */
++         const GLint base_len = shProg->data->UniformStorage[i].name != NULL ?
++            strlen(shProg->data->UniformStorage[i].name) : 0;
++
+ 	 /* Add one for the terminating NUL character for a non-array, and
+ 	  * 4 for the "[0]" and the NUL for an array.
+ 	  */
+-         const GLint len = strlen(shProg->data->UniformStorage[i].name) + 1 +
+-             ((shProg->data->UniformStorage[i].array_elements != 0) ? 3 : 0);
++         const GLint len = base_len + 1 +
++            ((shProg->data->UniformStorage[i].array_elements != 0) ? 3 : 0);
+ 
+ 	 if (len > max_len)
+ 	    max_len = len;
+@@ -810,9 +821,16 @@ get_programiv(struct gl_context *ctx, GLuint program, GLenum pname,
+          break;
+ 
+       for (i = 0; i < shProg->data->NumUniformBlocks; i++) {
+-	 /* Add one for the terminating NUL character.
++	 /* Add one for the terminating NUL character. Name can be NULL, in
++          * that case, from ARB_gl_spirv:
++          *   "If pname is ACTIVE_UNIFORM_BLOCK_MAX_NAME_LENGTH, the length of
++          *    the longest active uniform block name, including the null
++          *    terminator, is returned. If no active uniform blocks exist,
++          *    zero is returned. If no name reflection information is
++          *    available, one is returned."
+ 	  */
+-         const GLint len = strlen(shProg->data->UniformBlocks[i].Name) + 1;
++         const GLint len = shProg->data->UniformBlocks[i].Name ?
++            strlen(shProg->data->UniformBlocks[i].Name) + 1 : 1;
+ 
+ 	 if (len > max_len)
+ 	    max_len = len;
+diff --git a/src/mesa/main/spirv_extensions.c b/src/mesa/main/spirv_extensions.c
+new file mode 100644
+index 00000000000..2bb29461fd4
+--- /dev/null
++++ b/src/mesa/main/spirv_extensions.c
+@@ -0,0 +1,60 @@
++/*
++ * Copyright © 2017 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * on the rights to use, copy, modify, merge, publish, distribute, sub
++ * license, and/or sell copies of the Software, and to permit persons to whom
++ * the Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
++ * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
++ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
++ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
++ * USE OR OTHER DEALINGS IN THE SOFTWARE.
++ */
++
++/**
++ * \file
++ * \brief SPIRV-V extension handling. See ARB_spirv_extensions
++ */
++
++#include "spirv_extensions.h"
++#include "compiler/spirv/spirv_extensions.h"
++
++GLuint
++_mesa_get_spirv_extension_count(struct gl_context *ctx)
++{
++   if (ctx->Const.SpirVExtensions == NULL)
++      return 0;
++
++   return ctx->Const.SpirVExtensions->count;
++}
++
++const GLubyte *
++_mesa_get_enabled_spirv_extension(struct gl_context *ctx,
++                                  GLuint index)
++{
++   unsigned int n = 0;
++
++   if (ctx->Const.SpirVExtensions == NULL)
++      return (const GLubyte *) 0;
++
++   for (unsigned int i = 0; i < SPV_EXTENSIONS_COUNT; i++) {
++      if (ctx->Const.SpirVExtensions->supported[i]) {
++         if (n == index)
++            return (const GLubyte *) spirv_extensions_to_string(i);
++         else
++            n++;
++      }
++   }
++
++   return (const GLubyte *) 0;
++}
+diff --git a/src/mesa/main/spirv_extensions.h b/src/mesa/main/spirv_extensions.h
+new file mode 100644
+index 00000000000..35754f7e53b
+--- /dev/null
++++ b/src/mesa/main/spirv_extensions.h
+@@ -0,0 +1,49 @@
++/*
++ * Copyright 2017 Intel Corporation
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a
++ * copy of this software and associated documentation files (the "Software"),
++ * to deal in the Software without restriction, including without limitation
++ * on the rights to use, copy, modify, merge, publish, distribute, sub
++ * license, and/or sell copies of the Software, and to permit persons to whom
++ * the Software is furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice (including the next
++ * paragraph) shall be included in all copies or substantial portions of the
++ * Software.
++ *
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
++ * THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
++ * DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
++ * OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
++ * USE OR OTHER DEALINGS IN THE SOFTWARE.
++ */
++
++/**
++ * \file
++ * \brief SPIRV-V extension handling. See ARB_spirv_extensions
++ */
++
++#ifndef _SPIRVEXTENSIONS_H_
++#define _SPIRVEXTENSIONS_H_
++
++#include "mtypes.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++extern GLuint
++_mesa_get_spirv_extension_count(struct gl_context *ctx);
++
++extern const GLubyte *
++_mesa_get_enabled_spirv_extension(struct gl_context *ctx,
++                                  GLuint index);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* SPIRVEXTENSIONS_H */
+diff --git a/src/mesa/meson.build b/src/mesa/meson.build
+index 8fb7db215c8..9b0ab61ee6e 100644
+--- a/src/mesa/meson.build
++++ b/src/mesa/meson.build
+@@ -247,6 +247,8 @@ files_libmesa_common = files(
+   'main/shader_query.cpp',
+   'main/shared.c',
+   'main/shared.h',
++  'main/spirv_extensions.c',
++  'main/spirv_extensions.h',
+   'main/state.c',
+   'main/state.h',
+   'main/stencil.c',
