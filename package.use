@@ -269,3 +269,4 @@ x11-libs/xcb-util-image			abi_x86_32
 x11-libs/xcb-util-renderutil		abi_x86_32
 media-libs/vulkan-layers		abi_x86_32
 dev-util/vulkan-tools			abi_x86_32
+dev-lang/rust				cargo
