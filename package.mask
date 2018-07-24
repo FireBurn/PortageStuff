@@ -1,3 +1,4 @@
 virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
+=www-client/chromium-69.0.3493.3
