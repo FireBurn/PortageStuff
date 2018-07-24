@@ -3,7 +3,7 @@ dev-qt/*
 media-libs/libvpx
 media-libs/mesa
 sys-devel/llvm
-www-client/chromium
+<www-client/chromium-69.0.3493.3
 www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
 x11-base/xorg-server
