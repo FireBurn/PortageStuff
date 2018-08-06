@@ -22,6 +22,6 @@ x11-base/xorg-drivers			**
 # required by =libssh-9999 (argument)
 =net-libs/libssh-9999 **
 # required by =binutils-2.31 (argument)
-=sys-devel/binutils-2.31 **
+<sys-devel/binutils-9999 **
 # required by =libdrm-9999 (argument)
 =x11-libs/libdrm-9999 **
