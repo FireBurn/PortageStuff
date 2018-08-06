@@ -278,3 +278,7 @@ app-admin/gamemode			abi_x86_32
 # required by @selected
 # required by @world (argument)
 >=media-libs/graphene-1.8.2 abi_x86_32
+# required by www-client/chromium-70.0.3510.0::gentoo
+# required by @selected
+# required by @world (argument)
+>=net-libs/nodejs-10.7.0-r1 inspector
