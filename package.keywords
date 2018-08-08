@@ -25,3 +25,8 @@ x11-base/xorg-drivers			**
 <sys-devel/binutils-9999 **
 # required by =libdrm-9999 (argument)
 =x11-libs/libdrm-9999 **
+# required by =libcxx-9999 (argument)
+=sys-libs/libcxx-9999 **
+# required by sys-libs/libcxx-9999::gentoo[libcxxabi]
+# required by libcxx (argument)
+=sys-libs/libcxxabi-9999 **
