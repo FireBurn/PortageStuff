@@ -3,8 +3,6 @@ dev-qt/*
 media-libs/libvpx
 media-libs/mesa
 sys-devel/llvm
-www-client/chromium
-www-plugins/chrome-binary-plugins
 x11-base/xorg-drivers
 x11-base/xorg-server
 x11-misc/sddm
@@ -12,29 +10,3 @@ x11-drivers/xf86-video-intel
 dev-libs/icu
 <net-libs/nodejs-11
 <dev-libs/openssl-1.1.1
-# required by media-libs/vulkan-loader-1.1.70.0-r1::gentoo
-# required by @selected
-# required by @world (argument)
-# /usr/portage/profiles/package.mask:
-# Matt Turner <mattst88@gentoo.org> (06 Jun 2018)
-# Temporarily masked while I make sure the blockers work
-=dev-libs/wayland-1.15.0
-# required by dev-lang/lua-5.3.3-r1::gentoo
-# required by =lua-5.3.3-r1 (argument)
-# /usr/portage/profiles/package.mask:
-# Matti Bickel <mabi@gentoo.org> (22 Apr 2014)
-# Masked slotted lua for testing
-# William Hubbs <williamh@gentoo.org> (07 Aug 2016)
-# Taking this mask since Mabi is retired
-# Rafael Martins <rafaelmartins@gentoo.org> (04 Dec 2016)
-# Adding Lua 5.3 to mask
-=app-eselect/eselect-lua-1
-# required by =lua-5.3.3-r1 (argument)
-# /usr/portage/profiles/package.mask:
-# Matti Bickel <mabi@gentoo.org> (22 Apr 2014)
-# Masked slotted lua for testing
-# William Hubbs <williamh@gentoo.org> (07 Aug 2016)
-# Taking this mask since Mabi is retired
-# Rafael Martins <rafaelmartins@gentoo.org> (04 Dec 2016)
-# Adding Lua 5.3 to mask
-=dev-lang/lua-5.3.3-r1
