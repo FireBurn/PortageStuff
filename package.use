@@ -271,14 +271,6 @@ media-libs/vulkan-layers		abi_x86_32
 dev-util/vulkan-tools			abi_x86_32
 dev-lang/rust				cargo
 app-admin/gamemode			abi_x86_32
-# required by media-libs/gst-plugins-base-1.14.2-r1::gentoo[opengl,-gles2]
-# required by media-plugins/gst-plugins-opus-1.14.2::gentoo
-# required by media-plugins/gst-plugins-meta-1.14.1::gentoo[opus]
-# required by app-emulation/wine-any-3.13::gentoo[gstreamer]
-# required by @selected
-# required by @world (argument)
->=media-libs/graphene-1.8.2 abi_x86_32
-# required by www-client/chromium-70.0.3510.0::gentoo
-# required by @selected
-# required by @world (argument)
->=net-libs/nodejs-10.7.0-r1 inspector
+media-libs/graphene			abi_x86_32
+net-libs/nodejs				inspector
+app-arch/p7zip 				-kde -wxwidgets
