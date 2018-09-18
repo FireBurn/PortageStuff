@@ -1,0 +1,13 @@
+diff --git a/va/drm/va_drm_utils.c b/va/drm/va_drm_utils.c
+index 9510dd9..9fcb54c 100644
+--- a/va/drm/va_drm_utils.c
++++ b/va/drm/va_drm_utils.c
+@@ -95,7 +95,7 @@ VA_DRM_IsRenderNodeFd(int fd)
+         return S_ISCHR(st.st_mode) && (st.st_rdev & 0x80);
+ 
+     /* Check by device name */
+-    name = drmGetDeviceNameFromFd(fd);
++    name = drmGetDeviceNameFromFd2(fd);
+     if (name)
+         return strncmp(name, "/dev/dri/renderD", 16) == 0;
+ 

@@ -274,3 +274,7 @@ app-admin/gamemode			abi_x86_32
 media-libs/graphene			abi_x86_32
 net-libs/nodejs				inspector
 app-arch/p7zip 				-kde -wxwidgets
+# required by media-libs/mesa-9999::gentoo[unwind,gallium]
+# required by x11-base/xorg-server-9999::gentoo[-minimal]
+# required by @live-rebuild (argument)
+>=sys-libs/libunwind-1.2.1-r2 abi_x86_32
