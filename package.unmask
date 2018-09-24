@@ -10,3 +10,5 @@ x11-drivers/xf86-video-intel
 dev-libs/icu
 <net-libs/nodejs-11
 <dev-libs/openssl-1.2
+www-client/chromium
+www-plugins/chrome-binary-plugins
