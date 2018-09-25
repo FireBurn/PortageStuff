@@ -1,3 +1,4 @@
 virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
+=dev-util/meson-0.48.0
