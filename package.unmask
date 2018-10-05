@@ -12,3 +12,5 @@ dev-libs/icu
 <dev-libs/openssl-1.2
 www-client/chromium
 www-plugins/chrome-binary-plugins
+<media-video/mpv-9999
+<media-video/ffmpeg-9999
