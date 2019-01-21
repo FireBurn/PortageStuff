@@ -28,3 +28,5 @@ x11-base/xorg-drivers			**
 # required by sys-libs/libcxx-9999::gentoo[libcxxabi]
 # required by libcxx (argument)
 =sys-libs/libcxxabi-9999 **
+# required by =samba-4.10.0_rc1 (argument)
+=net-fs/samba-4.10.0_rc1 **
