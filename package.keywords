@@ -28,3 +28,5 @@ x11-base/xorg-drivers			**
 # required by sys-libs/libcxx-9999::gentoo[libcxxabi]
 # required by libcxx (argument)
 =sys-libs/libcxxabi-9999 **
+dev-libs/boost				**
+dev-util/boost-build			**
