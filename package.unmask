@@ -1,6 +1,5 @@
 app-eselect/eselect-opengl
 dev-qt/*
-media-libs/libvpx
 media-libs/mesa
 sys-devel/llvm
 x11-base/xorg-drivers
