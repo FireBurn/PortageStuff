@@ -290,3 +290,35 @@ media-libs/cogl				gles2
 # required by gnome-base/gnome-3.30.0::gnome-next
 # required by gnome (argument)
 >=app-crypt/pinentry-1.1.0-r3 gnome-keyring
+# required by media-sound/gnome-music-3.26.2::FireBurn
+# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
+# required by gnome-base/gnome-3.26.2::gentoo[extras]
+# required by gnome (argument)
+>=media-plugins/grilo-plugins-0.3.8 tracker
+# required by net-misc/gnome-online-miners-3.26.0::gentoo
+# required by media-gfx/gnome-photos-3.26.4::gentoo
+# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
+# required by gnome-base/gnome-3.26.2::gentoo[extras]
+# required by gnome (argument)
+=dev-libs/libgdata-0.17.9-r1 gnome-online-accounts
+# required by media-gfx/gnome-photos-3.26.4::gentoo
+# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
+# required by gnome-base/gnome-3.26.2::gentoo[extras]
+# required by gnome (argument)
+>=media-libs/gegl-0.3.34:0.3 raw jpeg2k
+# required by media-sound/sound-juicer-3.24.0::gentoo
+# required by gnome-base/gnome-extra-apps-3.26.2::gentoo
+# required by gnome-base/gnome-3.26.2::gentoo[extras]
+# required by gnome (argument)
+=gnome-base/gvfs-1.38.1 cdda
+# required by gnome-extra/gnome-contacts-3.30.2::gentoo
+# required by gnome-base/gnome-core-apps-3.26.2::gentoo
+# required by gnome-base/gnome-3.26.2::gentoo
+# required by gnome (argument)
+>=dev-libs/folks-0.11.4-r1 eds
+# required by dev-libs/folks-0.11.4-r1::gentoo[eds]
+# required by gnome-extra/gnome-contacts-3.30.2::gentoo
+# required by gnome-base/gnome-core-apps-3.26.2::gentoo
+# required by gnome-base/gnome-3.26.2::gentoo
+# required by gnome (argument)
+>=gnome-extra/evolution-data-server-3.30.5-r1 vala
