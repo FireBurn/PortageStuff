@@ -278,3 +278,15 @@ app-arch/p7zip 				-kde -wxwidgets
 # required by x11-base/xorg-server-9999::gentoo[-minimal]
 # required by @live-rebuild (argument)
 >=sys-libs/libunwind-1.2.1-r2 abi_x86_32
+x11-wm/mutter				gles2
+media-libs/libmediaart			-qt5
+media-libs/cogl				gles2
+# required by gnome-base/gnome-keyring-3.31.90::gnome-next
+# required by app-crypt/libsecret-0.18.7::gnome-next
+# required by gnome-extra/nm-applet-1.8.20::gnome-next
+# required by gnome-base/gnome-control-center-3.31.90::gnome-next
+# required by gnome-base/gnome-shell-3.31.91::gnome-next
+# required by gnome-base/gdm-3.31.91::gnome-next
+# required by gnome-base/gnome-3.30.0::gnome-next
+# required by gnome (argument)
+>=app-crypt/pinentry-1.1.0-r3 gnome-keyring
