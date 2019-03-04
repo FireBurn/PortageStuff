@@ -26,6 +26,12 @@ sync-type = git
 sync-uri = https://github.com/gentoo-mirror/gamerlay.git
 
 
+
+[gnome]
+location = /var/db/repos/gnome
+sync-type = git
+sync-uri = https://github.com/gentoo-mirror/gnome.git
+
 [gnome-next]
 location = /var/db/repos/gnome-next
 sync-type = git
