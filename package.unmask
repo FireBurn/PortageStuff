@@ -13,9 +13,3 @@ dev-libs/icu
 www-plugins/chrome-binary-plugins
 <media-video/mpv-9999
 <media-video/ffmpeg-9999
-# required by mail-client/evolution-3.31.91::gnome-next
-# required by @preserved-rebuild (argument)
-# /usr/portage/profiles/package.mask:
-# Gilles Dartiguelongue <eva@gentoo.org> (04 Sep 2017)
-# Incompatible changes in API in Enchant 2. Bug #629838.
-=app-text/enchant-2.2.3
