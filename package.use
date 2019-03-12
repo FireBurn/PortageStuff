@@ -319,3 +319,9 @@ media-libs/cogl				gles2
 # required by gnome-base/gnome-3.26.2::gentoo
 # required by gnome (argument)
 >=dev-libs/folks-0.11.4-r1 eds
+# required by media-sound/sound-juicer-3.24.0::gentoo
+# required by gnome-base/gnome-extra-apps-3.28.2::gentoo
+# required by gnome-base/gnome-3.28.2::gentoo[extras]
+# required by @selected
+# required by @world (argument)
+>=gnome-base/gvfs-1.38.2 cdda
