@@ -325,3 +325,9 @@ media-libs/cogl				gles2
 # required by @selected
 # required by @world (argument)
 >=gnome-base/gvfs-1.38.2 cdda
+# required by app-crypt/seahorse-3.30.1.1::gentoo
+# required by gnome-base/gnome-core-apps-3.28.2::gentoo
+# required by gnome-base/gnome-3.28.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=app-crypt/gcr-3.28.1 vala
