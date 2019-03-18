@@ -338,3 +338,4 @@ media-libs/cogl				gles2
 # required by @world (argument)
 >=media-libs/gegl-0.4.14 raw jpeg2k
 app-emulation/gallium-nine-standalone		abi_x86_32
+net-libs/libpsl					-idn
