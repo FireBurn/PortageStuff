@@ -331,3 +331,10 @@ media-libs/cogl				gles2
 # required by @selected
 # required by @world (argument)
 >=app-crypt/gcr-3.28.1 vala
+# required by media-gfx/gnome-photos-3.30.1::gentoo
+# required by gnome-base/gnome-extra-apps-3.30.2::gentoo[tracker]
+# required by gnome-base/gnome-3.28.2::gentoo[extras]
+# required by @selected
+# required by @world (argument)
+>=media-libs/gegl-0.4.14 raw jpeg2k
+app-emulation/gallium-nine-standalone		abi_x86_32
