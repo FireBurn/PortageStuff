@@ -1,0 +1,99 @@
+From 3faa345fbfeda94e0d5abd4ea1111ea010b03a10 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 8 Apr 2019 23:55:45 +0100
+Subject: [PATCH] Revert "[CMake] Replace LLVM_ENABLE_CXX1Y and friends with
+ LLVM_CXX_STD"
+
+This reverts commit 9736ffc02af86add87912db3427d088bf6bbd94d.
+---
+ CMakeLists.txt                        | 12 ++----------
+ cmake/modules/HandleLLVMOptions.cmake | 27 +++++++++++++++++----------
+ docs/CMake.rst                        |  4 ++--
+ 3 files changed, 21 insertions(+), 22 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index caecd0228ae..80ca9128975 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -421,21 +421,13 @@ else()
+   option(LLVM_ENABLE_MODULE_DEBUGGING "Compile with -gmodules." OFF)
+   option(LLVM_ENABLE_LOCAL_SUBMODULE_VISIBILITY "Compile with -fmodules-local-submodule-visibility." ON)
+ endif()
++option(LLVM_ENABLE_CXX1Y "Compile with C++1y enabled." OFF)
++option(LLVM_ENABLE_CXX1Z "Compile with C++1z enabled." OFF)
+ option(LLVM_ENABLE_LIBCXX "Use libc++ if available." OFF)
+ option(LLVM_ENABLE_LLD "Use lld as C and C++ linker." OFF)
+ option(LLVM_ENABLE_PEDANTIC "Compile with pedantic enabled." ON)
+ option(LLVM_ENABLE_WERROR "Fail and stop if a warning is triggered." OFF)
+ 
+-set(LLVM_CXX_STD_default "c++11")
+-# Preserve behaviour of legacy cache variables
+-if (LLVM_ENABLE_CXX1Y)
+-  set(LLVM_CXX_STD_default "c++1y")
+-elseif (LLVM_ENABLE_CXX1Z)
+-  set(LLVM_CXX_STD_default "c++1z")
+-endif()
+-set(LLVM_CXX_STD ${LLVM_CXX_STD_default}
+-    CACHE STRING "C++ standard to use for compilation.")
+-
+ option(LLVM_ENABLE_DUMP "Enable dump functions even when assertions are disabled" OFF)
+ 
+ if( NOT uppercase_CMAKE_BUILD_TYPE STREQUAL "DEBUG" )
+diff --git a/cmake/modules/HandleLLVMOptions.cmake b/cmake/modules/HandleLLVMOptions.cmake
+index 66ccbbf5be6..f94b79f819c 100644
+--- a/cmake/modules/HandleLLVMOptions.cmake
++++ b/cmake/modules/HandleLLVMOptions.cmake
+@@ -437,18 +437,25 @@ elseif( LLVM_COMPILER_IS_GCC_COMPATIBLE )
+   append_if(LLVM_ENABLE_WERROR "-Wno-error" CMAKE_REQUIRED_FLAGS)
+   add_flag_if_supported("-Werror=date-time" WERROR_DATE_TIME)
+   add_flag_if_supported("-Werror=unguarded-availability-new" WERROR_UNGUARDED_AVAILABILITY_NEW)
+-  check_cxx_compiler_flag("-std=${LLVM_CXX_STD}" CXX_SUPPORTS_CXX_STD)
+-  if (CXX_SUPPORTS_CXX_STD)
+-   if (CYGWIN OR MINGW)
+-      # MinGW and Cygwin are a bit stricter and lack things like
+-      # 'strdup', 'stricmp', etc in c++11 mode.
+-      string(REPLACE "c++" "gnu++" "${LLVM_CXX_STD}" gnu_LLVM_CXX_STD)
+-      append("-std=${gnu_LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
++  if (LLVM_ENABLE_CXX1Y)
++    check_cxx_compiler_flag("-std=c++1y" CXX_SUPPORTS_CXX1Y)
++    append_if(CXX_SUPPORTS_CXX1Y "-std=c++1y" CMAKE_CXX_FLAGS)
++  elseif(LLVM_ENABLE_CXX1Z)
++    check_cxx_compiler_flag("-std=c++1z" CXX_SUPPORTS_CXX1Z)
++    append_if(CXX_SUPPORTS_CXX1Z "-std=c++1z" CMAKE_CXX_FLAGS)
++  else()
++    check_cxx_compiler_flag("-std=c++11" CXX_SUPPORTS_CXX11)
++    if (CXX_SUPPORTS_CXX11)
++      if (CYGWIN OR MINGW)
++        # MinGW and Cygwin are a bit stricter and lack things like
++        # 'strdup', 'stricmp', etc in c++11 mode.
++        append("-std=gnu++11" CMAKE_CXX_FLAGS)
++      else()
++        append("-std=c++11" CMAKE_CXX_FLAGS)
++      endif()
+     else()
+-      append("-std=${LLVM_CXX_STD}" CMAKE_CXX_FLAGS)
++      message(FATAL_ERROR "LLVM requires C++11 support but the '-std=c++11' flag isn't supported.")
+     endif()
+-  else()
+-    message(FATAL_ERROR "The host compiler does not support '-std=${LLVM_CXX_STD}'.")
+   endif()
+   if (LLVM_ENABLE_MODULES)
+     set(OLD_CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS})
+diff --git a/docs/CMake.rst b/docs/CMake.rst
+index d62c42c32f8..a58aa519af5 100644
+--- a/docs/CMake.rst
++++ b/docs/CMake.rst
+@@ -266,8 +266,8 @@ LLVM-specific variables
+ **LLVM_ENABLE_THREADS**:BOOL
+   Build with threads support, if available. Defaults to ON.
+ 
+-**LLVM_CXX_STD**:STRING
+-  Build with the specified C++ standard. Defaults to "c++11".
++**LLVM_ENABLE_CXX1Y**:BOOL
++  Build in C++1y mode, if available. Defaults to OFF.
+ 
+ **LLVM_ENABLE_ASSERTIONS**:BOOL
+   Enables code assertions. Defaults to ON if and only if ``CMAKE_BUILD_TYPE``
+-- 
+2.21.0
+
