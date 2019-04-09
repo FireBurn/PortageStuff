@@ -1,0 +1,19 @@
+diff --git a/bin/install_megadrivers.py b/bin/install_megadrivers.py
+index c9ab99a283302e47f8ae699891b5358f4a5c3f3f..b5ac78887bf117915971fd478ec058fde141c620 100644
+--- a/bin/install_megadrivers.py
++++ b/bin/install_megadrivers.py
+@@ -70,7 +70,14 @@ def main():
+                 name, ext = os.path.splitext(name)
+         finally:
+             os.chdir(ret)
++
++    # Remove meson-created master .so and symlinks
+     os.unlink(master)
++    name, ext = os.path.splitext(master)
++    while ext != '.so':
++        if os.path.lexists(name):
++            os.unlink(name)
++        name, ext = os.path.splitext(name)
+ 
+ 
+ if __name__ == '__main__':
