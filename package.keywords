@@ -39,3 +39,7 @@ dev-util/boost-build			**
 =x11-libs/libva-intel-media-driver-9999 **
 # required by =libva-9999 (argument)
 =x11-libs/libva-9999 **
+# required by =libva-utils-9999 (argument)
+=media-video/libva-utils-9999 **
+# required by =x11-libs/libva-intel-driver-9999 (argument)
+=x11-libs/libva-intel-driver-9999 **
