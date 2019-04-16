@@ -12,3 +12,5 @@ dev-libs/icu
 www-plugins/chrome-binary-plugins
 <media-video/mpv-9999
 <media-video/ffmpeg-9999
+dev-libs/boost
+dev-util/boost-build
