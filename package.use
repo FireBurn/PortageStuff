@@ -341,3 +341,9 @@ media-libs/cogl				gles2
 app-emulation/gallium-nine-standalone		abi_x86_32
 net-libs/libpsl					-idn
 net-fs/samba					gnutls
+# required by net-libs/nghttp2-1.38.0::gentoo[cxx]
+# required by net-libs/nodejs-11.14.0::gentoo
+# required by www-client/chromium-73.0.3683.86::gentoo
+# required by @selected
+# required by @world (argument)
+>=net-libs/http-parser-2.9.2 abi_x86_32
