@@ -1,3 +1,4 @@
 -glamor
 -qt5
 -input_devices_libinput
+-gentoo-vm
