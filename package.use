@@ -195,7 +195,7 @@ www-plugins/adobe-flash			abi_x86_32
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			abi_x86_32
 x11-apps/mesa-progs			egl gles2
-x11-base/xorg-drivers			-video_cards_radeon -video_cards_radeonsi -video_cards_amdgpu -video_cards_intel -video_cards_i965
+x11-base/xorg-drivers			-video_cards_radeon -video_cards_radeonsi -video_cards_amdgpu -video_cards_intel video_cards_i965
 x11-libs/cairo				abi_x86_32
 x11-libs/gdk-pixbuf			abi_x86_32
 x11-libs/gtk+				abi_x86_32
