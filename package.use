@@ -98,7 +98,7 @@ media-libs/libv4l			abi_x86_32
 media-libs/libvorbis			abi_x86_32
 media-libs/libvpx			abi_x86_32 svc
 media-libs/libwebp			abi_x86_32
-media-libs/mesa				abi_x86_32 gles2 -video_cards_radeon -video_cards_intel video_cards_iris classic video_cards_i965
+media-libs/mesa				abi_x86_32 gles2 -video_cards_radeon -video_cards_intel video_cards_iris -classic -video_cards_i965
 media-libs/openal			abi_x86_32
 media-libs/opencore-amr			abi_x86_32
 media-libs/opus				abi_x86_32
@@ -195,7 +195,7 @@ www-plugins/adobe-flash			abi_x86_32
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			abi_x86_32
 x11-apps/mesa-progs			egl gles2
-x11-base/xorg-drivers			-video_cards_radeon -video_cards_radeonsi -video_cards_amdgpu -video_cards_intel video_cards_i965
+x11-base/xorg-drivers			-video_cards_radeon -video_cards_radeonsi -video_cards_amdgpu -video_cards_intel -video_cards_i965
 x11-libs/cairo				abi_x86_32
 x11-libs/gdk-pixbuf			abi_x86_32
 x11-libs/gtk+				abi_x86_32
