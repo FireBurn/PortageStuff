@@ -98,7 +98,7 @@ media-libs/libv4l			abi_x86_32
 media-libs/libvorbis			abi_x86_32
 media-libs/libvpx			abi_x86_32 svc
 media-libs/libwebp			abi_x86_32
-media-libs/mesa				abi_x86_32 gles2 -video_cards_radeon -video_cards_intel video_cards_iris -classic -video_cards_i965
+media-libs/mesa				abi_x86_32 gles2 -video_cards_radeon -video_cards_intel -video_cards_iris classic video_cards_i965
 media-libs/openal			abi_x86_32
 media-libs/opencore-amr			abi_x86_32
 media-libs/opus				abi_x86_32
