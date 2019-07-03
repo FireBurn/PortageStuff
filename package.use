@@ -4,6 +4,7 @@ app-admin/logstash-bin			all-plugins
 app-arch/bzip2				abi_x86_32
 app-arch/lz4				abi_x86_32
 app-arch/xz-utils			abi_x86_32
+app-emulation/dxvk			abi_x86_32
 app-emulation/wine-any			custom-cflags sdl staging vkd3d
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/vkd3d			abi_x86_32
