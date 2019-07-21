@@ -22,3 +22,7 @@ x11-base/xorg-drivers			**
 dev-libs/boost				**
 dev-util/boost-build			**
 =x11-base/xorg-server-9999 **
+# required by sys-devel/llvm-9999::gentoo[gold]
+# required by @selected
+# required by @world (argument)
+=sys-devel/llvmgold-10 **
