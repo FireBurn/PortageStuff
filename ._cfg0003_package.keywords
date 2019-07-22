@@ -1,0 +1,34 @@
+=sys-devel/llvm-common-9999		**
+media-libs/mesa				**
+media-libs/vulkan-demos			**
+=sys-devel/clang-9999			**
+=sys-devel/clang-runtime-9999		**
+=sys-devel/llvm-9999			**
+=sys-libs/compiler-rt-9999		**
+=sys-libs/compiler-rt-sanitizers-9999	**
+x11-libs/libvdpau-va-gl			**
+=sys-devel/lld-9999			**
+x11-drivers/xf86-video-amdgpu		**
+x11-drivers/xf86-video-intel		**
+dev-python/lit				**
+=sys-libs/libomp-9999			**
+<sys-libs/glibc-9999			**
+#dev-qt/*:5/5.11				-~amd64
+x11-base/xorg-drivers			**
+<sys-devel/binutils-9999 **
+=x11-libs/libdrm-9999 **
+=sys-libs/libcxx-9999 **
+=sys-libs/libcxxabi-9999 **
+dev-libs/boost				**
+dev-util/boost-build			**
+=x11-base/xorg-server-9999 **
+# required by sys-devel/llvm-9999::gentoo[gold]
+# required by @selected
+# required by @world (argument)
+=sys-devel/llvmgold-10 **
+# required by sys-devel/llvmgold-10::gentoo
+# required by sys-devel/llvm-8.0.1::gentoo[gold]
+# required by sys-devel/lld-8.0.1::gentoo
+# required by @selected
+# required by @world (argument)
+=sys-devel/llvm-10.0.0.9999 **
