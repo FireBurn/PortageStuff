@@ -348,3 +348,9 @@ net-fs/samba					gnutls
 # required by @selected
 # required by @world (argument)
 >=net-libs/http-parser-2.9.2 abi_x86_32
+# required by media-video/ffmpeg-4.2::gentoo[dav1d]
+# required by virtual/ffmpeg-9-r2::gentoo[-libav]
+# required by x11-libs/libvdpau-va-gl-0.3.4::x11
+# required by @selected
+# required by @world (argument)
+>=media-libs/dav1d-0.4.0 abi_x86_32
