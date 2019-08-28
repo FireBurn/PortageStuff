@@ -354,3 +354,6 @@ net-fs/samba					gnutls
 # required by @selected
 # required by @world (argument)
 >=media-libs/dav1d-0.4.0 abi_x86_32
+# required by dev-util/apitrace-8.0::gentoo[egl]
+# required by apitrace (argument)
+>=media-libs/mesa-9999 gles1
