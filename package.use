@@ -11,7 +11,6 @@ app-emulation/vkd3d			abi_x86_32
 app-emulation/winetricks		kde -gtk
 virtual/wine				-d3d9 staging
 app-office/libreoffice			java gtk gtk3
-#app-text/asciidoc			python_single_target_python2_7
 dev-db/mariadb				embedded
 dev-db/sqlite				abi_x86_32
 dev-db/sqlite				secure-delete
@@ -280,80 +279,10 @@ sys-libs/libunwind			abi_x86_32
 x11-wm/mutter				gles2
 media-libs/libmediaart			-qt5
 media-libs/cogl				gles2
-# required by media-sound/gnome-music-3.26.2::FireBurn
-# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
-# required by gnome-base/gnome-3.26.2::gentoo[extras]
-# required by @selected
-# required by @world (argument)
->=media-plugins/grilo-plugins-0.3.8 tracker
-# required by net-misc/gnome-online-miners-3.26.0::gentoo
-# required by media-gfx/gnome-photos-3.26.4::gentoo
-# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
-# required by gnome-base/gnome-3.26.2::gentoo[extras]
-# required by @selected
-# required by @world (argument)
-=dev-libs/libgdata-0.17.9-r1 gnome-online-accounts
-# required by media-sound/sound-juicer-3.24.0::gentoo
-# required by gnome-base/gnome-extra-apps-3.26.2::gentoo
-# required by gnome-base/gnome-3.26.2::gentoo[extras]
-# required by @selected
-# required by @world (argument)
-=gnome-base/gvfs-1.38.1 cdda
-# required by dev-libs/folks-0.11.4-r1::gentoo[eds]
-# required by gnome-extra/gnome-contacts-3.30.2::gentoo
-# required by gnome-base/gnome-core-apps-3.26.2::gentoo
-# required by gnome-base/gnome-3.26.2::gentoo
-# required by @selected
-# required by @world (argument)
-=gnome-extra/evolution-data-server-3.30.5-r1 vala
-# required by gnome-base/gnome-keyring-3.28.2::gentoo
-# required by gnome-base/gnome-core-apps-3.26.2::gentoo
-# required by gnome-base/gnome-3.26.2::gentoo
-# required by gnome (argument)
->=app-crypt/pinentry-1.1.0-r3 gnome-keyring
-# required by media-gfx/gnome-photos-3.26.4::gentoo
-# required by gnome-base/gnome-extra-apps-3.26.2::gentoo[tracker]
-# required by gnome-base/gnome-3.26.2::gentoo[extras]
-# required by gnome (argument)
->=media-libs/gegl-0.3.34:0.3 raw jpeg2k
-# required by gnome-extra/gnome-contacts-3.30.2::gentoo
-# required by gnome-base/gnome-core-apps-3.26.2::gentoo
-# required by gnome-base/gnome-3.26.2::gentoo
-# required by gnome (argument)
->=dev-libs/folks-0.11.4-r1 eds
-# required by media-sound/sound-juicer-3.24.0::gentoo
-# required by gnome-base/gnome-extra-apps-3.28.2::gentoo
-# required by gnome-base/gnome-3.28.2::gentoo[extras]
-# required by @selected
-# required by @world (argument)
->=gnome-base/gvfs-1.38.2 cdda
-# required by app-crypt/seahorse-3.30.1.1::gentoo
-# required by gnome-base/gnome-core-apps-3.28.2::gentoo
-# required by gnome-base/gnome-3.28.2::gentoo
-# required by @selected
-# required by @world (argument)
->=app-crypt/gcr-3.28.1 vala
-# required by media-gfx/gnome-photos-3.30.1::gentoo
-# required by gnome-base/gnome-extra-apps-3.30.2::gentoo[tracker]
-# required by gnome-base/gnome-3.28.2::gentoo[extras]
-# required by @selected
-# required by @world (argument)
->=media-libs/gegl-0.4.14 raw jpeg2k
+media-libs/gegl				raw jpeg2k
 app-emulation/gallium-nine-standalone		abi_x86_32
 net-libs/libpsl					-idn
 net-fs/samba					gnutls
-# required by net-libs/nghttp2-1.38.0::gentoo[cxx]
-# required by net-libs/nodejs-11.14.0::gentoo
-# required by www-client/chromium-73.0.3683.86::gentoo
-# required by @selected
-# required by @world (argument)
->=net-libs/http-parser-2.9.2 abi_x86_32
-# required by media-video/ffmpeg-4.2::gentoo[dav1d]
-# required by virtual/ffmpeg-9-r2::gentoo[-libav]
-# required by x11-libs/libvdpau-va-gl-0.3.4::x11
-# required by @selected
-# required by @world (argument)
->=media-libs/dav1d-0.4.0 abi_x86_32
-# required by dev-util/apitrace-8.0::gentoo[egl]
-# required by apitrace (argument)
+net-libs/http-parser			abi_x86_32
+media-libs/dav1d			abi_x86_32
 >=media-libs/mesa-9999 gles1
