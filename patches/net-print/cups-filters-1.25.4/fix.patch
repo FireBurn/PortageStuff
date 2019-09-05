@@ -1,0 +1,11 @@
+diff -Naur a/filter/pdf.cxx b/filter/pdf.cxx
+--- a/filter/pdf.cxx	2019-09-04 11:57:33.104531512 -0400
++++ b/filter/pdf.cxx	2019-09-04 11:58:27.830347465 -0400
+@@ -25,6 +25,7 @@
+ #include <qpdf/QPDFWriter.hh>
+ #include <qpdf/QPDFAcroFormDocumentHelper.hh>
+ #include <qpdf/QPDFPageDocumentHelper.hh>
++#include <cstring>
+ 
+ /*
+  * Useful reference:
