@@ -1,0 +1,123 @@
+From 51219a9a4400b1cf2c226e402c89b23aa8fbd004 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sat, 7 Sep 2019 17:29:34 +0100
+Subject: [PATCH] Revert "[llvm-ar] Fix support for archives with members
+ larger than 4GB"
+
+This reverts commit e52e5ed5a4cddc64c106dc03a13b07ac904b8fca.
+---
+ include/llvm/Object/Archive.h |  6 ++----
+ lib/Object/Archive.cpp        |  4 ++--
+ lib/Object/ArchiveWriter.cpp  | 21 ++++++---------------
+ 3 files changed, 10 insertions(+), 21 deletions(-)
+
+diff --git a/include/llvm/Object/Archive.h b/include/llvm/Object/Archive.h
+index 8b58eaeff41..c40278a4f92 100644
+--- a/include/llvm/Object/Archive.h
++++ b/include/llvm/Object/Archive.h
+@@ -48,7 +48,8 @@ public:
+   /// Get the name looking up long names.
+   Expected<StringRef> getName(uint64_t Size) const;
+ 
+-  Expected<uint64_t> getSize() const;
++  /// Members are not larger than 4GB.
++  Expected<uint32_t> getSize() const;
+ 
+   Expected<sys::fs::perms> getAccessMode() const;
+   Expected<sys::TimePoint<std::chrono::seconds>> getLastModified() const;
+@@ -220,9 +221,6 @@ public:
+   Archive(MemoryBufferRef Source, Error &Err);
+   static Expected<std::unique_ptr<Archive>> create(MemoryBufferRef Source);
+ 
+-  /// Size field is 10 decimal digits long
+-  static const uint64_t MaxMemberSize = 9999999999;
+-
+   enum Kind {
+     K_GNU,
+     K_GNU64,
+diff --git a/lib/Object/Archive.cpp b/lib/Object/Archive.cpp
+index fd9609f65bc..49e66f46ab3 100644
+--- a/lib/Object/Archive.cpp
++++ b/lib/Object/Archive.cpp
+@@ -223,8 +223,8 @@ Expected<StringRef> ArchiveMemberHeader::getName(uint64_t Size) const {
+   return Name.drop_back(1);
+ }
+ 
+-Expected<uint64_t> ArchiveMemberHeader::getSize() const {
+-  uint64_t Ret;
++Expected<uint32_t> ArchiveMemberHeader::getSize() const {
++  uint32_t Ret;
+   if (StringRef(ArMemHdr->Size,
+                 sizeof(ArMemHdr->Size)).rtrim(" ").getAsInteger(10, Ret)) {
+     std::string Buf;
+diff --git a/lib/Object/ArchiveWriter.cpp b/lib/Object/ArchiveWriter.cpp
+index f12f1e521a9..228f6b40c5e 100644
+--- a/lib/Object/ArchiveWriter.cpp
++++ b/lib/Object/ArchiveWriter.cpp
+@@ -16,7 +16,6 @@
+ #include "llvm/BinaryFormat/Magic.h"
+ #include "llvm/IR/LLVMContext.h"
+ #include "llvm/Object/Archive.h"
+-#include "llvm/Object/Error.h"
+ #include "llvm/Object/ObjectFile.h"
+ #include "llvm/Object/SymbolicFile.h"
+ #include "llvm/Support/EndianStream.h"
+@@ -148,7 +147,7 @@ static void print(raw_ostream &Out, object::Archive::Kind Kind, T Val) {
+ 
+ static void printRestOfMemberHeader(
+     raw_ostream &Out, const sys::TimePoint<std::chrono::seconds> &ModTime,
+-    unsigned UID, unsigned GID, unsigned Perms, uint64_t Size) {
++    unsigned UID, unsigned GID, unsigned Perms, unsigned Size) {
+   printWithSpacePadding(Out, sys::toTimeT(ModTime), 12);
+ 
+   // The format has only 6 chars for uid and gid. Truncate if the provided
+@@ -165,7 +164,7 @@ static void
+ printGNUSmallMemberHeader(raw_ostream &Out, StringRef Name,
+                           const sys::TimePoint<std::chrono::seconds> &ModTime,
+                           unsigned UID, unsigned GID, unsigned Perms,
+-                          uint64_t Size) {
++                          unsigned Size) {
+   printWithSpacePadding(Out, Twine(Name) + "/", 16);
+   printRestOfMemberHeader(Out, ModTime, UID, GID, Perms, Size);
+ }
+@@ -173,7 +172,8 @@ printGNUSmallMemberHeader(raw_ostream &Out, StringRef Name,
+ static void
+ printBSDMemberHeader(raw_ostream &Out, uint64_t Pos, StringRef Name,
+                      const sys::TimePoint<std::chrono::seconds> &ModTime,
+-                     unsigned UID, unsigned GID, unsigned Perms, uint64_t Size) {
++                     unsigned UID, unsigned GID, unsigned Perms,
++                     unsigned Size) {
+   uint64_t PosAfterHeader = Pos + 60 + Name.size();
+   // Pad so that even 64 bit object files are aligned.
+   unsigned Pad = OffsetToAlignment(PosAfterHeader, 8);
+@@ -208,7 +208,7 @@ static void
+ printMemberHeader(raw_ostream &Out, uint64_t Pos, raw_ostream &StringTable,
+                   StringMap<uint64_t> &MemberNames, object::Archive::Kind Kind,
+                   bool Thin, const NewArchiveMember &M,
+-                  sys::TimePoint<std::chrono::seconds> ModTime, uint64_t Size) {
++                  sys::TimePoint<std::chrono::seconds> ModTime, unsigned Size) {
+   if (isBSDLike(Kind))
+     return printBSDMemberHeader(Out, Pos, M.MemberName, ModTime, M.UID, M.GID,
+                                 M.Perms, Size);
+@@ -474,17 +474,8 @@ computeMemberData(raw_ostream &StringTable, raw_ostream &SymNames,
+       ModTime = sys::toTimePoint(FilenameCount[M.MemberName]++);
+     else
+       ModTime = M.ModTime;
+-
+-    uint64_t Size = Buf.getBufferSize() + MemberPadding;
+-    if (Size > object::Archive::MaxMemberSize) {
+-      std::string StringMsg =
+-          "File " + M.MemberName.str() + " exceeds size limit";
+-      return make_error<object::GenericBinaryError>(
+-          std::move(StringMsg), object::object_error::parse_failed);
+-    }
+-
+     printMemberHeader(Out, Pos, StringTable, MemberNames, Kind, Thin, M,
+-                      ModTime, Size);
++                      ModTime, Buf.getBufferSize() + MemberPadding);
+     Out.flush();
+ 
+     Expected<std::vector<unsigned>> Symbols =
+-- 
+2.23.0
+
