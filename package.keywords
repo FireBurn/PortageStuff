@@ -21,5 +21,5 @@ sys-libs/libcxx				**
 sys-libs/libcxxabi			**
 dev-libs/boost				**
 dev-util/boost-build			**
-=x11-base/xorg-server-9999 		**
+#=x11-base/xorg-server-9999 		**
 sys-devel/llvmgold			**
