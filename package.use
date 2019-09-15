@@ -260,7 +260,8 @@ dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
 net-wireless/crda                       gcrypt
 media-libs/libsdl2			abi_x86_32
-sys-apps/lm_sensors			abi_x86_32
+# move sys-apps/lm_sensors sys-apps/lm-sensors
+sys-apps/lm-sensors			abi_x86_32
 media-plugins/gst-plugins-gtk		abi_x86_32
 x11-libs/xcb-util			abi_x86_32
 x11-libs/xcb-util-keysyms		abi_x86_32
