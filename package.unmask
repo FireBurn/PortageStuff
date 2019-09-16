@@ -1,5 +1,5 @@
 app-eselect/eselect-opengl
-dev-qt/*
+#dev-qt/*
 media-libs/mesa
 x11-base/xorg-drivers
 x11-misc/sddm
