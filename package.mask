@@ -3,3 +3,4 @@ virtual/jre:7
 dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =dev-util/gn-0.1583
+#=media-sound/pulseaudio-13.0
