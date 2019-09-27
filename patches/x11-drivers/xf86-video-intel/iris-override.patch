@@ -1,0 +1,26 @@
+diff --git a/src/sna/sna_dri2.c b/src/sna/sna_dri2.c
+index 6426a386..f2cbc433 100644
+--- a/src/sna/sna_dri2.c
++++ b/src/sna/sna_dri2.c
+@@ -3701,7 +3701,7 @@ static const char *dri_driver_name(struct sna *sna)
+ 		else if (sna->kgem.gen < 040)
+ 			return "i915";
+ 		else
+-			return "i965";
++			return "iris";
+ 	}
+ 
+ 	return s;
+diff --git a/src/uxa/intel_dri.c b/src/uxa/intel_dri.c
+index 524826d2..5ad394d8 100644
+--- a/src/uxa/intel_dri.c
++++ b/src/uxa/intel_dri.c
+@@ -1540,7 +1540,7 @@ static const char *dri_driver_name(intel_screen_private *intel)
+ 		else if (INTEL_INFO(intel)->gen < 040)
+ 			return "i915";
+ 		else
+-			return "i965";
++			return "iris";
+ 	}
+ 
+ 	return s;
