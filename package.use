@@ -287,3 +287,4 @@ net-fs/samba					gnutls
 net-libs/http-parser			abi_x86_32
 media-libs/dav1d			abi_x86_32
 >=media-libs/mesa-9999 gles1
+gnome-base/gconf			python_targets_python2_7
