@@ -1,0 +1,64 @@
+From 28609ca3eb6e1e627df4524912500fe00a6a1c77 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 13 Dec 2019 13:52:12 +0000
+Subject: [PATCH] Remove static test
+
+---
+ tests/Makefile          | 16 +++-------------
+ tests/libcap_psx_test.c | 11 -----------
+ 2 files changed, 3 insertions(+), 24 deletions(-)
+ delete mode 100644 tests/libcap_psx_test.c
+
+diff --git a/tests/Makefile b/tests/Makefile
+index dfed90e..cecd7e8 100644
+--- a/tests/Makefile
++++ b/tests/Makefile
+@@ -7,25 +7,15 @@ include ../Make.Rules
+ 
+ CFLAGS += -fPIC
+ 
+-all: run_psx_test run_libcap_psx_test
++all: run_psx_test
+ 
+ install: all
+ 
+-run_psx_test: psx_test psx_test_wrap
++run_psx_test: psx_test
+ 	./psx_test
+-	./psx_test_wrap
+ 
+ psx_test: psx_test.c
+ 	$(CC) $(CFLAGS) $(CPPFLAGS) -DNOWRAP $< -o $@ $(LIBPSXLIB)
+ 
+-psx_test_wrap: psx_test.c
+-	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBPSXLIB) -Wl,-wrap,pthread_create
+-
+-run_libcap_psx_test: libcap_psx_test
+-	./libcap_psx_test
+-
+-libcap_psx_test: libcap_psx_test.c
+-	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBCAPLIB) $(LIBPSXLIB) -Wl,-wrap,pthread_create --static
+-
+ clean:
+-	rm -f psx_test psx_test_wrap libcap_psx_test
++	rm -f psx_test
+diff --git a/tests/libcap_psx_test.c b/tests/libcap_psx_test.c
+deleted file mode 100644
+index 4b09bb0..0000000
+--- a/tests/libcap_psx_test.c
++++ /dev/null
+@@ -1,11 +0,0 @@
+-#include <pthread.h>
+-#include <stdio.h>
+-#include <sys/capability.h>
+-#include <sys/psx_syscall.h>
+-
+-int main(int argc, char **argv) {
+-    printf("hello libcap and libpsx\n");
+-    psx_register(pthread_self());
+-    cap_t start = cap_get_proc();
+-    cap_set_proc(start);
+-}
+-- 
+2.24.1
+
