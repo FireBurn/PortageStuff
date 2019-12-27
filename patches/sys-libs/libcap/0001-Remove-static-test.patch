@@ -1,24 +1,23 @@
-From 28609ca3eb6e1e627df4524912500fe00a6a1c77 Mon Sep 17 00:00:00 2001
-From: Mike Lothian <mike@fireburn.co.uk>
-Date: Fri, 13 Dec 2019 13:52:12 +0000
-Subject: [PATCH] Remove static test
-
----
- tests/Makefile          | 16 +++-------------
- tests/libcap_psx_test.c | 11 -----------
- 2 files changed, 3 insertions(+), 24 deletions(-)
- delete mode 100644 tests/libcap_psx_test.c
-
 diff --git a/tests/Makefile b/tests/Makefile
-index dfed90e..cecd7e8 100644
+index dcb89ae..f1ea608 100644
 --- a/tests/Makefile
 +++ b/tests/Makefile
-@@ -7,25 +7,15 @@ include ../Make.Rules
+@@ -7,12 +7,12 @@ include ../Make.Rules
  
- CFLAGS += -fPIC
+ DEPS=../libcap/libcap.a ../libcap/libpsx.a
  
--all: run_psx_test run_libcap_psx_test
-+all: run_psx_test
+-all: psx_test psx_test_wrap libcap_psx_test
++all: psx_test
+ 
+ $(DEPS):
+ 	make -C ../libcap all
+ 
+-test: run_psx_test run_libcap_psx_test
++test: run_psx_test
+ 
+ sudotest: test
+ 
+@@ -20,21 +20,11 @@ CFLAGS += -fPIC
  
  install: all
  
@@ -27,38 +26,18 @@ index dfed90e..cecd7e8 100644
  	./psx_test
 -	./psx_test_wrap
  
- psx_test: psx_test.c
+ psx_test: psx_test.c $(DEPS)
  	$(CC) $(CFLAGS) $(CPPFLAGS) -DNOWRAP $< -o $@ $(LIBPSXLIB)
  
--psx_test_wrap: psx_test.c
+-psx_test_wrap: psx_test.c $(DEPS)
 -	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBPSXLIB) -Wl,-wrap,pthread_create
 -
 -run_libcap_psx_test: libcap_psx_test
 -	./libcap_psx_test
 -
--libcap_psx_test: libcap_psx_test.c
+-libcap_psx_test: libcap_psx_test.c $(DEPS)
 -	$(CC) $(CFLAGS) $(CPPFLAGS) $< -o $@ $(LIBCAPLIB) $(LIBPSXLIB) -Wl,-wrap,pthread_create --static
 -
  clean:
 -	rm -f psx_test psx_test_wrap libcap_psx_test
 +	rm -f psx_test
-diff --git a/tests/libcap_psx_test.c b/tests/libcap_psx_test.c
-deleted file mode 100644
-index 4b09bb0..0000000
---- a/tests/libcap_psx_test.c
-+++ /dev/null
-@@ -1,11 +0,0 @@
--#include <pthread.h>
--#include <stdio.h>
--#include <sys/capability.h>
--#include <sys/psx_syscall.h>
--
--int main(int argc, char **argv) {
--    printf("hello libcap and libpsx\n");
--    psx_register(pthread_self());
--    cap_t start = cap_get_proc();
--    cap_set_proc(start);
--}
--- 
-2.24.1
-
