@@ -25,6 +25,7 @@ dev-util/boost-build			**
 #sys-devel/llvmgold			**
 # required by =libva-intel-media-driver-9999 (argument)
 =x11-libs/libva-intel-media-driver-9999 **
+=x11-libs/libva-intel-driver-9999	**
 # required by x11-libs/libva-intel-media-driver-9999::gentoo
 # required by @selected
 # required by @world (argument)
