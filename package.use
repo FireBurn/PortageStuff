@@ -300,3 +300,7 @@ gnome-base/gconf			python_targets_python2_7
 # required by @system
 # required by @world (argument)
 >=virtual/libcrypt-1 abi_x86_32
+# required by media-libs/mesa-9999::gentoo[zstd]
+# required by @selected
+# required by @world (argument)
+>=app-arch/zstd-1.4.4-r2 abi_x86_32
