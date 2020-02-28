@@ -1,0 +1,12 @@
+diff --git a/src/amd/vulkan/radv_rgp.c b/src/amd/vulkan/radv_rgp.c
+index e19667f7678325623e18190069cea7141d17ef32..2ac54434987870cfa1644744ea9f0afcd514b4d1 100644
+--- a/src/amd/vulkan/radv_rgp.c
++++ b/src/amd/vulkan/radv_rgp.c
+@@ -268,6 +268,7 @@ struct sqtt_file_chunk_asic_info {
+ 	uint32_t memory_ops_per_clock;
+ 	enum sqtt_memory_type memory_chip_type;
+ 	uint32_t lds_granularity;
++	char padding[4];
+ 	uint16_t cu_mask[SQTT_MAX_NUM_SE][SQTT_SA_PER_SE];
+ 	char reserved1[128];
+ };
