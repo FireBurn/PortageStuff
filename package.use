@@ -304,3 +304,11 @@ gnome-base/gconf			python_targets_python2_7
 # required by @selected
 # required by @world (argument)
 >=app-arch/zstd-1.4.4-r2 abi_x86_32
+dev-util/gyp python_single_target_python2_7
+# required by dev-util/gyp-20170904022846-r1::gentoo[python_single_target_python2_7]
+# required by gyp (argument)
+>=dev-python/setuptools-44.0.0 python_targets_python2_7
+# required by dev-python/setuptools-44.0.0::gentoo
+# required by dev-util/gyp-20170904022846-r1::gentoo[python_single_target_python2_7]
+# required by gyp (argument)
+>=dev-python/certifi-2019.11.28 python_targets_python2_7
