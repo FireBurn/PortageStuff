@@ -7,8 +7,6 @@ x11-drivers/xf86-video-intel
 dev-libs/icu
 <net-libs/nodejs-99
 <dev-libs/openssl-1.2
-www-client/chromium
-www-plugins/chrome-binary-plugins
 <media-video/mpv-9999
 <media-video/ffmpeg-9999
 # required by =javatoolkit-0.6.0 (argument)
