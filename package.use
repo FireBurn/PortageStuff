@@ -303,3 +303,8 @@ gnome-base/gconf			python_targets_python2_7
 # required by @selected
 # required by @world (argument)
 >=app-arch/zstd-1.4.4-r2 abi_x86_32
+# required by sys-libs/libunwind-1.4.0::gentoo[lzma]
+# required by app-emulation/wine-staging-5.5-r1::gentoo[unwind]
+# required by @selected
+# required by @world (argument)
+>=app-arch/xz-utils-5.2.5 static-libs
