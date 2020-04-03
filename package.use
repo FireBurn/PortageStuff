@@ -308,3 +308,10 @@ gnome-base/gconf			python_targets_python2_7
 # required by @selected
 # required by @world (argument)
 >=app-arch/xz-utils-5.2.5 static-libs
+# required by dev-libs/elfutils-0.179::gentoo[bzip2]
+# required by virtual/libelf-3::gentoo
+# required by media-libs/mesa-9999::gentoo[-video_cards_radeon,-video_cards_r600,video_cards_radeonsi,llvm,gallium,-opencl]
+# required by x11-apps/mesa-progs-9999::FireBurn
+# required by @selected
+# required by @world (argument)
+>=app-arch/bzip2-1.0.8 static-libs
