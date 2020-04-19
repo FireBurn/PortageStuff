@@ -16,4 +16,3 @@ dev-libs/icu
 # minor bumps here and there which is why the mask is still in place for the
 # time being.
 =dev-java/javatoolkit-0.6.0
-www-client/chromium
