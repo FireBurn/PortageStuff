@@ -315,3 +315,4 @@ gnome-base/gconf			python_targets_python2_7
 # required by @selected
 # required by @world (argument)
 >=app-arch/bzip2-1.0.8 static-libs
+dev-util/vulkan-tools		cube -wayland

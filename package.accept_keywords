@@ -17,8 +17,8 @@ dev-python/lit				**
 #x11-base/xorg-drivers			**
 <sys-devel/binutils-9999		**
 =x11-libs/libdrm-9999			**
-sys-libs/libcxx				**
-sys-libs/libcxxabi			**
+#sys-libs/libcxx				**
+#sys-libs/libcxxabi			**
 dev-libs/boost				**
 dev-util/boost-build			**
 #=x11-base/xorg-server-9999 		**
