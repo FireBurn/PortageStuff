@@ -1,0 +1,76 @@
+From 7f3a5eb70e476708551445219f7aceb7afc0a4a0 Mon Sep 17 00:00:00 2001
+From: Evgeny Vereshchagin <evvers@ya.ru>
+Date: Tue, 5 May 2020 11:10:56 +0000
+Subject: [PATCH] build-system: bring back 'nonnull'
+
+Having taken a look at https://github.com/systemd/systemd/runs/645252074?check_suite_focus=true
+where fuzz-journal-remote failed with
+```
+AddressSanitizer:DEADLYSIGNAL
+=================================================================
+==16==ERROR: AddressSanitizer: SEGV on unknown address 0x000000000000 (pc 0x7f864f98948e bp 0x7ffde5c6b7c0 sp 0x7ffde5c6b560 T0)
+==16==The signal is caused by a READ memory access.
+==16==Hint: address points to the zero page.
+SCARINESS: 10 (null-deref)
+    #0 0x7f864f98948e in output_short /work/build/../../src/systemd/src/shared/logs-show.c
+    #1 0x7f864f984624 in show_journal_entry /work/build/../../src/systemd/src/shared/logs-show.c:1154:15
+    #2 0x7f864f984b63 in show_journal /work/build/../../src/systemd/src/shared/logs-show.c:1239:21
+    #3 0x4cabab in LLVMFuzzerTestOneInput /work/build/../../src/systemd/src/fuzz/fuzz-journal-remote.c:67:21
+    #4 0x51fd16 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) /src/libfuzzer/FuzzerLoop.cpp:556:15
+    #5 0x51c330 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool*) /src/libfuzzer/FuzzerLoop.cpp:470:3
+    #6 0x523700 in fuzzer::Fuzzer::ReadAndExecuteSeedCorpora(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) /src/libfuzzer/FuzzerLoop.cpp:765:7
+    #7 0x5246cd in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) /src/libfuzzer/FuzzerLoop.cpp:792:3
+    #8 0x4de3d1 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) /src/libfuzzer/FuzzerDriver.cpp:824:6
+    #9 0x4cfb47 in main /src/libfuzzer/FuzzerMain.cpp:19:10
+    #10 0x7f864e69782f in __libc_start_main (/lib/x86_64-linux-gnu/libc.so.6+0x2082f)
+    #11 0x41f2a8 in _start (out/fuzz-journal-remote+0x41f2a8)
+
+AddressSanitizer can not provide additional info.
+SUMMARY: AddressSanitizer: SEGV /work/build/../../src/systemd/src/shared/logs-show.c in output_short
+==16==ABORTING
+MS: 0 ; base unit: 0000000000000000000000000000000000000000
+0x44,0x3d,0xa,0x5f,0x5f,0x52,0x45,0x41,0x4c,0x54,0x49,0x4d,0x45,0x5f,0x54,0x49,0x4d,0x45,0x53,0x54,0x41,0x4d,0x50,0x3d,0x31,0xa,0xa,
+D=\x0a__REALTIME_TIMESTAMP=1\x0a\x0a
+artifact_prefix='./'; Test unit written to ./crash-d635b9dd31cceff3c912fd45e1a58d7e90f0ad73
+Base64: RD0KX19SRUFMVElNRV9USU1FU1RBTVA9MQoK
+```
+I was wondering why it hadn't been caught by the compiler even though clang should have failed to compile it with
+```
+../src/shared/logs-show.c:624:25: warning: null passed to a callee that requires a non-null argument [-Wnonnull]
+                        print_multiline(f, 4 + fieldlen + 1, 0, OUTPUT_FULL_WIDTH, 0, false,
+                        ^
+../src/shared/logs-show.c:161:24: note: callee declares array parameter as static here
+                size_t highlight[static 2]) {
+                       ^        ~~~~~~~~~~
+../src/shared/logs-show.c:1239:21: warning: null passed to a callee that requires a non-null argument [-Wnonnull]
+                r = show_journal_entry(f, j, mode, n_columns, flags, NULL, NULL, ellipsized);
+                    ^                                                      ~~~~
+../src/shared/logs-show.c:1133:30: note: callee declares array parameter as static here
+                const size_t highlight[static 2],
+                             ^        ~~~~~~~~~~
+2 warnings generated.
+```
+
+Given that judging by https://github.com/systemd/systemd/issues/13039 it doesn't seem to be
+the first time issues like that have been missed I think it would be better to turn nonnull on
+and get around false positives on a case-by-case basis with DISABLE_WARNING_NONNULL .. REENABLE_WARNING
+
+Reopens https://github.com/systemd/systemd/issues/6119
+---
+ meson.build | 3 ---
+ 1 file changed, 3 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index fef3c27cf4d..5e06f19c9c4 100644
+--- a/meson.build
++++ b/meson.build
+@@ -377,9 +377,6 @@ possible_cc_flags = [
+         '-Wno-error=#warnings',  # clang
+         '-Wno-string-plus-int',  # clang
+ 
+-        # work-around for gcc 7.1 turning this on on its own.
+-        '-Wno-error=nonnull',
+-
+         # Disable -Wmaybe-uninitialized, since it's noisy on gcc 8 with
+         # optimizations enabled, producing essentially false positives.
+         '-Wno-maybe-uninitialized',
