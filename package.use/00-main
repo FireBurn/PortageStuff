@@ -293,3 +293,4 @@ x11-themes/oxygen-gtk			abi_x86_32
 x11-wm/mutter				gles2
 cross-x86_64-w64-mingw32/binutils	-default-gold
 cross-x86_64-w64-mingw32/gcc		-lto
+sys-devel/gcc				zstd

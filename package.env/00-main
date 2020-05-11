@@ -24,8 +24,8 @@ sys-fs/fuse				o3.conf
 #sys-libs/glibc				debug.conf
 sys-libs/glibc				o3.conf
 sys-libs/ncurses                        o3.conf
-www-client/chromium			clango3lto.conf
-#www-client/chromium			o2.conf
+#www-client/chromium			clango3lto.conf
+#www-client/chromium			o3.conf
 #x11-apps/mesa-progs			debug.conf
 #x11-base/xorg-server			debug.conf
 x11-drivers/xf86-video-intel		o3.conf
