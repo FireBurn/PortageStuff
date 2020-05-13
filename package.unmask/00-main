@@ -9,10 +9,5 @@ dev-libs/icu
 <dev-libs/openssl-1.2
 <media-video/mpv-9999
 <media-video/ffmpeg-9999
-# required by =javatoolkit-0.6.0 (argument)
-# /usr/portage/profiles/package.mask:
-# Patrice Clement <monsieurp@gentoo.org> (09 Sep 2017)
-# Python 3 port is almost complete with version 0.6.0. Users might run into
-# minor bumps here and there which is why the mask is still in place for the
-# time being.
 =dev-java/javatoolkit-0.6.0
+www-client/chromium

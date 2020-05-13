@@ -1,0 +1,67 @@
+diff --git a/image_utils.c b/image_utils.c
+index 24cfd08..fc9fd09 100644
+--- a/image_utils.c
++++ b/image_utils.c
+@@ -190,13 +190,13 @@ jpeg_memory_src(j_decompress_ptr cinfo, const unsigned char * buffer, size_t buf
+ 	src->pub.bytes_in_buffer = bufsize;
+ }
+ 
+-jmp_buf setjmp_buffer;
++jmp_buf image_setjmp_buffer;
+ /* Don't exit on error like libjpeg likes to do */
+ static void
+ libjpeg_error_handler(j_common_ptr cinfo)
+ {
+ 	cinfo->err->output_message(cinfo);
+-	longjmp(setjmp_buffer, 1);
++	longjmp(image_setjmp_buffer, 1);
+ 	return;
+ }
+ 
+@@ -445,7 +445,7 @@ image_new_from_jpeg(const char *path, int is_file, const uint8_t *buf, int size,
+ 	{
+ 		jpeg_memory_src(&cinfo, buf, size);
+ 	}
+-	if( setjmp(setjmp_buffer) )
++	if( setjmp(image_setjmp_buffer) )
+ 	{
+ 		jpeg_destroy_decompress(&cinfo);
+ 		if( is_file && file )
+@@ -469,7 +469,7 @@ image_new_from_jpeg(const char *path, int is_file, const uint8_t *buf, int size,
+ 		return NULL;
+ 	}
+ 
+-	if( setjmp(setjmp_buffer) )
++	if( setjmp(image_setjmp_buffer) )
+ 	{
+ 		jpeg_destroy_decompress(&cinfo);
+ 		if( is_file && file )
+diff --git a/tivo_utils.c b/tivo_utils.c
+index 111e9b6..2298268 100644
+--- a/tivo_utils.c
++++ b/tivo_utils.c
+@@ -27,6 +27,9 @@
+ #include <sqlite3.h>
+ #include "tivo_utils.h"
+ 
++struct sqlite3PrngType sqlite3Prng;
++
++
+ /* This function based on byRequest */
+ char *
+ decodeString(char *string, int inplace)
+diff --git a/tivo_utils.h b/tivo_utils.h
+index d8756cf..07ba8dd 100644
+--- a/tivo_utils.h
++++ b/tivo_utils.h
+@@ -30,7 +30,9 @@ struct sqlite3PrngType {
+   unsigned char isInit;          /* True if initialized */
+   unsigned char i, j;            /* State variables */
+   unsigned char s[256];          /* State variables */
+-} sqlite3Prng;
++};
++
++extern struct sqlite3PrngType sqlite3Prng;
+ 
+ char *
+ decodeString(char *string, int inplace);
