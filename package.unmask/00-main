@@ -11,3 +11,4 @@ dev-libs/icu
 <media-video/ffmpeg-9999
 =dev-java/javatoolkit-0.6.0
 www-client/chromium
+net-misc/networkmanager
