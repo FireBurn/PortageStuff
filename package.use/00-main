@@ -291,6 +291,7 @@ x11-proto/xineramaproto			abi_x86_32
 x11-proto/xproto			abi_x86_32
 x11-themes/oxygen-gtk			abi_x86_32
 x11-wm/mutter				gles2
-cross-x86_64-w64-mingw32/binutils	-default-gold
-cross-x86_64-w64-mingw32/gcc		-lto -sanitize -fortran -vtv -pie -hardened
+#cross-x86_64-w64-mingw32/binutils	-default-gold
+cross-x86_64-w64-mingw32/gcc		-sanitize -fortran -vtv -pie -hardened libssp zstd
+cross-x86_64-w64-mingw32/mingw64-runtime	libraries
 sys-devel/gcc				zstd
