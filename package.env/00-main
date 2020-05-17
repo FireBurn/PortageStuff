@@ -1,4 +1,4 @@
-app-emulation/dxvk			o3.conf
+#app-emulation/dxvk			o3.conf
 app-emulation/gallium-nine-standalone	o3.conf
 app-emulation/wine-staging		o3.conf
 dev-java/openjdk			o3.conf
@@ -29,4 +29,7 @@ www-client/chromium			clango3lto.conf
 #x11-apps/mesa-progs			debug.conf
 #x11-base/xorg-server			debug.conf
 x11-drivers/xf86-video-intel		o3.conf
+cross-x86_64-w64-mingw32/*		o2.conf
+cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
+cross-i686-w64-mingw32/gcc		enable-posix.conf
