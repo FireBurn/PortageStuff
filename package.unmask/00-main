@@ -12,3 +12,4 @@ dev-libs/icu
 =dev-java/javatoolkit-0.6.0
 www-client/chromium
 net-misc/networkmanager
+www-plugins/chrome-binary-plugins
