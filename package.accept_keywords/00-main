@@ -24,3 +24,4 @@ dev-util/boost-build			**
 #=x11-base/xorg-server-9999 		**
 #sys-devel/llvmgold			**
 =x11-libs/libva-intel-driver-9999	**
+=app-emulation/dxvk-9999		**
