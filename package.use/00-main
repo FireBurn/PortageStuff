@@ -170,7 +170,7 @@ net-libs/libpsl				-idn
 net-libs/nghttp2			abi_x86_32
 net-libs/nodejs				inspector
 net-misc/curl				abi_x86_32
-net-misc/networkmanager			gnutls modemmanager -nss -dhclient dhcpcd
+net-misc/networkmanager			gnutls modemmanager -nss
 net-misc/networkmanager-openconnect	-gtk
 net-misc/openssh			-ldap
 net-nds/openldap			abi_x86_32 -gnutls
