@@ -3,5 +3,3 @@ virtual/jre:7
 dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =app-emulation/wine-staging-5.7
->sys-libs/pam-1.4
->sys-auth/pambase-20200401
