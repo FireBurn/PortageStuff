@@ -8,7 +8,7 @@ dev-libs/icu
 <net-libs/nodejs-99
 <dev-libs/openssl-1.2
 <media-video/mpv-9999
-<media-video/ffmpeg-9999
+#<media-video/ffmpeg-9999
 =dev-java/javatoolkit-0.6.0
 www-client/chromium
 net-misc/networkmanager
