@@ -2,5 +2,3 @@ virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
-=app-emulation/wine-staging-5.7
-=media-video/ffmpeg-4.3
