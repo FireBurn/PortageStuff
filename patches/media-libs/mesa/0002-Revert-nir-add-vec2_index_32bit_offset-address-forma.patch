@@ -1,7 +1,7 @@
-From 13017b48b17981ceabcf6cfe5e33c6627b080538 Mon Sep 17 00:00:00 2001
+From 05324b8f3b9303a3864babd1f0c348ea5f66cc97 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
-Date: Wed, 8 Jul 2020 11:18:59 +0100
-Subject: [PATCH 1/2] Revert "nir: add vec2_index_32bit_offset address format"
+Date: Wed, 8 Jul 2020 16:18:26 +0100
+Subject: [PATCH 2/2] Revert "nir: add vec2_index_32bit_offset address format"
 
 This reverts commit 12e18d9e7aded72dbfa513bce010e793f0d31cf9.
 ---
