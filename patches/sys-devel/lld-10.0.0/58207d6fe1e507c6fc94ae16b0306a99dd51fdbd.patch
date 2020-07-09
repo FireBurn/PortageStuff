@@ -1,0 +1,66 @@
+From 58207d6fe1e507c6fc94ae16b0306a99dd51fdbd Mon Sep 17 00:00:00 2001
+From: Fangrui Song <maskray@google.com>
+Date: Sat, 18 Apr 2020 15:04:44 -0700
+Subject: [PATCH] [ELF] Fix "TLS attribute mismatch" false positives for
+ STT_NOTYPE undefined symbols
+
+D13550 added the diagnostic to address/work around a crash.
+The rule was refined by D19836 (test/ELF/tls-archive.s) to exclude Lazy symbols.
+
+https://bugs.llvm.org/show_bug.cgi?id=45598 reported another case where the current logic has a false positive:
+
+Bitcode does not record undefined module-level inline assembly symbols
+(`IRSymtab.cpp:Builder::addSymbol`). Such an undefined symbol does not
+have the FB_tls bit and lld will not consider it STT_TLS. When the symbol is
+later replaced by a STT_TLS Defined, lld will error "TLS attribute mismatch".
+
+This patch fixes this false positive by allowing a STT_NOTYPE undefined
+symbol to be replaced by a STT_TLS.
+
+Considered alternative:
+
+Moving the diagnostics to scanRelocs() can improve the diagnostics (PR36049)
+but that requires a fair amount of refactoring. We will need more
+RelExpr members. It requires more thoughts whether it is worthwhile.
+
+See `test/ELF/tls-mismatch.s` for behavior differences. We will fail to
+diagnose a likely runtime bug (STT_NOTYPE non-TLS relocation referencing
+a TLS definition). This is probably acceptable because compiler
+generated code sets symbol types properly.
+
+Reviewed By: grimar, psmith
+
+Differential Revision: https://reviews.llvm.org/D78438
+---
+ ELF/Symbols.h           | 17 ++++++++++-------
+ test/ELF/tls-mismatch.s |  8 ++++++--
+ 2 files changed, 16 insertions(+), 9 deletions(-)
+
+diff --git a/ELF/Symbols.h b/ELF/Symbols.h
+index 3459c264e1fa..a36669e893aa 100644
+--- a/ELF/Symbols.h
++++ b/ELF/Symbols.h
+@@ -517,13 +517,16 @@ size_t Symbol::getSymbolSize() const {
+ void Symbol::replace(const Symbol &newSym) {
+   using llvm::ELF::STT_TLS;
+ 
+-  // Symbols representing thread-local variables must be referenced by
+-  // TLS-aware relocations, and non-TLS symbols must be reference by
+-  // non-TLS relocations, so there's a clear distinction between TLS
+-  // and non-TLS symbols. It is an error if the same symbol is defined
+-  // as a TLS symbol in one file and as a non-TLS symbol in other file.
+-  if (symbolKind != PlaceholderKind && !isLazy() && !newSym.isLazy() &&
+-      (type == STT_TLS) != (newSym.type == STT_TLS))
++  // st_value of STT_TLS represents the assigned offset, not the actual address
++  // which is used by STT_FUNC and STT_OBJECT. STT_TLS symbols can only be
++  // referenced by special TLS relocations. It is usually an error if a STT_TLS
++  // symbol is replaced by a non-STT_TLS symbol, vice versa. There are two
++  // exceptions: (a) a STT_NOTYPE lazy/undefined symbol can be replaced by a
++  // STT_TLS symbol, (b) a STT_TLS undefined symbol can be replaced by a
++  // STT_NOTYPE lazy symbol.
++  if (symbolKind != PlaceholderKind && !newSym.isLazy() &&
++      (type == STT_TLS) != (newSym.type == STT_TLS) &&
++      type != llvm::ELF::STT_NOTYPE)
+     error("TLS attribute mismatch: " + toString(*this) + "\n>>> defined in " +
+           toString(newSym.file) + "\n>>> defined in " + toString(file));
+ 
