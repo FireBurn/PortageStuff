@@ -220,7 +220,7 @@ virtual/opengl				abi_x86_32
 virtual/pam				abi_x86_32
 virtual/pkgconfig			abi_x86_32
 virtual/wine				-d3d9 staging
-www-client/chromium			custom-cflags hangouts proprietary-codecs system-ffmpeg system-libvpx widevine system-icu wayland ozone vaapi
+www-client/chromium			custom-cflags hangouts proprietary-codecs system-ffmpeg system-libvpx widevine system-icu -wayland -ozone vaapi
 www-client/firefox			custom-cflags custom-optimization hwaccel system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
 www-plugins/adobe-flash			abi_x86_32
 www-servers/apache			apache2_modules_auth_digest
