@@ -22,3 +22,4 @@ www-client/chromium			clango3lto.conf
 x11-drivers/xf86-video-intel		o3.conf
 net-libs/webkit-gtk			o3.conf
 media-libs/mesa				clango3lto.conf
+media-libs/dav1d			clango3lto.conf
