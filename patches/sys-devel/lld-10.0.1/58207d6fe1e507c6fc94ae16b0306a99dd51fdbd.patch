@@ -36,10 +36,10 @@ Differential Revision: https://reviews.llvm.org/D78438
  test/ELF/tls-mismatch.s |  8 ++++++--
  2 files changed, 16 insertions(+), 9 deletions(-)
 
-diff --git a/ELF/Symbols.h b/ELF/Symbols.h
+diff --git a/lld/ELF/Symbols.h b/lld/ELF/Symbols.h
 index 3459c264e1fa..a36669e893aa 100644
---- a/ELF/Symbols.h
-+++ b/ELF/Symbols.h
+--- a/lld/ELF/Symbols.h
++++ b/lld/ELF/Symbols.h
 @@ -517,13 +517,16 @@ size_t Symbol::getSymbolSize() const {
  void Symbol::replace(const Symbol &newSym) {
    using llvm::ELF::STT_TLS;
