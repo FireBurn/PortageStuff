@@ -1,5 +1,5 @@
 app-emulation/gallium-nine-standalone	o3.conf
-#app-emulation/wine-staging		o3.conf
+app-emulation/wine-staging		o3.conf
 app-emulation/wine-vanilla		o3.conf
 cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-i686-w64-mingw32/*		o2.conf
@@ -21,5 +21,3 @@ sys-devel/gcc				clango3lto.conf
 www-client/chromium			clango3lto.conf
 x11-drivers/xf86-video-intel		o3.conf
 net-libs/webkit-gtk			o3.conf
-media-libs/mesa				clango3lto.conf
-media-libs/dav1d			clango3lto.conf
