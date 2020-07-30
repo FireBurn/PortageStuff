@@ -13,6 +13,7 @@ app-emulation/dxvk			abi_x86_32
 app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
 app-emulation/wine-any			custom-cflags sdl staging vkd3d
+app-emulation/wine-staging		mingw
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-office/libreoffice			java gtk gtk3
