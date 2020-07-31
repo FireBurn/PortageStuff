@@ -1,0 +1,12 @@
+diff --git a/daemon/backends/upower/ddcutilbrightness.cpp b/daemon/backends/upower/ddcutilbrightness.cpp
+index e712c05adeb36ab2033ba4e13e76878bd89fb89a..a75aac5c467822538d847e0bb56dca6c001393db 100644
+--- a/daemon/backends/upower/ddcutilbrightness.cpp
++++ b/daemon/backends/upower/ddcutilbrightness.cpp
+@@ -56,7 +56,6 @@ void DDCutilBrightness::detect()
+         
+         DDCA_Feature_List vcpList;
+         ddca_get_feature_list_by_dref(DDCA_SUBSET_COLOR, dh, false, &vcpList);
+-        qCDebug(POWERDEVIL) << "ddca_feature_list: "<< ddca_feature_list_string(&vcpList, "0x", ",");
+         QVector<uint16_t> tmpVcpList;
+         for (int iVcp = 0; iVcp < m_usedVcp.count(); ++iVcp) {
+             DDCA_Non_Table_Vcp_Value returnValue;
