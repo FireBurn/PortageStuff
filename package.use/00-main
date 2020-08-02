@@ -70,7 +70,6 @@ games-emulation/dolphin			-wxwidgets
 games-fps/worldofpadman			maps
 games-util/steam-client-meta		flash steamfonts trayicon
 gnome-base/gconf			python_targets_python2_7
-gnome-base/librsvg			abi_x86_32
 kde-apps/kio-extras			mtp samba
 kde-plasma/plasma-desktop		gtk2 legacy-systray
 kde-plasma/powerdevil			brightness-control

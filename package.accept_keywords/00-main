@@ -26,4 +26,4 @@ dev-util/boost-build			**
 #=x11-libs/libva-intel-driver-9999	**
 =app-emulation/dxvk-9999		**
 app-emulation/vkd3d			**
-app-emulation/wine-staging		**
+#app-emulation/wine-staging		**
