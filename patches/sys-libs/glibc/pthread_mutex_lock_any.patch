@@ -1,35 +1,93 @@
-From 0d5af89a083eec76bf3adb25114d22c1985a29a0 Mon Sep 17 00:00:00 2001
-From: Mike Lothian <mike@fireburn.co.uk>
-Date: Tue, 4 Feb 2020 11:04:42 +0000
-Subject: [PATCH] Implement pthread_mutex_lock_any() and
- pthread_mutex_timedlock_any().
-
-On newer Linux kernels, futex supports a WAIT_MULTIPLE operation that can be
-used to implement new locking functionality that allows a given application
-thread to sleep while waiting for one of multiple given locks to become
-available.
-
-Patch-by: Pierre-Loup A. Griffais <pgriffais@valvesoftware.com>
-Rebased-by: Mike Lothian <mike@fireburn.co.uk>
----
- nptl/Makefile                                 |   1 +
- nptl/Versions                                 |   2 +
- nptl/pthreadP.h                               |   5 +
- nptl/pthread_mutex_lock_any.c                 |  37 ++++
- nptl/pthread_mutex_timedlock_any.c            | 193 ++++++++++++++++++
- sysdeps/nptl/lowlevellock-futex.h             |  15 ++
- sysdeps/nptl/pthread.h                        |  10 +
- .../sysv/linux/x86_64/64/libpthread.abilist   |   1 +
- 8 files changed, 264 insertions(+)
- create mode 100644 nptl/pthread_mutex_lock_any.c
- create mode 100644 nptl/pthread_mutex_timedlock_any.c
-
+diff --git a/multimutextestapp/testapp.c b/multimutextestapp/testapp.c
+new file mode 100644
+index 0000000000..eecf842dbc
+--- /dev/null
++++ b/multimutextestapp/testapp.c
+@@ -0,0 +1,78 @@
++#include <errno.h>
++#include <pthread.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++
++
++static pthread_mutex_t m[3];
++
++
++static void *
++tf (void *arg)
++{
++  int out;
++  int ret = pthread_mutex_lock_any( m, 3, &out );
++
++  printf("new thread ret %i out %i!\n", ret, out );
++
++  sleep(5);
++  printf("new thread done sleeping!\n");
++
++  pthread_mutex_unlock( &m[out] );
++
++  return NULL;
++}
++
++
++int main(int ac, char**av)
++{
++  pthread_mutex_init (&m[0], NULL);
++  pthread_mutex_init (&m[1], NULL);
++  pthread_mutex_init (&m[2], NULL);
++
++  int out;
++
++  int ret = pthread_mutex_lock_any( m, 3, &out );
++
++  printf("main thread ret %i out %i!\n", ret, out );
++
++
++  pthread_t th;
++  if (pthread_create (&th, NULL, tf, NULL) != 0)
++  {
++    puts ("create failed");
++    return 1;
++  }
++
++  sleep(1);
++
++  ret = pthread_mutex_lock_any( m, 3, &out );
++
++  printf("main thread ret %i out %i!\n", ret, out );
++
++  sleep(1);
++
++  struct timespec timeoutTime;
++  clock_gettime(CLOCK_REALTIME, &timeoutTime);
++  timeoutTime.tv_sec += 1;
++
++  ret = pthread_mutex_timedlock_any( m, 3, &timeoutTime, &out );
++
++  printf("main thread ret %i out %i!\n", ret, out );
++
++  clock_gettime(CLOCK_REALTIME, &timeoutTime);
++  timeoutTime.tv_sec += 3;
++
++  ret = pthread_mutex_timedlock_any( m, 3, &timeoutTime, &out );
++
++  printf("main thread ret %i out %i!\n", ret, out );
++
++  pthread_mutex_unlock( &m[out] );
++  pthread_mutex_unlock( &m[0] );
++  pthread_mutex_unlock( &m[2] );
++
++  printf("DONE unlock!\n");
++
++  return 0;
++}
 diff --git a/nptl/Makefile b/nptl/Makefile
-index 584e0ffd96..468bc286aa 100644
+index 89569c4f46..11368c93cb 100644
 --- a/nptl/Makefile
 +++ b/nptl/Makefile
-@@ -67,6 +67,7 @@ libpthread-routines = nptl-init nptlfreeres vars events version pt-interp \
- 		      pthread_getattr_np \
+@@ -97,6 +97,7 @@ libpthread-routines = nptl-init nptlfreeres vars events version pt-interp \
+ 		      pthread_attr_getstack pthread_attr_setstack \
  		      pthread_mutex_init pthread_mutex_destroy \
  		      pthread_mutex_lock pthread_mutex_trylock \
 +		      pthread_mutex_lock_any pthread_mutex_timedlock_any \
@@ -37,10 +95,10 @@ index 584e0ffd96..468bc286aa 100644
  		      pthread_mutex_cond_lock \
  		      pthread_mutexattr_init pthread_mutexattr_destroy \
 diff --git a/nptl/Versions b/nptl/Versions
-index ff6fc06002..a40c63122b 100644
+index aed118e717..df4a8313e2 100644
 --- a/nptl/Versions
 +++ b/nptl/Versions
-@@ -268,6 +268,8 @@ libpthread {
+@@ -285,6 +285,8 @@ libpthread {
      mtx_init; mtx_lock; mtx_timedlock; mtx_trylock; mtx_unlock; mtx_destroy;
      call_once; cnd_broadcast; cnd_destroy; cnd_init; cnd_signal;
      cnd_timedwait; cnd_wait; tss_create; tss_delete; tss_get; tss_set;
@@ -50,10 +108,10 @@ index ff6fc06002..a40c63122b 100644
  
    GLIBC_2.30 {
 diff --git a/nptl/pthreadP.h b/nptl/pthreadP.h
-index 7e0ab8ef42..53a2ece1b9 100644
+index 6f94d6be31..87f4afff30 100644
 --- a/nptl/pthreadP.h
 +++ b/nptl/pthreadP.h
-@@ -390,6 +390,11 @@ extern int __pthread_mutex_trylock (pthread_mutex_t *_mutex);
+@@ -395,6 +395,11 @@ extern int __pthread_mutex_trylock (pthread_mutex_t *_mutex);
  extern int __pthread_mutex_lock (pthread_mutex_t *__mutex);
  extern int __pthread_mutex_timedlock (pthread_mutex_t *__mutex,
       const struct timespec *__abstime);
@@ -308,7 +366,7 @@ index 0000000000..a95687ce8e
 +
 +weak_alias (__pthread_mutex_timedlock_any, pthread_mutex_timedlock_any)
 diff --git a/sysdeps/nptl/lowlevellock-futex.h b/sysdeps/nptl/lowlevellock-futex.h
-index 746f56f80c..42f7f026dd 100644
+index 2209ca76a1..83f32bc8e8 100644
 --- a/sysdeps/nptl/lowlevellock-futex.h
 +++ b/sysdeps/nptl/lowlevellock-futex.h
 @@ -38,6 +38,7 @@
@@ -319,23 +377,22 @@ index 746f56f80c..42f7f026dd 100644
  #define FUTEX_PRIVATE_FLAG	128
  #define FUTEX_CLOCK_REALTIME	256
  
-@@ -74,6 +75,15 @@
-      ? -INTERNAL_SYSCALL_ERRNO (__ret, __err) : 0);                     \
+@@ -73,6 +74,14 @@
+      ? -INTERNAL_SYSCALL_ERRNO (__ret) : 0);                     	\
    })
  
 +# define lll_futex_syscall_ret(nargs, futexp, op, ...)                  \
 +  ({                                                                    \
-+    INTERNAL_SYSCALL_DECL (__err);                                      \
-+    long int __ret = INTERNAL_SYSCALL (futex, __err, nargs, futexp, op, \
++    long int __ret = INTERNAL_SYSCALL (futex, nargs, futexp, op,        \
 +                                       __VA_ARGS__);                    \
-+    (__glibc_unlikely (INTERNAL_SYSCALL_ERROR_P (__ret, __err))         \
-+     ? -INTERNAL_SYSCALL_ERRNO (__ret, __err) : __ret);                 \
++    (__glibc_unlikely (INTERNAL_SYSCALL_ERROR_P (__ret))                \
++     ? -INTERNAL_SYSCALL_ERRNO (__ret) : __ret);                        \
 +  })
 +
  /* For most of these macros, the return value is never really used.
     Nevertheless, the protocol is that each one returns a negated errno
     code for failure or zero for success.  (Note that the corresponding
-@@ -90,6 +100,11 @@
+@@ -89,6 +98,11 @@
  		     __lll_private_flag (FUTEX_WAIT, private),  \
  		     val, timeout)
  
@@ -348,10 +405,10 @@ index 746f56f80c..42f7f026dd 100644
     lll_futex_clock_wait_bitset.  */
  # define lll_futex_supported_clockid(clockid)			\
 diff --git a/sysdeps/nptl/pthread.h b/sysdeps/nptl/pthread.h
-index 44dd707896..438aaede79 100644
+index 8a403cbf36..f1f7332472 100644
 --- a/sysdeps/nptl/pthread.h
 +++ b/sysdeps/nptl/pthread.h
-@@ -738,7 +738,17 @@ extern int pthread_mutex_trylock (pthread_mutex_t *__mutex)
+@@ -753,7 +753,17 @@ extern int pthread_mutex_trylock (pthread_mutex_t *__mutex)
  extern int pthread_mutex_lock (pthread_mutex_t *__mutex)
       __THROWNL __nonnull ((1));
  
@@ -370,10 +427,10 @@ index 44dd707896..438aaede79 100644
  extern int pthread_mutex_timedlock (pthread_mutex_t *__restrict __mutex,
  				    const struct timespec *__restrict
 diff --git a/sysdeps/unix/sysv/linux/x86_64/64/libpthread.abilist b/sysdeps/unix/sysv/linux/x86_64/64/libpthread.abilist
-index 91d0b8b14f..353cd886c4 100644
+index 971269d2ef..54d966516c 100644
 --- a/sysdeps/unix/sysv/linux/x86_64/64/libpthread.abilist
 +++ b/sysdeps/unix/sysv/linux/x86_64/64/libpthread.abilist
-@@ -115,6 +115,7 @@ GLIBC_2.2.5 pthread_kill_other_threads_np F
+@@ -105,6 +105,7 @@ GLIBC_2.2.5 pthread_kill_other_threads_np F
  GLIBC_2.2.5 pthread_mutex_destroy F
  GLIBC_2.2.5 pthread_mutex_init F
  GLIBC_2.2.5 pthread_mutex_lock F
