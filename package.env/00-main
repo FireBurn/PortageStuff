@@ -6,6 +6,7 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 dev-java/openjdk			o3.conf
+dev-lang/spidermonkey			o3.conf
 dev-libs/libaio				o3.conf
 dev-qt/qtscript				o3.conf
 dev-util/valgrind			o3.conf
