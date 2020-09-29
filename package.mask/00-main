@@ -4,3 +4,4 @@ dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =app-emulation/wine-staging-5.12
 =dev-lang/python-3.9*
+=cross-i686-w64-mingw32/binutils-2.35.1

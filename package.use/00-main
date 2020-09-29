@@ -9,7 +9,7 @@ app-arch/p7zip 				-kde -wxwidgets
 app-arch/xz-utils			abi_x86_32
 app-arch/xz-utils			static-libs
 app-arch/zstd				abi_x86_32
-app-emulation/dxvk			abi_x86_32
+#app-emulation/dxvk			abi_x86_32
 app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
 app-emulation/wine-any			custom-cflags sdl staging vkd3d
