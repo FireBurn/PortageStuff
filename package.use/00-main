@@ -16,7 +16,7 @@ app-emulation/wine-any			custom-cflags sdl staging vkd3d
 app-emulation/wine-staging		mingw
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/winetricks		kde -gtk
-app-office/libreoffice			java gtk gtk3
+app-office/libreoffice			clang gtk gtk3 java
 dev-db/mariadb				embedded
 dev-db/sqlite				abi_x86_32
 dev-db/sqlite				secure-delete

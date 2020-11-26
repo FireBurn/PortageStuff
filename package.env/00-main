@@ -27,3 +27,4 @@ dev-libs/libbsd				o3.conf
 sys-apps/sandbox			o3.conf
 sys-libs/libomp				o3.conf
 sys-libs/efivar				o3.conf
+app-office/libreoffice			clango3lto.conf
