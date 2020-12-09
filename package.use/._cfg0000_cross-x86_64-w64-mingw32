@@ -1,0 +1,33 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by media-video/ffmpeg-4.3.1::gentoo[svg]
+# required by kde-frameworks/kfilemetadata-5.73.0::kde[ffmpeg]
+# required by kde-plasma/plasma-browser-integration-5.19.4::gentoo
+# required by kde-plasma/plasma-meta-5.19.4::gentoo[browser-integration]
+# required by @selected
+# required by @world (argument)
+>=gnome-base/librsvg-2.48.8 abi_x86_32
+# required by gnome-base/librsvg-2.48.8::gentoo
+# required by media-gfx/eog-3.36.3::gentoo[svg]
+# required by gnome-base/gnome-core-apps-3.34.4::gentoo
+# required by gnome-base/gnome-3.34.4::gentoo
+# required by @selected
+# required by @world (argument)
+>=virtual/rust-1.45.1 abi_x86_32
+# required by virtual/rust-1.45.1::gentoo
+# required by gnome-base/librsvg-2.48.8::gentoo
+# required by media-gfx/eog-3.36.3::gentoo[svg]
+# required by gnome-base/gnome-core-apps-3.34.4::gentoo
+# required by gnome-base/gnome-3.34.4::gentoo
+# required by @selected
+# required by @world (argument)
+>=dev-lang/rust-1.45.1 abi_x86_32
+# required by dev-vcs/git-2.29.2::gentoo[subversion,perl]
+# required by dev-ruby/bundler-2.1.4::gentoo
+# required by dev-lang/ruby-2.7.2::gentoo
+# required by virtual/ruby-ssl-11::gentoo[ruby_targets_ruby27]
+# required by dev-ruby/rubygems-3.1.4::gentoo[ruby_targets_ruby27]
+# required by virtual/rubygems-16::gentoo[ruby_targets_ruby27]
+# required by dev-ruby/rdoc-6.2.0::gentoo
+>=dev-vcs/subversion-1.14.0-r1 perl
