@@ -298,42 +298,11 @@ cross-i686-w64-mingw32/gcc		-sanitize -fortran -vtv -pie -hardened libssp zstd
 cross-x86_64-w64-mingw32/mingw64-runtime	libraries
 cross-i686-w64-mingw32/mingw64-runtime	libraries
 sys-devel/gcc				zstd
-# required by gnome-base/gnome-keyring-3.34.0::gentoo
-# required by gnome-base/gnome-core-apps-3.34.4::gentoo
-# required by gnome-base/gnome-3.34.4::gentoo
-# required by gnome (argument)
->=app-crypt/pinentry-1.1.0-r3 gnome-keyring
-# required by gnome-extra/gnome-contacts-3.34.1::gentoo
-# required by gnome-base/gnome-core-apps-3.34.4::gentoo
-# required by gnome-base/gnome-3.34.4::gentoo
-# required by gnome (argument)
->=dev-libs/folks-0.13.1 eds
-# required by dev-libs/folks-0.13.1::gentoo[eds]
-# required by gnome-extra/gnome-contacts-3.34.1::gentoo
-# required by gnome-base/gnome-core-apps-3.34.4::gentoo
-# required by gnome-base/gnome-3.34.4::gentoo
-# required by gnome (argument)
->=gnome-extra/evolution-data-server-3.36.3 vala
-# required by media-sound/gnome-music-3.34.6::gentoo
-# required by gnome-base/gnome-extra-apps-3.34.4::gentoo[tracker]
-# required by gnome-base/gnome-3.34.4::gentoo[extras]
-# required by gnome (argument)
->=media-plugins/grilo-plugins-0.3.11 tracker
-# required by net-misc/gnome-online-miners-3.34.0::gentoo
-# required by media-gfx/gnome-photos-3.34.1::gentoo
-# required by gnome-base/gnome-extra-apps-3.34.4::gentoo[tracker]
-# required by gnome-base/gnome-3.34.4::gentoo[extras]
-# required by gnome (argument)
->=dev-libs/libgdata-0.17.12 gnome-online-accounts
-# required by gnome-extra/evolution-data-server-3.36.3::gentoo[vala]
-# required by dev-libs/folks-0.13.1::gentoo[eds]
-# required by gnome-extra/gnome-contacts-3.34.1::gentoo
-# required by gnome-base/gnome-core-apps-3.34.4::gentoo
-# required by gnome-base/gnome-3.34.4::gentoo
-# required by gnome (argument)
->=dev-libs/libical-3.0.8 vala
-# required by media-sound/sound-juicer-3.24.0::gentoo
-# required by gnome-base/gnome-extra-apps-3.34.4::gentoo
-# required by gnome-base/gnome-3.34.4::gentoo[extras]
-# required by gnome (argument)
->=gnome-base/gvfs-1.42.2 cdda
+app-crypt/pinentry			gnome-keyring
+dev-libs/folks				eds
+gnome-extra/evolution-data-server	vala
+media-plugins/grilo-plugins		tracker
+dev-libs/libgdata			gnome-online-accounts
+dev-libs/libical			vala
+gnome-base/gvfs				cdda
+dev-vcs/subversion			perl
