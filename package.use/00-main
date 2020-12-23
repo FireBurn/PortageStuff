@@ -328,3 +328,8 @@ dev-vcs/subversion			perl
 >=dev-libs/check-0.15.2 abi_x86_32
 >=dev-util/cppunit-1.14.0 abi_x86_32
 >=dev-db/lmdb-0.9.24 abi_x86_32
+>=net-fs/samba-4.13.2-r1 winbind
+>=dev-libs/libverto-0.3.1 abi_x86_32
+>=dev-libs/libev-4.33 abi_x86_32
+>=virtual/acl-0-r2 abi_x86_32
+>=sys-apps/acl-2.2.53-r1 abi_x86_32
