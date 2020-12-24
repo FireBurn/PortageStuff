@@ -325,3 +325,5 @@ dev-vcs/subversion			perl
 >=virtual/acl-0-r2 abi_x86_32
 >=sys-apps/acl-2.2.53-r1 abi_x86_32
 >=dev-libs/libverto-0.3.1 abi_x86_32
+dev-libs/libbsd abi_x86_32
+sys-apps/keyutil abi_x86_32
