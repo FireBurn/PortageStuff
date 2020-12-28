@@ -329,3 +329,4 @@ dev-libs/libbsd abi_x86_32
 sys-apps/keyutils abi_x86_32
 dev-lang/tcl abi_x86_32
 dev-util/wayland-scanner abi_x86_32
+>=dev-db/lmdb-0.9.27 abi_x86_32
