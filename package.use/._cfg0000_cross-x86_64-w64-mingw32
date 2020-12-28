@@ -1,9 +1,0 @@
-cross-x86_64-w64-mingw32/binutils -multilib
-cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
-cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
-# required by dev-libs/wayland-1.18.91::gentoo
-# required by media-libs/waffle-1.6.1-r1::gentoo[wayland]
-# required by dev-util/apitrace-9.0-r1::gentoo
-# required by @selected
-# required by @world (argument)
->=dev-util/wayland-scanner-1.18.91 abi_x86_32
