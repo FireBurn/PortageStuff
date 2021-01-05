@@ -150,7 +150,7 @@ media-plugins/gst-plugins-x264		abi_x86_32
 media-sound/lame			abi_x86_32
 media-sound/mpg123			abi_x86_32
 media-sound/pulseaudio			abi_x86_32 gnome
-media-video/ffmpeg			abi_x86_32 amr fdk libdrm x265
+media-video/ffmpeg			abi_x86_32 amr fdk libdrm x265 chromium
 media-video/mpv				samba
 media-video/smplayer			-qt4
 media-video/vlc				-qt4
