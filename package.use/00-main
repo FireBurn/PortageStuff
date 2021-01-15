@@ -330,3 +330,5 @@ sys-apps/keyutils abi_x86_32
 dev-lang/tcl abi_x86_32
 dev-util/wayland-scanner abi_x86_32
 >=dev-db/lmdb-0.9.27 abi_x86_32
+>=virtual/libusb-1-r2 abi_x86_32
+>=dev-libs/libusb-1.0.24-r1 abi_x86_32
