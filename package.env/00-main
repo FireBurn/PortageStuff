@@ -31,3 +31,4 @@ sys-libs/efivar				o3.conf
 app-office/libreoffice			clango3lto.conf
 #x11-base/xorg-server			debug.conf
 #x11-drivers/xf86-video-intel		debug.conf
+dev-libs/libgcrypt			o3.conf
