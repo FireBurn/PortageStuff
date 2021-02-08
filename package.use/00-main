@@ -334,3 +334,4 @@ dev-util/wayland-scanner abi_x86_32
 >=dev-libs/libusb-1.0.24-r1 abi_x86_32
 >=dev-libs/boost-1.75.0 python
 >=dev-libs/ocl-icd-2.2.12-r4 abi_x86_32
+media-libs/embree		clang -ispc
