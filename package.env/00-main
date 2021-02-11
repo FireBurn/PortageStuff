@@ -37,3 +37,4 @@ sys-devel/llvm				clango3.conf
 sys-devel/clang				clango3.conf
 dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
+media-libs/embree			o2.conf

@@ -12,7 +12,7 @@ app-arch/zstd				abi_x86_32
 app-emulation/dxvk			abi_x86_32
 app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
-app-emulation/wine-staging		mingw
+app-emulation/wine-staging		mingw vkd3d
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-office/libreoffice			clang gtk gtk3 java
@@ -334,4 +334,6 @@ dev-util/wayland-scanner abi_x86_32
 >=dev-libs/libusb-1.0.24-r1 abi_x86_32
 >=dev-libs/boost-1.75.0 python
 >=dev-libs/ocl-icd-2.2.12-r4 abi_x86_32
-media-libs/embree		clang -ispc
+media-libs/embree			clang -ispc raymask
+app-benchmarks/luxmark			scenes
+app-emulation/vkd3d-proton		abi_x86_32
