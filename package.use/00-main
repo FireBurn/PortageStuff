@@ -12,7 +12,7 @@ app-arch/zstd				abi_x86_32
 app-emulation/dxvk			abi_x86_32
 app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
-app-emulation/wine-staging		mingw vkd3d
+app-emulation/wine-staging		mingw
 app-emulation/wine-gecko		abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-office/libreoffice			clang gtk gtk3 java
