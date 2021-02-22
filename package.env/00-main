@@ -20,6 +20,7 @@ media-video/ffmpeg			o3.conf
 #sys-libs/glibc				debug.conf
 sys-libs/glibc				o3.conf
 sys-devel/gcc				o3.conf
+www-client/chromium			o3.conf
 #www-client/chromium			clango3lto.conf
 x11-drivers/xf86-video-intel		o3.conf
 net-libs/webkit-gtk			o3.conf
