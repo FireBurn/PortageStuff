@@ -338,4 +338,5 @@ media-libs/embree			clang -ispc raymask
 app-benchmarks/luxmark			scenes
 app-emulation/vkd3d-proton		abi_x86_32
 >=dev-util/cppunit-1.15.1-r2 abi_x86_32
+>=sys-libs/liburing-2.0 abi_x86_32
 
