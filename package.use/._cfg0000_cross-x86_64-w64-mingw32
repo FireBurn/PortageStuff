@@ -1,6 +1,0 @@
-cross-x86_64-w64-mingw32/binutils -multilib
-cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
-cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
-# required by net-fs/samba-4.14.0::gentoo
-# required by @__auto_slot_operator_replace_installed__ (argument)
->=sys-libs/liburing-2.0 abi_x86_32
