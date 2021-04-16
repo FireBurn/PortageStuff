@@ -21,8 +21,8 @@ media-video/ffmpeg			o3.conf
 #sys-libs/glibc				debug.conf
 sys-libs/glibc				o3.conf
 sys-devel/gcc				o3.conf
-www-client/chromium			o3.conf
-#www-client/chromium			clango3lto.conf
+#www-client/chromium			o3.conf
+www-client/chromium			clango3lto.conf
 x11-drivers/xf86-video-intel		o3.conf
 net-libs/webkit-gtk			o3.conf
 sys-libs/libfaketime			o3.conf
@@ -35,8 +35,9 @@ app-office/libreoffice			clango3lto.conf
 #x11-drivers/xf86-video-intel		debug.conf
 dev-libs/libgcrypt			o3.conf
 dev-util/intel-graphics-compiler	debug.conf
-sys-devel/llvm				clango3.conf
-sys-devel/clang				clango3.conf
+sys-devel/llvm				clango3lto.conf
+sys-devel/clang				clango3lto.conf
+sys-devel/lld				clango3lto.conf
 dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
 media-libs/embree			o2.conf
