@@ -166,7 +166,7 @@ net-libs/http-parser			abi_x86_32
 net-libs/libasyncns			abi_x86_32
 net-libs/libpsl				-idn
 net-libs/nghttp2			abi_x86_32
-net-libs/nodejs				inspector
+net-libs/nodejs				inspector -lto
 net-misc/curl				abi_x86_32
 net-misc/networkmanager			gnutls modemmanager -nss
 net-misc/networkmanager-openconnect	-gtk
