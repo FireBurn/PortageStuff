@@ -27,3 +27,4 @@ dev-util/boost-build			**
 =app-emulation/dxvk-9999		**
 app-emulation/vkd3d			**
 #app-emulation/wine-staging		**
+x11-apps/mesa-progs			**
