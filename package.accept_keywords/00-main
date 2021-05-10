@@ -28,3 +28,4 @@ dev-util/boost-build			**
 app-emulation/vkd3d			**
 #app-emulation/wine-staging		**
 x11-apps/mesa-progs			**
+#kde-misc/kdiff3				**
