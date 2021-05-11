@@ -43,4 +43,4 @@ dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
 media-libs/embree			o2.conf
 net-libs/nodejs				clango3.conf
-kde-misc/kdiff3				clango3lto.conf
+#kde-misc/kdiff3				clango3lto.conf
