@@ -2,7 +2,7 @@ app-emulation/gallium-nine-standalone	o3.conf
 app-emulation/wine-staging		wine-staging.conf
 app-emulation/wine-vanilla		o3.conf
 cross-i686-w64-mingw32/gcc		enable-posix.conf
-cross-i686-w64-mingw32/mingw64-runtime	i686-mingw64.conf
+cross-i686-w64-mingw32/mingw64-runtime	o2.conf
 cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
