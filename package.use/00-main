@@ -341,3 +341,4 @@ app-emulation/vkd3d-proton		abi_x86_32
 >=sys-libs/liburing-2.0 abi_x86_32
 dev-libs/libgdata			vala
 net-p2p/ktorrent			-kross -rss -webengine
+sys-libs/libxcrypt			abi_x86_32

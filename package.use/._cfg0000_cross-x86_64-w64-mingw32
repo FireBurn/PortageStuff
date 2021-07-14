@@ -1,0 +1,9 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by virtual/libcrypt-2::gentoo
+# required by sys-libs/pam-1.5.1::gentoo
+# required by sys-apps/shadow-4.8.1-r3::gentoo[pam]
+# required by net-misc/openssh-8.6_p1-r2::gentoo
+# required by @__auto_slot_operator_replace_installed__ (argument)
+>=sys-libs/libxcrypt-4.4.23-r1 abi_x86_32
