@@ -15,7 +15,6 @@ dev-python/lit				**
 <sys-libs/glibc-9999			**
 #dev-qt/*:5/5.11				-~amd64
 #x11-base/xorg-drivers			**
-<sys-devel/binutils-9999		**
 =x11-libs/libdrm-9999			**
 #sys-libs/libcxx				**
 #sys-libs/libcxxabi			**
