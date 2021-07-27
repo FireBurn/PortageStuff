@@ -343,3 +343,4 @@ dev-libs/libgdata			vala
 net-p2p/ktorrent			-kross -rss -webengine
 sys-libs/libxcrypt			abi_x86_32
 app-crypt/libmd				abi_x86_32
+media-plugins/gst-plugins-opusparse	abi_x86_32
