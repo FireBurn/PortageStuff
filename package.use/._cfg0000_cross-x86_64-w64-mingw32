@@ -1,8 +1,0 @@
-cross-x86_64-w64-mingw32/binutils -multilib
-cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
-cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
-# required by media-sound/pulseaudio-15.0::gentoo
-# required by www-client/firefox-90.0.2::gentoo[pulseaudio]
-# required by @selected
-# required by @world (argument)
->=media-libs/speexdsp-1.2.0 abi_x86_32
