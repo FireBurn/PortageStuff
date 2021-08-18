@@ -2,7 +2,6 @@ app-eselect/eselect-opengl
 dev-qt/*
 media-libs/mesa
 #x11-base/xorg-drivers
-x11-misc/sddm
 x11-drivers/xf86-video-intel
 <net-libs/nodejs-99
 <dev-libs/openssl-1.2
