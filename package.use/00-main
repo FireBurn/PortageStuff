@@ -130,7 +130,7 @@ media-libs/vulkan-loader		demos layers
 media-libs/x264				abi_x86_32 -opencl
 media-libs/x265				abi_x86_32
 media-libs/xvid				abi_x86_32
-media-plugins/alsa-plugins		abi_x86_32
+media-plugins/alsa-plugins		abi_x86_32 -pulseaudio
 media-plugins/gst-plugins-a52dec	abi_x86_32
 media-plugins/gst-plugins-assrender	abi_x86_32
 media-plugins/gst-plugins-dts		abi_x86_32
