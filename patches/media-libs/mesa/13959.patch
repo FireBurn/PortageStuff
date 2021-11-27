@@ -678,8 +678,8 @@ index 993d013eb67..1c2f26fa03c 100644
     uint32_t fence_idx = 0;
     bool flushed_caches = false;
  
-+   if (submitCount == 1 && pSubmits[0].commandBufferCount == 1) {
-+      RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, pSubmits[0].pCommandBuffers[0]);
++   if (submitCount == 1 && pSubmits[0].commandBufferInfoCount == 1) {
++      RADV_FROM_HANDLE(radv_cmd_buffer, cmd_buffer, pSubmits[0].pCommandBufferInfos[0]);
 +      if (cmd_buffer->pool->queue_family_index == 2) {
 +         struct radv_device *device = queue->device;
 +         if (!queue->device->private_sdma_queue) {
