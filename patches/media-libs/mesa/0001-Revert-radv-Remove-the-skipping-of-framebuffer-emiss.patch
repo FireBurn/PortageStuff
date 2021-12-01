@@ -1,0 +1,40 @@
+From 54c45c1ac5b38cba322a270ddad0400c3e220e6b Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Wed, 1 Dec 2021 05:47:30 +0000
+Subject: [PATCH] Revert "radv: Remove the skipping of framebuffer emission if
+ we don't have a framebuffer."
+
+This reverts commit 5632359959f4b27aa458cecbee297d55231ee8ec.
+---
+ src/amd/vulkan/radv_cmd_buffer.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_cmd_buffer.c b/src/amd/vulkan/radv_cmd_buffer.c
+index 5ce3356fb57..0693953b4de 100644
+--- a/src/amd/vulkan/radv_cmd_buffer.c
++++ b/src/amd/vulkan/radv_cmd_buffer.c
+@@ -2470,6 +2470,10 @@ radv_emit_framebuffer_state(struct radv_cmd_buffer *cmd_buffer)
+    struct radv_framebuffer *framebuffer = cmd_buffer->state.framebuffer;
+    const struct radv_subpass *subpass = cmd_buffer->state.subpass;
+ 
++   /* this may happen for inherited secondary recording */
++   if (!framebuffer)
++      return;
++
+    for (i = 0; i < 8; ++i) {
+       if (i >= subpass->color_count ||
+           subpass->color_attachments[i].attachment == VK_ATTACHMENT_UNUSED) {
+@@ -4416,9 +4420,7 @@ radv_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBegi
+       cmd_buffer->state.inherited_pipeline_statistics =
+          pBeginInfo->pInheritanceInfo->pipelineStatistics;
+ 
+-      cmd_buffer->state.subpass = subpass;
+-      if (cmd_buffer->state.framebuffer)
+-         cmd_buffer->state.dirty |= RADV_CMD_DIRTY_FRAMEBUFFER;
++      radv_cmd_buffer_set_subpass(cmd_buffer, subpass);
+    }
+ 
+    if (unlikely(cmd_buffer->device->trace_bo))
+-- 
+2.34.1
+
