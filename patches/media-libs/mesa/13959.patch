@@ -1,353 +1,7 @@
-From 978ae96c6f6c9300ea455b30a02f43da22574fd7 Mon Sep 17 00:00:00 2001
-From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
-Date: Thu, 25 Nov 2021 10:10:09 +0100
-Subject: [PATCH 1/5] vk: allocate the DRI_PRIME linear buffer on the display
- gpu
-
----
- src/amd/vulkan/radv_wsi.c           | 36 ++++++++++++++
- src/vulkan/wsi/wsi_common.h         |  2 +
- src/vulkan/wsi/wsi_common_drm.c     | 73 +++++++++++++++++++++++------
- src/vulkan/wsi/wsi_common_private.h |  1 +
- src/vulkan/wsi/wsi_common_x11.c     | 17 ++++++-
- 5 files changed, 113 insertions(+), 16 deletions(-)
-
-diff --git a/src/amd/vulkan/radv_wsi.c b/src/amd/vulkan/radv_wsi.c
-index a8e79585969..2b237cdc0f7 100644
---- a/src/amd/vulkan/radv_wsi.c
-+++ b/src/amd/vulkan/radv_wsi.c
-@@ -24,6 +24,7 @@
-  */
- 
- #include "util/macros.h"
-+#include "util/os_file.h"
- #include "radv_meta.h"
- #include "radv_private.h"
- #include "vk_util.h"
-@@ -47,6 +48,40 @@ radv_wsi_set_memory_ownership(VkDevice _device, VkDeviceMemory _mem, VkBool32 ow
-    }
- }
- 
-+static VkResult
-+radv_wsi_create_device_for_fd(VkDevice _device, int fd, VkDevice *display_dev)
-+{
-+   RADV_FROM_HANDLE(radv_device, device, _device);
-+   assert(device->instance->physical_devices_enumerated);
-+   list_for_each_entry(struct radv_physical_device, pdevice, &device->instance->physical_devices, link)
-+   {
-+      if (os_same_file_description(fd, pdevice->local_fd)) {
-+         float queuePriority = 1.0f;
-+         VkPhysicalDeviceFeatures features = { 0 };
-+
-+         VkDeviceQueueCreateInfo queue = {
-+            .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-+            .queueCount = 1,
-+            .queueFamilyIndex = 0,
-+            .pQueuePriorities = &queuePriority,
-+         };
-+
-+         VkDeviceCreateInfo info = {
-+            .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-+            .queueCreateInfoCount = 1,
-+            .pQueueCreateInfos = &queue,
-+            .pEnabledFeatures = &features,
-+            .enabledExtensionCount = 0,
-+            .enabledLayerCount = 0,
-+         };
-+
-+         return radv_CreateDevice(radv_physical_device_to_handle(pdevice), &info, NULL, display_dev);
-+      }
-+   }
-+   return VK_ERROR_UNKNOWN;
-+}
-+
-+
- VkResult
- radv_init_wsi(struct radv_physical_device *physical_device)
- {
-@@ -59,6 +94,7 @@ radv_init_wsi(struct radv_physical_device *physical_device)
- 
-    physical_device->wsi_device.supports_modifiers = physical_device->rad_info.chip_class >= GFX9;
-    physical_device->wsi_device.set_memory_ownership = radv_wsi_set_memory_ownership;
-+   physical_device->wsi_device.create_device_for_fd = radv_wsi_create_device_for_fd;
- 
-    wsi_device_setup_syncobj_fd(&physical_device->wsi_device, physical_device->local_fd);
- 
-diff --git a/src/vulkan/wsi/wsi_common.h b/src/vulkan/wsi/wsi_common.h
-index 63f21ef698b..29dfdb779aa 100644
---- a/src/vulkan/wsi/wsi_common.h
-+++ b/src/vulkan/wsi/wsi_common.h
-@@ -171,6 +171,8 @@ struct wsi_device {
-     */
-    bool (*can_present_on_device)(VkPhysicalDevice pdevice, int fd);
- 
-+   VkResult (*create_device_for_fd)(VkDevice pdevice, int fd, VkDevice *display_dev);
-+
- #define WSI_CB(cb) PFN_vk##cb cb
-    WSI_CB(AllocateMemory);
-    WSI_CB(AllocateCommandBuffers);
-diff --git a/src/vulkan/wsi/wsi_common_drm.c b/src/vulkan/wsi/wsi_common_drm.c
-index 09684b2272d..6b0201d264d 100644
---- a/src/vulkan/wsi/wsi_common_drm.c
-+++ b/src/vulkan/wsi/wsi_common_drm.c
-@@ -463,6 +463,7 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-                        struct wsi_image *image)
- {
-    const struct wsi_device *wsi = chain->wsi;
-+   VkDevice display_device = chain->device;
-    VkResult result;
- 
-    memset(image, 0, sizeof(*image));
-@@ -486,13 +487,23 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-       .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-       .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
-    };
--   result = wsi->CreateBuffer(chain->device, &prime_buffer_info,
-+
-+   if (chain->display_fd > 0 && wsi->create_device_for_fd) {
-+      if (wsi->create_device_for_fd(chain->device, chain->display_fd, &display_device) != VK_SUCCESS) {
-+         struct wsi_swapchain copy = *chain;
-+         copy.display_fd = -1;
-+         return wsi_create_prime_image(&copy, pCreateInfo, use_modifier, image);
-+      }
-+   }
-+
-+   result = wsi->CreateBuffer(display_device, &prime_buffer_info,
-                               &chain->alloc, &image->prime.buffer);
-+
-    if (result != VK_SUCCESS)
-       goto fail;
- 
-    VkMemoryRequirements reqs;
--   wsi->GetBufferMemoryRequirements(chain->device, image->prime.buffer, &reqs);
-+   wsi->GetBufferMemoryRequirements(display_device, image->prime.buffer, &reqs);
-    assert(reqs.size <= linear_size);
- 
-    const struct wsi_memory_allocate_info memory_wsi_info = {
-@@ -515,13 +526,45 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-       .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-       .pNext = &prime_memory_dedicated_info,
-       .allocationSize = linear_size,
--      .memoryTypeIndex = select_memory_type(wsi, false, reqs.memoryTypeBits),
-+      /* When allocating directly on the display device, we want a DEVICE_LOCAL
-+       * allocation so it's scanout-compatible.
-+       */
-+      .memoryTypeIndex = select_memory_type(wsi, display_device != chain->device, reqs.memoryTypeBits),
-    };
--   result = wsi->AllocateMemory(chain->device, &prime_memory_info,
-+   result = wsi->AllocateMemory(display_device, &prime_memory_info,
-                                 &chain->alloc, &image->prime.memory);
-    if (result != VK_SUCCESS)
-       goto fail;
- 
-+   int fd;
-+   if (display_device != chain->device) {
-+      /* Export */
-+      const VkMemoryGetFdInfoKHR info = {
-+         .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-+         .memory = image->prime.memory,
-+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-+      };
-+      result = wsi->GetMemoryFdKHR(display_device, &info, &fd);
-+      assert(result == VK_SUCCESS);
-+
-+      /* Import */
-+      const VkImportMemoryFdInfoKHR prime_memory_import_info = {
-+         .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
-+         .fd = fd,
-+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-+      };
-+      const VkMemoryAllocateInfo prime_memory_info = {
-+         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-+         .pNext = &prime_memory_import_info,
-+         .allocationSize = linear_size,
-+      };
-+
-+      result = wsi->AllocateMemory(chain->device, &prime_memory_info,
-+                                   &chain->alloc, &image->prime.memory);
-+
-+      assert(result == VK_SUCCESS);
-+   }
-+
-    result = wsi->BindBufferMemory(chain->device, image->prime.buffer,
-                                   image->prime.memory, 0);
-    if (result != VK_SUCCESS)
-@@ -636,16 +679,18 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-          goto fail;
-    }
- 
--   const VkMemoryGetFdInfoKHR linear_memory_get_fd_info = {
--      .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
--      .pNext = NULL,
--      .memory = image->prime.memory,
--      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
--   };
--   int fd;
--   result = wsi->GetMemoryFdKHR(chain->device, &linear_memory_get_fd_info, &fd);
--   if (result != VK_SUCCESS)
--      goto fail;
-+   if (display_device != chain->device) {
-+      const VkMemoryGetFdInfoKHR linear_memory_get_fd_info = {
-+         .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
-+         .pNext = NULL,
-+         .memory = image->prime.memory,
-+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-+      };
-+
-+      result = wsi->GetMemoryFdKHR(chain->device, &linear_memory_get_fd_info, &fd);
-+      if (result != VK_SUCCESS)
-+         goto fail;
-+   }
- 
-    image->drm_modifier = use_modifier ? DRM_FORMAT_MOD_LINEAR : DRM_FORMAT_MOD_INVALID;
-    image->num_planes = 1;
-diff --git a/src/vulkan/wsi/wsi_common_private.h b/src/vulkan/wsi/wsi_common_private.h
-index 3eb14d22f9e..7fe2cd8cca2 100644
---- a/src/vulkan/wsi/wsi_common_private.h
-+++ b/src/vulkan/wsi/wsi_common_private.h
-@@ -56,6 +56,7 @@ struct wsi_swapchain {
-    uint32_t image_count;
- 
-    bool use_prime_blit;
-+   int display_fd;
- 
-    /* Command pools, one per queue family */
-    VkCommandPool *cmd_pools;
-diff --git a/src/vulkan/wsi/wsi_common_x11.c b/src/vulkan/wsi/wsi_common_x11.c
-index de9794cd1f0..9dba416add8 100644
---- a/src/vulkan/wsi/wsi_common_x11.c
-+++ b/src/vulkan/wsi/wsi_common_x11.c
-@@ -1799,10 +1799,23 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
-     */
-    chain->copy_is_suboptimal = false;
- 
--   if (!wsi_device->sw)
--      if (!wsi_x11_check_dri3_compatible(wsi_device, conn))
-+   if (!wsi_device->sw) {
-+      if (!wsi_x11_check_dri3_compatible(wsi_device, conn)) {
-          chain->base.use_prime_blit = true;
- 
-+         /* Get display GPU fd through X11 connection */
-+         xcb_screen_iterator_t screen_iter =
-+            xcb_setup_roots_iterator(xcb_get_setup(chain->conn));
-+         xcb_screen_t *screen = screen_iter.data;
-+         int dri3_fd = wsi_dri3_open(chain->conn, screen->root, None);
-+
-+         /* Try to create a wsi_device for this fd */
-+         if (wsi_device->create_device_for_fd) {
-+            chain->base.display_fd = dri3_fd;
-+         }
-+      }
-+   }
-+
-    chain->event_id = xcb_generate_id(chain->conn);
-    xcb_present_select_input(chain->conn, chain->event_id, chain->window,
-                             XCB_PRESENT_EVENT_MASK_CONFIGURE_NOTIFY |
--- 
-GitLab
-
-
-From 54d091b2eaa40c4123eb419faeca90361a39e5dc Mon Sep 17 00:00:00 2001
-From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
-Date: Thu, 25 Nov 2021 13:56:29 +0100
-Subject: [PATCH 2/5] radv: import DRI_PRIME linear buffer as non-cached
-
-Based on https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/13362
----
- src/amd/vulkan/radv_android.c                 | 2 +-
- src/amd/vulkan/radv_device.c                  | 2 +-
- src/amd/vulkan/radv_radeon_winsys.h           | 3 ++-
- src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c | 7 ++++---
- src/vulkan/wsi/wsi_common_drm.c               | 3 ++-
- 5 files changed, 10 insertions(+), 7 deletions(-)
-
-diff --git a/src/amd/vulkan/radv_android.c b/src/amd/vulkan/radv_android.c
-index d26095de714..f52859be65c 100644
---- a/src/amd/vulkan/radv_android.c
-+++ b/src/amd/vulkan/radv_android.c
-@@ -838,7 +838,7 @@ radv_import_ahb_memory(struct radv_device *device, struct radv_device_memory *me
- 
-    uint64_t alloc_size = 0;
-    VkResult result =
--      device->ws->buffer_from_fd(device->ws, dma_buf, priority, &mem->bo, &alloc_size);
-+      device->ws->buffer_from_fd(device->ws, dma_buf, priority, &mem->bo, &alloc_size, false);
-    if (result != VK_SUCCESS)
-       return result;
- 
-diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index 7f4604c2baf..c2eb157f635 100644
---- a/src/amd/vulkan/radv_device.c
-+++ b/src/amd/vulkan/radv_device.c
-@@ -5314,7 +5314,7 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
-    } else if (import_info) {
-       assert(import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT ||
-              import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
--      result = device->ws->buffer_from_fd(device->ws, import_info->fd, priority, &mem->bo, NULL);
-+      result = device->ws->buffer_from_fd(device->ws, import_info->fd, priority, &mem->bo, NULL, wsi_info != NULL);
-       if (result != VK_SUCCESS) {
-          goto fail;
-       } else {
-diff --git a/src/amd/vulkan/radv_radeon_winsys.h b/src/amd/vulkan/radv_radeon_winsys.h
-index 9f12b6040c3..3acd7eca73d 100644
---- a/src/amd/vulkan/radv_radeon_winsys.h
-+++ b/src/amd/vulkan/radv_radeon_winsys.h
-@@ -234,7 +234,8 @@ struct radeon_winsys {
-                                unsigned priority, struct radeon_winsys_bo **out_bo);
- 
-    VkResult (*buffer_from_fd)(struct radeon_winsys *ws, int fd, unsigned priority,
--                              struct radeon_winsys_bo **out_bo, uint64_t *alloc_size);
-+                              struct radeon_winsys_bo **out_bo, uint64_t *alloc_size,
-+                              bool is_prime_linear_buffer);
- 
-    bool (*buffer_get_fd)(struct radeon_winsys *ws, struct radeon_winsys_bo *bo, int *fd);
- 
-diff --git a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c
-index 3bea2f38028..a9e63c47198 100644
---- a/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c
-+++ b/src/amd/vulkan/winsys/amdgpu/radv_amdgpu_bo.c
-@@ -696,7 +696,8 @@ error:
- 
- static VkResult
- radv_amdgpu_winsys_bo_from_fd(struct radeon_winsys *_ws, int fd, unsigned priority,
--                              struct radeon_winsys_bo **out_bo, uint64_t *alloc_size)
-+                              struct radeon_winsys_bo **out_bo, uint64_t *alloc_size,
-+                              bool is_prime_linear_buffer)
- {
-    struct radv_amdgpu_winsys *ws = radv_amdgpu_winsys(_ws);
-    struct radv_amdgpu_winsys_bo *bo;
-@@ -740,8 +741,8 @@ radv_amdgpu_winsys_bo_from_fd(struct radeon_winsys *_ws, int fd, unsigned priori
-       goto error_query;
-    }
- 
--   r =
--      radv_amdgpu_bo_va_op(ws, result.buf_handle, 0, result.alloc_size, va, 0, 0, AMDGPU_VA_OP_MAP);
-+   r = radv_amdgpu_bo_va_op(ws, result.buf_handle, 0, result.alloc_size, va,
-+                            is_prime_linear_buffer ? RADEON_FLAG_VA_UNCACHED : 0, 0, AMDGPU_VA_OP_MAP);
-    if (r) {
-       vk_result = VK_ERROR_UNKNOWN;
-       goto error_va_map;
-diff --git a/src/vulkan/wsi/wsi_common_drm.c b/src/vulkan/wsi/wsi_common_drm.c
-index 6b0201d264d..a5e64ecb041 100644
---- a/src/vulkan/wsi/wsi_common_drm.c
-+++ b/src/vulkan/wsi/wsi_common_drm.c
-@@ -551,7 +551,8 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-       const VkImportMemoryFdInfoKHR prime_memory_import_info = {
-          .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
-          .fd = fd,
--         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
-+         .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
-+         .pNext = &memory_wsi_info,
-       };
-       const VkMemoryAllocateInfo prime_memory_info = {
-          .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
--- 
-GitLab
-
-
-From 15748d46a5f15a9c382ce0aba99455821a2c0e43 Mon Sep 17 00:00:00 2001
+From 91bfdfe364d75ede6b7f593466706e0bbb5591a2 Mon Sep 17 00:00:00 2001
 From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
 Date: Thu, 25 Nov 2021 10:12:56 +0100
-Subject: [PATCH 3/5] radv: partial sdma support
+Subject: [PATCH 1/3] radv: partial sdma support
 
 SDMA code adapted from https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/12763
 
@@ -389,10 +43,10 @@ index 5c0dd14220e..22abbc3829f 100644
  
  enum {
 diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index c2eb157f635..a4cb13406e8 100644
+index aac5f842b76..7f5f96a1436 100644
 --- a/src/amd/vulkan/radv_device.c
 +++ b/src/amd/vulkan/radv_device.c
-@@ -853,6 +853,7 @@ static const struct debug_control radv_debug_options[] = {
+@@ -856,6 +856,7 @@ static const struct debug_control radv_debug_options[] = {
     {"noatocdithering", RADV_DEBUG_NO_ATOC_DITHERING},
     {"nonggc", RADV_DEBUG_NO_NGGC},
     {"prologs", RADV_DEBUG_DUMP_PROLOGS},
@@ -400,7 +54,7 @@ index c2eb157f635..a4cb13406e8 100644
     {NULL, 0}};
  
  const char *
-@@ -3060,6 +3061,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
+@@ -3069,6 +3070,7 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
        }
  
        memset(device->queues[qfi], 0, queue_create->queueCount * sizeof(struct radv_queue));
@@ -408,7 +62,7 @@ index c2eb157f635..a4cb13406e8 100644
  
        device->queue_count[qfi] = queue_create->queueCount;
  
-@@ -3760,6 +3762,9 @@ radv_get_preamble_cs(struct radv_queue *queue, uint32_t scratch_size_per_wave,
+@@ -3769,6 +3771,9 @@ radv_get_preamble_cs(struct radv_queue *queue, uint32_t scratch_size_per_wave,
     unsigned tess_offchip_ring_offset;
     uint32_t ring_bo_flags = RADEON_FLAG_NO_CPU_ACCESS | RADEON_FLAG_NO_INTERPROCESS_SHARING;
     VkResult result = VK_SUCCESS;
@@ -419,10 +73,10 @@ index c2eb157f635..a4cb13406e8 100644
        if (needs_tess_rings)
           add_tess_rings = true;
 diff --git a/src/amd/vulkan/radv_private.h b/src/amd/vulkan/radv_private.h
-index 84340806584..cb0994038f7 100644
+index fc5ac6a2a91..8362790be56 100644
 --- a/src/amd/vulkan/radv_private.h
 +++ b/src/amd/vulkan/radv_private.h
-@@ -751,6 +751,7 @@ struct radv_device {
+@@ -755,6 +755,7 @@ struct radv_device {
     struct radv_meta_state meta_state;
  
     struct radv_queue *queues[RADV_MAX_QUEUE_FAMILIES];
@@ -430,7 +84,7 @@ index 84340806584..cb0994038f7 100644
     int queue_count[RADV_MAX_QUEUE_FAMILIES];
     struct radeon_cmdbuf *empty_cs[RADV_MAX_QUEUE_FAMILIES];
  
-@@ -2669,6 +2670,8 @@ void radv_emit_thread_trace_userdata(const struct radv_device *device, struct ra
+@@ -2683,6 +2684,8 @@ void radv_emit_thread_trace_userdata(const struct radv_device *device, struct ra
                                       const void *data, uint32_t num_dwords);
  bool radv_is_instruction_timing_enabled(void);
  
@@ -641,11 +295,37 @@ index 00000000000..c08b41c2117
 GitLab
 
 
-From 655b2e975c1892a8be3fe870c2d14a53b0df49b8 Mon Sep 17 00:00:00 2001
+From 453af40a40c1f48799994fb8e41e4cebc78a5dd0 Mon Sep 17 00:00:00 2001
+From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
+Date: Mon, 6 Dec 2021 10:47:34 +0100
+Subject: [PATCH 2/3] radv: allocate the prime buffer as uncached
+
+This is a write only buffer so caches aren't needed.
+---
+ src/amd/vulkan/radv_device.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
+index 7f5f96a1436..53e72e664f5 100644
+--- a/src/amd/vulkan/radv_device.c
++++ b/src/amd/vulkan/radv_device.c
+@@ -5285,6 +5285,7 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
+        * only for memory allocated by driver this flag is set.
+        */
+       flags |= RADEON_FLAG_GTT_WC;
++      flags |= RADEON_FLAG_VA_UNCACHED;
+    }
+ 
+    if (dedicate_info) {
+-- 
+GitLab
+
+
+From 64330835e3d7ba725c61b39535ddaf814de4bb2b Mon Sep 17 00:00:00 2001
 From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
 Date: Thu, 25 Nov 2021 14:08:28 +0100
-Subject: [PATCH 4/5] vk/radv: add a private SDMA pool to exec the DRI_PRIME
- blit
+Subject: [PATCH 3/3] vulkan/wsi,radv: add a private SDMA pool to exec the
+ DRI_PRIME blit
 
 Based on https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/12763.
 
@@ -663,20 +343,21 @@ Similarly, when SDMA is used, the original command buffers created in
 wsi_create_prime_image become unused (because the SDMA one is always used).
 This could probably be cleaned up.
 ---
- src/amd/vulkan/radv_device.c    | 22 ++++++++++++++++++++++
- src/amd/vulkan/radv_meta_copy.c | 15 +++++++++++++++
- src/amd/vulkan/radv_wsi.c       |  5 +++++
- src/vulkan/wsi/wsi_common.c     | 18 +++++++++++++++---
- src/vulkan/wsi/wsi_common.h     |  2 ++
- src/vulkan/wsi/wsi_common_drm.c |  3 ++-
- src/vulkan/wsi/wsi_common_x11.c | 12 ++++++++++++
- 7 files changed, 73 insertions(+), 4 deletions(-)
+ src/amd/vulkan/radv_device.c        | 22 ++++++++++++
+ src/amd/vulkan/radv_meta_copy.c     | 15 ++++++++
+ src/amd/vulkan/radv_wsi.c           |  5 +++
+ src/vulkan/wsi/wsi_common.c         | 56 +++++++++++++++++++++++++++--
+ src/vulkan/wsi/wsi_common.h         |  2 ++
+ src/vulkan/wsi/wsi_common_drm.c     |  3 +-
+ src/vulkan/wsi/wsi_common_private.h |  1 +
+ src/vulkan/wsi/wsi_common_x11.c     | 18 ++++++++--
+ 8 files changed, 116 insertions(+), 6 deletions(-)
 
 diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index a4cb13406e8..2ab5b83011a 100644
+index 53e72e664f5..cc82114295a 100644
 --- a/src/amd/vulkan/radv_device.c
 +++ b/src/amd/vulkan/radv_device.c
-@@ -5002,6 +5002,28 @@ radv_QueueSubmit2KHR(VkQueue _queue, uint32_t submitCount, const VkSubmitInfo2KH
+@@ -5011,6 +5011,28 @@ radv_QueueSubmit2KHR(VkQueue _queue, uint32_t submitCount, const VkSubmitInfo2KH
     uint32_t fence_idx = 0;
     bool flushed_caches = false;
  
@@ -732,18 +413,18 @@ index aed65196c3b..ba467eaceb6 100644
     bool old_predicating;
  
 diff --git a/src/amd/vulkan/radv_wsi.c b/src/amd/vulkan/radv_wsi.c
-index 2b237cdc0f7..a4c2b2cd4d3 100644
+index a8e79585969..9f02566b599 100644
 --- a/src/amd/vulkan/radv_wsi.c
 +++ b/src/amd/vulkan/radv_wsi.c
-@@ -25,6 +25,7 @@
+@@ -24,6 +24,7 @@
+  */
  
  #include "util/macros.h"
- #include "util/os_file.h"
 +#include "radv_debug.h"
  #include "radv_meta.h"
  #include "radv_private.h"
  #include "vk_util.h"
-@@ -100,6 +101,10 @@ radv_init_wsi(struct radv_physical_device *physical_device)
+@@ -64,6 +65,10 @@ radv_init_wsi(struct radv_physical_device *physical_device)
  
     physical_device->vk.wsi_device = &physical_device->wsi_device;
  
@@ -755,7 +436,7 @@ index 2b237cdc0f7..a4c2b2cd4d3 100644
  }
  
 diff --git a/src/vulkan/wsi/wsi_common.c b/src/vulkan/wsi/wsi_common.c
-index 2d18d4c62e1..7f55c5d6a80 100644
+index 2d18d4c62e1..3dd538e3218 100644
 --- a/src/vulkan/wsi/wsi_common.c
 +++ b/src/vulkan/wsi/wsi_common.c
 @@ -232,7 +232,7 @@ wsi_swapchain_init(const struct wsi_device *wsi,
@@ -767,117 +448,6 @@ index 2d18d4c62e1..7f55c5d6a80 100644
                  VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
     if (!chain->cmd_pools)
        return VK_ERROR_OUT_OF_HOST_MEMORY;
-@@ -750,8 +750,20 @@ wsi_common_queue_present(const struct wsi_device *wsi,
-           * command buffer is attached to the image.
-           */
-          submit_info.commandBufferCount = 1;
--         submit_info.pCommandBuffers =
--            &image->prime.blit_cmd_buffers[queue_family_index];
-+
-+         if (wsi->allow_present_sdma) {
-+            submit_info.pCommandBuffers =
-+               &image->prime.blit_cmd_buffers[wsi->queue_family_count];
-+            /* Submit the copy to the SDMA queue */
-+            result = wsi->QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-+
-+            submit_info.commandBufferCount = 0;
-+            submit_info.waitSemaphoreCount = 0;
-+            submit_info.pCommandBuffers = NULL;
-+         } else {
-+            submit_info.pCommandBuffers =
-+               &image->prime.blit_cmd_buffers[queue_family_index];
-+         }
-          mem_signal.memory = image->prime.memory;
-       }
- 
-diff --git a/src/vulkan/wsi/wsi_common.h b/src/vulkan/wsi/wsi_common.h
-index 29dfdb779aa..d38d0dbd71d 100644
---- a/src/vulkan/wsi/wsi_common.h
-+++ b/src/vulkan/wsi/wsi_common.h
-@@ -107,6 +107,8 @@ struct wsi_device {
-     * available. Not all window systems might support this. */
-    bool enable_adaptive_sync;
- 
-+   bool allow_present_sdma;
-+
-    /* List of fences to signal when hotplug event happens. */
-    struct list_head hotplug_fences;
- 
-diff --git a/src/vulkan/wsi/wsi_common_drm.c b/src/vulkan/wsi/wsi_common_drm.c
-index a5e64ecb041..4d401f4296e 100644
---- a/src/vulkan/wsi/wsi_common_drm.c
-+++ b/src/vulkan/wsi/wsi_common_drm.c
-@@ -634,7 +634,8 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
-       goto fail;
-    }
- 
--   for (uint32_t i = 0; i < wsi->queue_family_count; i++) {
-+   /* TODO: or create a single CommandBuffer when allow_present_sdma is enabled? */
-+   for (uint32_t i = 0; i < wsi->queue_family_count + wsi->allow_present_sdma ? 1 : 0; i++) {
-       const VkCommandBufferAllocateInfo cmd_buffer_info = {
-          .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-          .pNext = NULL,
-diff --git a/src/vulkan/wsi/wsi_common_x11.c b/src/vulkan/wsi/wsi_common_x11.c
-index 9dba416add8..53975e59260 100644
---- a/src/vulkan/wsi/wsi_common_x11.c
-+++ b/src/vulkan/wsi/wsi_common_x11.c
-@@ -1803,6 +1803,18 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
-       if (!wsi_x11_check_dri3_compatible(wsi_device, conn)) {
-          chain->base.use_prime_blit = true;
- 
-+         /* Add a private SDMA command pool */
-+         if (wsi_device->allow_present_sdma) {
-+            const VkCommandPoolCreateInfo cmd_pool_info = {
-+               .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-+               .pNext = NULL,
-+               .flags = 0,
-+               .queueFamilyIndex = 2,
-+            };
-+            result = wsi_device->CreateCommandPool(device, &cmd_pool_info, &chain->base.alloc,
-+                                                   &chain->base.cmd_pools[wsi_device->queue_family_count]);
-+         }
-+
-          /* Get display GPU fd through X11 connection */
-          xcb_screen_iterator_t screen_iter =
-             xcb_setup_roots_iterator(xcb_get_setup(chain->conn));
--- 
-GitLab
-
-
-From 0f0578acd3c9da345321a951f12b0847d7e8aa0f Mon Sep 17 00:00:00 2001
-From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
-Date: Thu, 25 Nov 2021 14:08:40 +0100
-Subject: [PATCH 5/5] (?) vk,radv: disable implicit sync on the imported linear
- buffer
-
-I'm not sure this commit is really useful: it works identically with
-and without it but it kinda makes sense to wait for the blit operation
-to finish during acquire image.
-
-(though maybe implicit sync is needed anyway for cross-process sync?)
----
- src/amd/vulkan/radv_device.c        |  2 +-
- src/vulkan/wsi/wsi_common.c         | 40 ++++++++++++++++++++++++++++-
- src/vulkan/wsi/wsi_common_private.h |  1 +
- 3 files changed, 41 insertions(+), 2 deletions(-)
-
-diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index 2ab5b83011a..2206fc3ca60 100644
---- a/src/amd/vulkan/radv_device.c
-+++ b/src/amd/vulkan/radv_device.c
-@@ -5285,7 +5285,7 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
- 
-    radv_device_memory_init(mem, device, NULL);
- 
--   if (wsi_info) {
-+   if (wsi_info && !import_info) {
-       if(wsi_info->implicit_sync)
-          flags |= RADEON_FLAG_IMPLICIT_SYNC;
- 
-diff --git a/src/vulkan/wsi/wsi_common.c b/src/vulkan/wsi/wsi_common.c
-index 7f55c5d6a80..3dd538e3218 100644
---- a/src/vulkan/wsi/wsi_common.c
-+++ b/src/vulkan/wsi/wsi_common.c
 @@ -542,6 +542,17 @@ wsi_CreateSwapchainKHR(VkDevice _device,
        return VK_ERROR_OUT_OF_HOST_MEMORY;
     }
@@ -937,17 +507,58 @@ index 7f55c5d6a80..3dd538e3218 100644
        } else {
           result =
              wsi->WaitForFences(device, 1, &swapchain->fences[image_index],
-@@ -755,7 +793,7 @@ wsi_common_queue_present(const struct wsi_device *wsi,
-             submit_info.pCommandBuffers =
-                &image->prime.blit_cmd_buffers[wsi->queue_family_count];
-             /* Submit the copy to the SDMA queue */
--            result = wsi->QueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+@@ -750,8 +788,20 @@ wsi_common_queue_present(const struct wsi_device *wsi,
+           * command buffer is attached to the image.
+           */
+          submit_info.commandBufferCount = 1;
+-         submit_info.pCommandBuffers =
+-            &image->prime.blit_cmd_buffers[queue_family_index];
++
++         if (wsi->allow_present_sdma) {
++            submit_info.pCommandBuffers =
++               &image->prime.blit_cmd_buffers[wsi->queue_family_count];
++            /* Submit the copy to the SDMA queue */
 +            result = wsi->QueueSubmit(queue, 1, &submit_info, swapchain->sdma_fences[image_index]);
++
++            submit_info.commandBufferCount = 0;
++            submit_info.waitSemaphoreCount = 0;
++            submit_info.pCommandBuffers = NULL;
++         } else {
++            submit_info.pCommandBuffers =
++               &image->prime.blit_cmd_buffers[queue_family_index];
++         }
+          mem_signal.memory = image->prime.memory;
+       }
  
-             submit_info.commandBufferCount = 0;
-             submit_info.waitSemaphoreCount = 0;
+diff --git a/src/vulkan/wsi/wsi_common.h b/src/vulkan/wsi/wsi_common.h
+index 63f21ef698b..c6a17931080 100644
+--- a/src/vulkan/wsi/wsi_common.h
++++ b/src/vulkan/wsi/wsi_common.h
+@@ -107,6 +107,8 @@ struct wsi_device {
+     * available. Not all window systems might support this. */
+    bool enable_adaptive_sync;
+ 
++   bool allow_present_sdma;
++
+    /* List of fences to signal when hotplug event happens. */
+    struct list_head hotplug_fences;
+ 
+diff --git a/src/vulkan/wsi/wsi_common_drm.c b/src/vulkan/wsi/wsi_common_drm.c
+index 09684b2272d..81e98fca6c4 100644
+--- a/src/vulkan/wsi/wsi_common_drm.c
++++ b/src/vulkan/wsi/wsi_common_drm.c
+@@ -590,7 +590,8 @@ wsi_create_prime_image(const struct wsi_swapchain *chain,
+       goto fail;
+    }
+ 
+-   for (uint32_t i = 0; i < wsi->queue_family_count; i++) {
++   /* TODO: or create a single CommandBuffer when allow_present_sdma is enabled? */
++   for (uint32_t i = 0; i < wsi->queue_family_count + wsi->allow_present_sdma ? 1 : 0; i++) {
+       const VkCommandBufferAllocateInfo cmd_buffer_info = {
+          .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+          .pNext = NULL,
 diff --git a/src/vulkan/wsi/wsi_common_private.h b/src/vulkan/wsi/wsi_common_private.h
-index 7fe2cd8cca2..38c4bd635f2 100644
+index 3eb14d22f9e..b28d053aff5 100644
 --- a/src/vulkan/wsi/wsi_common_private.h
 +++ b/src/vulkan/wsi/wsi_common_private.h
 @@ -52,6 +52,7 @@ struct wsi_swapchain {
@@ -958,6 +569,37 @@ index 7fe2cd8cca2..38c4bd635f2 100644
     VkPresentModeKHR present_mode;
     uint32_t image_count;
  
+diff --git a/src/vulkan/wsi/wsi_common_x11.c b/src/vulkan/wsi/wsi_common_x11.c
+index de9794cd1f0..1be8c512379 100644
+--- a/src/vulkan/wsi/wsi_common_x11.c
++++ b/src/vulkan/wsi/wsi_common_x11.c
+@@ -1799,10 +1799,24 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
+     */
+    chain->copy_is_suboptimal = false;
+ 
+-   if (!wsi_device->sw)
+-      if (!wsi_x11_check_dri3_compatible(wsi_device, conn))
++   if (!wsi_device->sw) {
++      if (!wsi_x11_check_dri3_compatible(wsi_device, conn)) {
+          chain->base.use_prime_blit = true;
+ 
++         /* Add a private SDMA command pool */
++         if (wsi_device->allow_present_sdma) {
++            const VkCommandPoolCreateInfo cmd_pool_info = {
++               .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
++               .pNext = NULL,
++               .flags = 0,
++               .queueFamilyIndex = 2,
++            };
++            result = wsi_device->CreateCommandPool(device, &cmd_pool_info, &chain->base.alloc,
++                                                   &chain->base.cmd_pools[wsi_device->queue_family_count]);
++         }
++      }
++   }
++
+    chain->event_id = xcb_generate_id(chain->conn);
+    xcb_present_select_input(chain->conn, chain->event_id, chain->window,
+                             XCB_PRESENT_EVENT_MASK_CONFIGURE_NOTIFY |
 -- 
 GitLab
 
