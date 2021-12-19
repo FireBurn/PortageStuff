@@ -431,12 +431,12 @@ index 2d18d4c62e1..afa15f76eb2 100644
 +   if (swapchain->use_prime_blit && wsi->private_queue_family_for_prime_blit >= 0) {
 +      if (swapchain->fences[*pImageIndex] != VK_NULL_HANDLE) {
 +         result =
-+            wsi->WaitForFences(device, 1, &swapchain->prime_blit_fences[*pImageIndex],
++            wsi->WaitForFences(_device, 1, &swapchain->prime_blit_fences[*pImageIndex],
 +                               true, ~0ull);
 +         if (result != VK_SUCCESS)
 +            return result;
 +
-+         result = wsi->ResetFences(device, 1, &swapchain->prime_blit_fences[*pImageIndex]);
++         result = wsi->ResetFences(_device, 1, &swapchain->prime_blit_fences[*pImageIndex]);
 +         if (result != VK_SUCCESS)
 +            return result;
 +      }
