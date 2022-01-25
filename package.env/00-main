@@ -46,6 +46,3 @@ net-libs/nodejs				clango3.conf
 #app-emulation/dxvk			dxvk.conf
 media-libs/gst-plugins-good		o3.conf
 dev-libs/jansson			bfd.conf
-kde-frameworks/kio			debug.conf
-sys-apps/systemd			debug.conf
-net-fs/samba				debug.conf
