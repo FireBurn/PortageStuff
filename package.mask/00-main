@@ -8,3 +8,4 @@ dev-java/icedtea:7
 =sys-devel/clang-11.0.1
 =sys-devel/lld-11.0.1
 #=media-video/pipewire-0.3.39
+>=sys-apps/systemd-250
