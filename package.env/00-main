@@ -46,3 +46,7 @@ net-libs/nodejs				clango3.conf
 #app-emulation/dxvk			dxvk.conf
 media-libs/gst-plugins-good		o3.conf
 dev-libs/jansson			bfd.conf
+kde-frameworks/kio			debug.conf
+kde-apps/kio-extras			debug.conf
+kde-apps/dolphin			debug.conf
+media-video/mpv				debug.conf
