@@ -4,8 +4,4 @@ dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =app-emulation/wine-staging-5.12
 =dev-lang/python-3.10*
-=sys-devel/llvm-11.0.1
-=sys-devel/clang-11.0.1
-=sys-devel/lld-11.0.1
 #=media-video/pipewire-0.3.39
->=sys-apps/systemd-250
