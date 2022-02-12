@@ -350,3 +350,4 @@ media-plugins/gst-plugins-opusparse	abi_x86_32
 media-libs/speexdsp			abi_x86_32
 media-video/pipewire			abi_x86_32
 net-proxy/haproxy			pcre-jit -slz
+app-accessibility/speech-dispatcher	python

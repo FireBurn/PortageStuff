@@ -1,0 +1,16 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by app-text/calibre-5.36.0::gentoo[python_single_target_python3_9]
+# required by calibre (argument)
+>=app-accessibility/speech-dispatcher-0.11.1 python
+# required by dev-qt/qtdeclarative-6.2.3::qt
+# required by dev-qt/qtwebchannel-6.2.3::qt
+# required by dev-qt/qtwebengine-6.2.3::qt
+# required by app-text/calibre-5.36.0::gentoo
+# required by calibre (argument)
+>=dev-qt/qtbase-6.2.3 test
+# required by dev-python/PyQtWebEngine-5.15.5::gentoo
+# required by app-text/calibre-5.36.0::gentoo[python_single_target_python3_9]
+# required by calibre (argument)
+>=dev-python/PyQt5-5.15.6 webchannel
