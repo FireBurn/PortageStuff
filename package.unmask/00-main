@@ -10,4 +10,3 @@ x11-drivers/xf86-video-intel
 www-client/chromium
 net-misc/networkmanager
 www-plugins/chrome-binary-plugins
-=media-libs/vulkan-loader-9999
