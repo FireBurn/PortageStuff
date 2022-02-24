@@ -13,3 +13,4 @@ app-emulation/vkd3d			**
 #app-emulation/wine-staging		**
 x11-apps/mesa-progs			**
 #kde-misc/kdiff3				**
+=media-libs/vulkan-loader-9999			**
