@@ -1,0 +1,75 @@
+From 9998429f79601fc567488dc52863ec661fb04f77 Mon Sep 17 00:00:00 2001
+From: Dave Airlie <airlied@redhat.com>
+Date: Sat, 12 Mar 2022 17:52:12 +1000
+Subject: [PATCH] radv: fix transfer queue for prime blits.
+
+This queue is internal, so it has no queue family index at the api,
+so passing it was illegal. Just pass the queue family to the internal
+queue creation to avoid the problem.
+
+Fixes: 1ec4e568de22 ("radv: abstract queue family away from queue family index.")
+---
+ src/amd/vulkan/radv_device.c  | 7 +++++--
+ src/amd/vulkan/radv_private.h | 1 +
+ src/amd/vulkan/radv_wsi.c     | 2 +-
+ 3 files changed, 7 insertions(+), 3 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
+index afc22391e6a..5f6976a65a9 100644
+--- a/src/amd/vulkan/radv_device.c
++++ b/src/amd/vulkan/radv_device.c
+@@ -2662,13 +2662,14 @@ radv_get_queue_global_priority(const VkDeviceQueueGlobalPriorityCreateInfoEXT *p
+ 
+ int
+ radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
++                enum radv_queue_family qf,
+                 const VkDeviceQueueCreateInfo *create_info,
+                 const VkDeviceQueueGlobalPriorityCreateInfoEXT *global_priority)
+ {
+    queue->device = device;
+    queue->priority = radv_get_queue_global_priority(global_priority);
+    queue->hw_ctx = device->hw_ctx[queue->priority];
+-   queue->qf = vk_queue_to_radv(device->physical_device, create_info->queueFamilyIndex);
++   queue->qf = qf;
+ 
+    VkResult result = vk_queue_init(&queue->vk, &device->vk, create_info, idx);
+    if (result != VK_SUCCESS)
+@@ -3264,7 +3265,9 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
+       device->queue_count[qfi] = queue_create->queueCount;
+ 
+       for (unsigned q = 0; q < queue_create->queueCount; q++) {
+-         result = radv_queue_init(device, &device->queues[qfi][q], q, queue_create, global_priority);
++         enum radv_queue_family qf = vk_queue_to_radv(device->physical_device, queue_create->queueFamilyIndex);
++
++         result = radv_queue_init(device, &device->queues[qfi][q], q, qf, queue_create, global_priority);
+          if (result != VK_SUCCESS)
+             goto fail;
+       }
+diff --git a/src/amd/vulkan/radv_private.h b/src/amd/vulkan/radv_private.h
+index 1bcc590d24e..e951c915e03 100644
+--- a/src/amd/vulkan/radv_private.h
++++ b/src/amd/vulkan/radv_private.h
+@@ -2592,6 +2592,7 @@ struct radv_query_pool {
+ bool radv_queue_internal_submit(struct radv_queue *queue, struct radeon_cmdbuf *cs);
+ 
+ int radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
++                    enum radv_queue_family qf,
+                     const VkDeviceQueueCreateInfo *create_info,
+                     const VkDeviceQueueGlobalPriorityCreateInfoEXT *global_priority);
+ 
+diff --git a/src/amd/vulkan/radv_wsi.c b/src/amd/vulkan/radv_wsi.c
+index 57743ac0e2c..bd507816a20 100644
+--- a/src/amd/vulkan/radv_wsi.c
++++ b/src/amd/vulkan/radv_wsi.c
+@@ -68,7 +68,7 @@ radv_wsi_get_prime_blit_queue(VkDevice _device)
+       device->private_sdma_queue = vk_zalloc(&device->vk.alloc, sizeof(struct radv_queue), 8,
+                                              VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+ 
+-      VkResult result = radv_queue_init(device, device->private_sdma_queue, 0, &queue_create, NULL);
++      VkResult result = radv_queue_init(device, device->private_sdma_queue, 0, RADV_QUEUE_TRANSFER, &queue_create, NULL);
+       if (result == VK_SUCCESS) {
+          /* Remove the queue from our queue list because it'll be cleared manually
+           * in radv_DestroyDevice.
+-- 
+GitLab
+
