@@ -1,7 +1,7 @@
-From d76efe55bd0cf690334688aed359a1090576652d Mon Sep 17 00:00:00 2001
+From c631eac735fba1dd0993d8219f048cc775136d3d Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
-Date: Wed, 9 Mar 2022 17:37:39 +0000
-Subject: [PATCH] Revert "vulkan/wsi: handle queue families properly for
+Date: Sat, 12 Mar 2022 01:40:01 +0000
+Subject: [PATCH 2/2] Revert "vulkan/wsi: handle queue families properly for
  non-concurrent sharing mode."
 
 This reverts commit 48b3ef625e1909c1be31fbe10adb53734af38eb4.
