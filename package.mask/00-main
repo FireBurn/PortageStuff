@@ -2,6 +2,4 @@ virtual/jdk:7
 virtual/jre:7
 dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
-=app-emulation/wine-staging-5.12
-=dev-lang/python-3.10*
-#=media-video/pipewire-0.3.39
+=dev-lang/python-3.11*
