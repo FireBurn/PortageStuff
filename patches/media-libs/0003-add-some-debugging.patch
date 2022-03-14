@@ -1,0 +1,24 @@
+diff --git a/src/vulkan/wsi/wsi_common.c b/src/vulkan/wsi/wsi_common.c
+index 5351b83a4f3..8e168af58d9 100644
+--- a/src/vulkan/wsi/wsi_common.c
++++ b/src/vulkan/wsi/wsi_common.c
+@@ -363,6 +363,9 @@ wsi_configure_image(const struct wsi_swapchain *chain,
+ {
+    memset(info, 0, sizeof(*info));
+ 
++   fprintf(stderr, "image sharing 1: %d, %d, %p\n", pCreateInfo->imageSharingMode,
++           pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices);
++
+    uint32_t *queue_family_indices =
+       vk_alloc(&chain->alloc,
+                sizeof(*queue_family_indices) *
+@@ -373,6 +376,9 @@ wsi_configure_image(const struct wsi_swapchain *chain,
+    for (uint32_t i = 0; i < pCreateInfo->queueFamilyIndexCount; i++)
+       queue_family_indices[i] = pCreateInfo->pQueueFamilyIndices[i];
+ 
++   fprintf(stderr, "image sharing 2: %d, %d, %p\n", pCreateInfo->imageSharingMode,
++           pCreateInfo->queueFamilyIndexCount, pCreateInfo->pQueueFamilyIndices);
++
+    info->create = (VkImageCreateInfo) {
+       .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+       .flags = VK_IMAGE_CREATE_ALIAS_BIT,
