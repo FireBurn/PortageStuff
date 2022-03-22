@@ -1,0 +1,10 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by gui-libs/gtksourceview-5.4.0::gentoo
+# required by gnome-extra/gnome-calculator-42.0::gentoo
+# required by gnome-base/gnome-extra-apps-40.0::gentoo
+# required by gnome-base/gnome-40.0::gentoo[extras]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/libpcre2-10.39 -recursion-limit

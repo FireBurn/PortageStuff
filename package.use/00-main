@@ -351,3 +351,4 @@ media-libs/speexdsp			abi_x86_32
 media-video/pipewire			abi_x86_32
 net-proxy/haproxy			pcre2 pcre2-jit -pcre -slz
 app-accessibility/speech-dispatcher	python
+dev-libs/libpcre2			-recursion-limit
