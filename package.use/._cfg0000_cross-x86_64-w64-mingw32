@@ -1,0 +1,22 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by net-libs/glib-networking-2.72.0::gentoo
+# required by net-libs/libsoup-2.74.2::gentoo
+# required by gnome-extra/evolution-data-server-3.44.0::gentoo[vala]
+# required by mail-client/evolution-3.44.0::gentoo
+# required by gnome-base/gnome-extra-apps-40.0::gentoo
+# required by gnome-base/gnome-40.0::gentoo[extras]
+# required by @selected
+# required by @world (argument)
+>=net-libs/gnutls-3.7.3-r1 pkcs11
+# required by net-libs/gnutls-3.7.3-r1::gentoo[pkcs11]
+# required by net-libs/glib-networking-2.72.0::gentoo
+# required by net-libs/libsoup-2.74.2::gentoo
+# required by gnome-extra/evolution-data-server-3.44.0::gentoo[vala]
+# required by mail-client/evolution-3.44.0::gentoo
+# required by gnome-base/gnome-extra-apps-40.0::gentoo
+# required by gnome-base/gnome-40.0::gentoo[extras]
+# required by @selected
+# required by @world (argument)
+>=app-crypt/p11-kit-0.24.1 abi_x86_32
