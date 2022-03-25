@@ -1,0 +1,81 @@
+From afaefb671fe12e7788d3e8de6b6193b935fbf16c Mon Sep 17 00:00:00 2001
+From: Fangrui Song <i@maskray.me>
+Date: Fri, 25 Mar 2022 14:56:18 -0700
+Subject: [PATCH] [Driver][Linux] Remove D.Dir+"/../lib" from default search
+ paths for LLVM_ENABLE_RUNTIMES builds
+
+The rule was added in 2014 to support -stdlib=libc++ and -lc++ without
+specifying -L, when D.Dir is not a well-known system library directory like
+/usr/lib /usr/lib64. This rule turns out to get in the way with (-m32 for
+64-bit clang) or (-m64 for 32-bit clang) for Gentoo :
+https://github.com/llvm/llvm-project/issues/54515
+
+Nowadays LLVM_ENABLE_RUNTIMES is the only recommended way building libc++ and
+LLVM_ENABLE_PROJECTS=libc++ is deprecated. LLVM_ENABLE_RUNTIMES builds libc++
+in D.Dir+"/../lib/${triple}/". The rule is unneeded. Also reverts D108286.
+
+Gentoo uses a modified LLVM_ENABLE_RUNTIMES that installs libc++.so in
+well-known paths like /usr/lib64 and /usr/lib which are already covered by
+nearby search paths.
+
+Implication: if a downstream package needs something like -lLLVM-15git and uses
+libLLVM-15git.so not in a well-known path, it needs to supply -L
+D.Dir+"/../lib" explicitly (e.g. via LLVMConfig.cmake), instead of relying on
+the previous default search path.
+
+Reviewed By: mgorny
+
+Differential Revision: https://reviews.llvm.org/D122444
+---
+ clang/lib/Driver/ToolChains/Linux.cpp | 16 +++++-----------
+ clang/test/Driver/linux-ld.c          |  2 --
+ 2 files changed, 5 insertions(+), 13 deletions(-)
+
+diff --git a/clang/lib/Driver/ToolChains/Linux.cpp b/clang/lib/Driver/ToolChains/Linux.cpp
+index c5393b6f42d3f..d647246f05349 100644
+--- a/clang/lib/Driver/ToolChains/Linux.cpp
++++ b/clang/lib/Driver/ToolChains/Linux.cpp
+@@ -309,18 +309,12 @@ Linux::Linux(const Driver &D, const llvm::Triple &Triple, const ArgList &Args)
+ 
+   Generic_GCC::AddMultiarchPaths(D, SysRoot, OSLibDir, Paths);
+ 
+-  // Similar to the logic for GCC above, if we are currently running Clang
+-  // inside of the requested system root, add its parent library path to those
+-  // searched.
+-  // FIXME: It's not clear whether we should use the driver's installed
+-  // directory ('Dir' below) or the ResourceDir.
+-  if (StringRef(D.Dir).startswith(SysRoot)) {
+-    // Even if OSLibDir != "lib", this is needed for Clang in the build
+-    // directory (not installed) to find libc++.
++  // The deprecated -DLLVM_ENABLE_PROJECTS=libcxx configuration installs
++  // libc++.so in D.Dir+"/../lib/". Detect this path.
++  // TODO Remove once LLVM_ENABLE_PROJECTS=libcxx is unsupported.
++  if (StringRef(D.Dir).startswith(SysRoot) &&
++      D.getVFS().exists(D.Dir + "/../lib/libc++.so"))
+     addPathIfExists(D, D.Dir + "/../lib", Paths);
+-    if (OSLibDir != "lib")
+-      addPathIfExists(D, D.Dir + "/../" + OSLibDir, Paths);
+-  }
+ 
+   if (!D.OverlayToolChainPath.empty()) {
+     addPathIfExists(D, ExtraPath + "/lib", Paths);
+diff --git a/clang/test/Driver/linux-ld.c b/clang/test/Driver/linux-ld.c
+index 4c40eb3583a06..ef3751d6649db 100644
+--- a/clang/test/Driver/linux-ld.c
++++ b/clang/test/Driver/linux-ld.c
+@@ -530,7 +530,6 @@
+ // CHECK-BASIC-LIBCXX-INSTALL: "-internal-isystem" "[[SYSROOT]]/usr/bin/../include/c++/v1"
+ // CHECK-BASIC-LIBCXX-INSTALL: "-internal-isystem" "[[SYSROOT]]/usr/local/include"
+ // CHECK-BASIC-LIBCXX-INSTALL: "--sysroot=[[SYSROOT]]"
+-// CHECK-BASIC-LIBCXX-INSTALL: "-L[[SYSROOT]]/usr/bin/../lib"
+ //
+ // Test that we can use -stdlib=libc++ in a build system even when it
+ // occasionally links C code instead of C++ code.
+@@ -547,7 +546,6 @@
+ // CHECK-BASIC-LIBCXX-C-LINK-NOT: "-internal-isystem" "[[SYSROOT]]/usr/bin/../include/c++/v1"
+ // CHECK-BASIC-LIBCXX-C-LINK: "-internal-isystem" "[[SYSROOT]]/usr/local/include"
+ // CHECK-BASIC-LIBCXX-C-LINK: "--sysroot=[[SYSROOT]]"
+-// CHECK-BASIC-LIBCXX-C-LINK: "-L[[SYSROOT]]/usr/bin/../lib"
+ //
+ // Check multi arch support on Ubuntu 12.04 LTS.
+ // RUN: %clang -no-canonical-prefixes %s -no-pie -### -o %t.o 2>&1 \
