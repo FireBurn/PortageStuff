@@ -1,0 +1,24 @@
+diff --git a/src/microsoft/vulkan/dzn_private.h b/src/microsoft/vulkan/dzn_private.h
+index 58e8cdf7244..db4b17c8052 100644
+--- a/src/microsoft/vulkan/dzn_private.h
++++ b/src/microsoft/vulkan/dzn_private.h
+@@ -53,7 +53,6 @@
+ 
+ #define D3D12_IGNORE_SDK_LAYERS
+ #define COBJMACROS
+-#include <dxgi1_4.h>
+ #include <directx/d3d12.h>
+ 
+ #include "spirv_to_dxil.h"
+diff --git a/src/microsoft/vulkan/dzn_util.c b/src/microsoft/vulkan/dzn_util.c
+index 0ef5d8d929b..e9205e92d5a 100644
+--- a/src/microsoft/vulkan/dzn_util.c
++++ b/src/microsoft/vulkan/dzn_util.c
+@@ -31,7 +31,6 @@
+ #include "util/log.h"
+ 
+ #include <directx/d3d12sdklayers.h>
+-#include <dxgi1_4.h>
+ 
+ static const DXGI_FORMAT formats[PIPE_FORMAT_COUNT] = {
+ #define MAP_FORMAT_NORM(FMT) \
