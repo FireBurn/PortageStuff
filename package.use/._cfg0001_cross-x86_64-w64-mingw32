@@ -1,0 +1,10 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by media-sound/pulseaudio-15.99.1-r1::gentoo
+# required by app-emulation/wine-staging-7.7::gentoo[pulseaudio]
+# required by virtual/wine-0-r7::gentoo[staging]
+# required by app-emulation/winetricks-20220411::gentoo
+# required by @selected
+# required by @world (argument)
+>=media-libs/libpulse-15.99.1-r1 abi_x86_32
