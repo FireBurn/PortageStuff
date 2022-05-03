@@ -182,7 +182,7 @@ index 72b21659502c..51088617778a 100644
 GitLab
 
 
-From 6389002f56674f271160e934e3215aee14f8879f Mon Sep 17 00:00:00 2001
+From c4204adac32ecab891c8d5ae1951d26c4a05d63d Mon Sep 17 00:00:00 2001
 From: Tatsuyuki Ishi <ishitatsuyuki@gmail.com>
 Date: Sun, 1 May 2022 17:20:40 +0900
 Subject: [PATCH 2/2] radv: Upload shaders to invisible VRAM for non-resizable
@@ -205,16 +205,17 @@ causes the BO to be paged back into GTT, slowing down every draw call using
 
 By not using the BAR heap at all, we avoid overcommiting and all of these
 potential edge cases from happening.
+
+Tested-by: Mike Lothian <mike@fireburn.co.uk>
 ---
- src/amd/vulkan/radv_cmd_buffer.c  |   8 +
- src/amd/vulkan/radv_constants.h   |   2 +
- src/amd/vulkan/radv_device.c      |  63 +++++++-
- src/amd/vulkan/radv_meta_buffer.c |   2 -
- src/amd/vulkan/radv_pipeline.c    |  62 ++++++--
- src/amd/vulkan/radv_private.h     |  21 +++
- src/amd/vulkan/radv_shader.c      | 248 ++++++++++++++++++++++++++++--
- src/amd/vulkan/radv_shader.h      |  12 +-
- 8 files changed, 380 insertions(+), 38 deletions(-)
+ src/amd/vulkan/radv_cmd_buffer.c |   8 +
+ src/amd/vulkan/radv_constants.h  |   2 +
+ src/amd/vulkan/radv_device.c     |  70 ++++++++-
+ src/amd/vulkan/radv_pipeline.c   |  62 ++++++--
+ src/amd/vulkan/radv_private.h    |  21 +++
+ src/amd/vulkan/radv_shader.c     | 248 ++++++++++++++++++++++++++++---
+ src/amd/vulkan/radv_shader.h     |  12 +-
+ 7 files changed, 386 insertions(+), 37 deletions(-)
 
 diff --git a/src/amd/vulkan/radv_cmd_buffer.c b/src/amd/vulkan/radv_cmd_buffer.c
 index d2cb269a2501..4e2fe04a3dd5 100644
@@ -268,7 +269,7 @@ index 5787f0423161..5c82db3e9ae0 100644
 +
  #endif /* RADV_CONSTANTS_H */
 diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index eee1e204ddd9..969c5d9c54c3 100644
+index eee1e204ddd9..0f05966a1670 100644
 --- a/src/amd/vulkan/radv_device.c
 +++ b/src/amd/vulkan/radv_device.c
 @@ -28,6 +28,7 @@
@@ -279,7 +280,21 @@ index eee1e204ddd9..969c5d9c54c3 100644
  
  #ifdef __FreeBSD__
  #include <sys/types.h>
-@@ -2750,7 +2751,7 @@ radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
+@@ -2705,7 +2706,12 @@ radv_internal_queue_init(struct radv_device *device, struct radv_queue *queue,
+    const VkDeviceQueueCreateInfo queue_create = {
+       .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+       .queueFamilyIndex = device->physical_device->radv_queue_to_vk[qf],
+-      .queueCount = 1,
++      /*
++       * HACK: Pretend that we are creating a queue for each ring, so that this will not trip the
++       *       assertion in vk_queue_init().
++       */
++      .queueCount = device->physical_device->rad_info
++                       .num_rings[radv_queue_family_to_ring(device->physical_device, qf)],
+       .pQueuePriorities = &prio,
+    };
+ 
+@@ -2750,7 +2756,7 @@ radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
     return VK_SUCCESS;
  }
  
@@ -288,7 +303,7 @@ index eee1e204ddd9..969c5d9c54c3 100644
  radv_queue_finish(struct radv_queue *queue)
  {
     if (queue->initial_full_flush_preamble_cs)
-@@ -3303,8 +3304,6 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
+@@ -3303,8 +3309,6 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
  
     device->image_float32_atomics = image_float32_atomics;
  
@@ -297,7 +312,7 @@ index eee1e204ddd9..969c5d9c54c3 100644
     device->overallocation_disallowed = overallocation_disallowed;
     mtx_init(&device->overallocation_mutex, mtx_plain);
  
-@@ -3349,6 +3348,11 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
+@@ -3349,6 +3353,11 @@ radv_CreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCr
     }
     device->private_sdma_queue = VK_NULL_HANDLE;
  
@@ -309,7 +324,7 @@ index eee1e204ddd9..969c5d9c54c3 100644
     device->pbb_allowed = device->physical_device->rad_info.chip_class >= GFX9 &&
                           !(device->instance->debug_flags & RADV_DEBUG_NOBINNING);
  
-@@ -4566,6 +4570,59 @@ struct radv_deferred_queue_submission {
+@@ -4566,6 +4575,59 @@ struct radv_deferred_queue_submission {
     struct list_head processing_list;
  };
  
@@ -369,19 +384,6 @@ index eee1e204ddd9..969c5d9c54c3 100644
  static VkResult
  radv_queue_submit(struct vk_queue *vqueue, struct vk_queue_submit *submission)
  {
-diff --git a/src/amd/vulkan/radv_meta_buffer.c b/src/amd/vulkan/radv_meta_buffer.c
-index f60baf80519c..659f81d2db98 100644
---- a/src/amd/vulkan/radv_meta_buffer.c
-+++ b/src/amd/vulkan/radv_meta_buffer.c
-@@ -348,8 +348,6 @@ radv_update_buffer_cp(struct radv_cmd_buffer *cmd_buffer, uint64_t va, const voi
-    uint64_t words = size / 4;
-    bool mec = radv_cmd_buffer_uses_mec(cmd_buffer);
- 
--   assert(size < RADV_BUFFER_UPDATE_THRESHOLD);
--
-    si_emit_cache_flush(cmd_buffer);
-    radeon_check_space(cmd_buffer->device->ws, cmd_buffer->cs, words + 4);
- 
 diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
 index 1b84ccbb77d7..8b7d0f404239 100644
 --- a/src/amd/vulkan/radv_pipeline.c
@@ -554,7 +556,7 @@ index 4125f71e6d70..7a9d8f5d6315 100644
                               struct radv_descriptor_set *set, unsigned idx);
  
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
-index 60ef16c037fb..3e29a0cd7c2a 100644
+index 60ef16c037fb..f8b122dfb185 100644
 --- a/src/amd/vulkan/radv_shader.c
 +++ b/src/amd/vulkan/radv_shader.c
 @@ -1243,6 +1243,13 @@ free_block_obj(struct radv_device *device, union radv_shader_arena_block *block)
@@ -643,7 +645,7 @@ index 60ef16c037fb..3e29a0cd7c2a 100644
 +   const VkCommandPoolCreateInfo pool_create = {
 +      .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
 +      .flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
-+      .queueFamilyIndex = 1,
++      .queueFamilyIndex = device->physical_device->radv_queue_to_vk[RADV_QUEUE_COMPUTE],
 +   };
 +   result = disp->CreateCommandPool(vk_device, &pool_create, NULL,
 +                          &device->shader_upload_command_pool);
