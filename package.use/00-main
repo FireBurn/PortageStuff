@@ -181,7 +181,7 @@ sys-apps/attr				abi_x86_32
 sys-apps/dbus				abi_x86_32
 sys-apps/lm-sensors			abi_x86_32
 sys-apps/pciutils			-zlib
-sys-apps/systemd			abi_x86_32 sysv-utils -gcrypt
+sys-apps/systemd			abi_x86_32 sysv-utils -gcrypt elfutils
 sys-apps/tcp-wrappers			abi_x86_32
 sys-apps/util-linux			abi_x86_32
 sys-devel/clang				abi_x86_32
