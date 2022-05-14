@@ -44,7 +44,7 @@ sys-devel/lld				clango3lto.conf
 dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
 media-libs/embree			o2.conf
-net-libs/nodejs				clango3.conf
+net-libs/nodejs				clango3lto.conf
 #app-emulation/dxvk			dxvk.conf
 media-libs/gst-plugins-good		o3.conf
 dev-libs/jansson			bfd.conf
