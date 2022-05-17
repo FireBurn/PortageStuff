@@ -355,3 +355,4 @@ dev-libs/libpcre2			-recursion-limit
 net-libs/gnutls				pkcs11
 app-crypt/p11-kit			abi_x86_32
 media-libs/libpulse			abi_x86_32
+media-libs/freeglut			abi_x86_32
