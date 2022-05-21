@@ -1,0 +1,139 @@
+From 52d97e5c0ce881b907f6ba4ce1d38a2c1409b3f8 Mon Sep 17 00:00:00 2001
+From: Sean Keely <Sean.Keely@amd.com>
+Date: Wed, 30 Mar 2022 16:47:53 -0500
+Subject: [PATCH] ROCm 5.1.0 updates
+
+---
+ src/core/inc/amd_gpu_agent.h       |  5 +++--
+ src/core/runtime/amd_aql_queue.cpp |  8 ++++++--
+ src/core/runtime/amd_gpu_agent.cpp | 24 +++++++++++++++++++-----
+ src/core/runtime/runtime.cpp       |  3 ++-
+ src/image/device_info.cpp          |  1 +
+ 5 files changed, 31 insertions(+), 10 deletions(-)
+
+diff --git a/src/core/inc/amd_gpu_agent.h b/src/core/inc/amd_gpu_agent.h
+index 8d154498..ed64d5be 100644
+--- a/src/core/inc/amd_gpu_agent.h
++++ b/src/core/inc/amd_gpu_agent.h
+@@ -336,7 +336,8 @@ class GpuAgent : public GpuAgentInt {
+   const std::function<void(void*)>& system_deallocator() const { return system_deallocator_; }
+ 
+  protected:
+-  static const uint32_t minAqlSize_ = 0x1000;   // 4KB min
++  // Sizes are in packets.
++  static const uint32_t minAqlSize_ = 0x40;     // 4KB min
+   static const uint32_t maxAqlSize_ = 0x20000;  // 8MB max
+ 
+   // @brief Create an internal queue allowing tools to be notified.
+@@ -344,7 +345,7 @@ class GpuAgent : public GpuAgentInt {
+     return CreateInterceptibleQueue(core::Queue::DefaultErrorHandler, nullptr);
+   }
+ 
+-  // @brief // @brief Create an internal queue, with a custom error handler, allowing tools to be
++  // @brief Create an internal queue, with a custom error handler, allowing tools to be
+   // notified.
+   core::Queue* CreateInterceptibleQueue(void (*callback)(hsa_status_t status, hsa_queue_t* source,
+                                                          void* data),
+diff --git a/src/core/runtime/amd_aql_queue.cpp b/src/core/runtime/amd_aql_queue.cpp
+index 486b63cd..2981205a 100644
+--- a/src/core/runtime/amd_aql_queue.cpp
++++ b/src/core/runtime/amd_aql_queue.cpp
+@@ -671,8 +671,8 @@ void AqlQueue::AllocRegisteredRingBuffer(uint32_t queue_size_pkts) {
+ #endif
+   } else {
+     // Allocate storage for the ring buffer.
+-    ring_buf_alloc_bytes_ = AlignUp(
+-        queue_size_pkts * sizeof(core::AqlPacket), 4096);
++    ring_buf_alloc_bytes_ = queue_size_pkts * sizeof(core::AqlPacket);
++    assert(IsMultipleOf(ring_buf_alloc_bytes_, 4096) && "Ring buffer sizes must be 4KiB aligned.");
+ 
+     ring_buf_ = agent_->system_allocator()(
+         ring_buf_alloc_bytes_, 0x1000,
+@@ -824,8 +824,12 @@ bool AqlQueue::DynamicScratchHandler(hsa_signal_value_t error_code, void* arg) {
+       assert(pkt.IsValid() && "Invalid packet in dynamic scratch handler.");
+       assert(pkt.type() == HSA_PACKET_TYPE_KERNEL_DISPATCH &&
+              "Invalid packet in dynamic scratch handler.");
++      assert((pkt.dispatch.workgroup_size_x != 0) && (pkt.dispatch.workgroup_size_y != 0) &&
++             (pkt.dispatch.workgroup_size_z != 0) && "Invalid dispatch dimension.");
+ 
+       uint32_t scratch_request = pkt.dispatch.private_segment_size;
++      assert((scratch_request != 0) &&
++             "Scratch memory request from packet with no scratch demand.  Possible bad kernel code object.");
+ 
+       const uint32_t MaxScratchSlots =
+           (queue->amd_queue_.max_cu_id + 1) * queue->agent_->properties().MaxSlotsScratchCU;
+diff --git a/src/core/runtime/amd_gpu_agent.cpp b/src/core/runtime/amd_gpu_agent.cpp
+index 1f8b70ab..c938c15c 100644
+--- a/src/core/runtime/amd_gpu_agent.cpp
++++ b/src/core/runtime/amd_gpu_agent.cpp
+@@ -924,8 +924,13 @@ hsa_status_t GpuAgent::GetInfo(hsa_agent_info_t attribute, void* value) const {
+       *((uint32_t*)value) = properties_.DeviceId;
+       break;
+     case HSA_AMD_AGENT_INFO_CACHELINE_SIZE:
+-      // TODO: hardcode for now.
+-      // GCN whitepaper: cache line size is 64 byte long.
++      for (auto& cache : cache_props_) {
++        if ((cache.CacheLevel == 2) && (cache.CacheLineSize != 0)) {
++          *((uint32_t*)value) = cache.CacheLineSize;
++          break;
++        }
++      }
++      // Fallback for when KFD is returning zero.
+       *((uint32_t*)value) = 64;
+       break;
+     case HSA_AMD_AGENT_INFO_COMPUTE_UNIT_COUNT:
+@@ -1055,6 +1060,11 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type32_t queue_type,
+     return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
+   }
+ 
++  // Enforce min size
++  if (size < minAqlSize_) {
++    return HSA_STATUS_ERROR_INVALID_ARGUMENT;
++  }
++
+   // Allocate scratch memory
+   ScratchInfo scratch = {0};
+   if (private_segment_size == UINT_MAX) {
+@@ -1553,9 +1563,13 @@ lazy_ptr<core::Blit>& GpuAgent::GetBlitObject(const core::Agent& dst_agent,
+     return blits_[BlitDevToDev];
+   }
+ 
+-  // Acquire Hive Id of Src and Dst devices
+-  uint64_t src_hive_id = src_agent.HiveId();
+-  uint64_t dst_hive_id = dst_agent.HiveId();
++  // Acquire Hive Id of Src and Dst devices - ignore hive id for CPU devices.
++  // CPU-GPU connections should always use the host (aka pcie) facing SDMA engines, even if the
++  // connection is XGMI.
++  uint64_t src_hive_id =
++      (src_agent.device_type() == core::Agent::kAmdGpuDevice) ? src_agent.HiveId() : 0;
++  uint64_t dst_hive_id =
++      (dst_agent.device_type() == core::Agent::kAmdGpuDevice) ? dst_agent.HiveId() : 0;
+ 
+   // Bind to a PCIe facing Blit object if the two
+   // devices have different Hive Ids. This can occur
+diff --git a/src/core/runtime/runtime.cpp b/src/core/runtime/runtime.cpp
+index 019b739c..40ebc35e 100644
+--- a/src/core/runtime/runtime.cpp
++++ b/src/core/runtime/runtime.cpp
+@@ -2030,7 +2030,8 @@ hsa_status_t Runtime::SvmPrefetch(void* ptr, size_t size, hsa_agent_t agent,
+             start->second.prev->second.next = start->second.next;
+             if (!isEndNode(start)) start->second.next->second.prev = start->second.prev;
+           }
+-          prefetch_map_.erase(start);
++          start = prefetch_map_.erase(start);
++          continue;
+         }
+       }
+       start++;
+diff --git a/src/image/device_info.cpp b/src/image/device_info.cpp
+index 4d00c3d6..05358582 100755
+--- a/src/image/device_info.cpp
++++ b/src/image/device_info.cpp
+@@ -165,6 +165,7 @@ uint32_t DevIDToAddrLibFamily(uint32_t dev_id) {
+ 
+             case 2:
+             case 3:
++            case 12:
+               return FAMILY_RV;
+ 
+             default:
