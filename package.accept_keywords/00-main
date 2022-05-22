@@ -8,8 +8,8 @@ x11-drivers/xf86-video-intel		**
 =x11-libs/libdrm-9999			**
 #=x11-base/xorg-server-9999 		**
 #=x11-libs/libva-intel-driver-9999	**
-=app-emulation/dxvk-9999		**
-app-emulation/vkd3d			**
+app-emulation/dxvk			**
+app-emulation/vkd3d-proton		**
 #app-emulation/wine-staging		**
 x11-apps/mesa-progs			**
 #kde-misc/kdiff3				**
