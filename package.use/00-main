@@ -221,7 +221,7 @@ virtual/opengl				abi_x86_32
 virtual/pam				abi_x86_32
 virtual/pkgconfig			abi_x86_32
 virtual/wine				-d3d9 staging
-www-client/chromium			custom-cflags hangouts proprietary-codecs system-ffmpeg system-libvpx widevine system-icu wayland -ozone vaapi official
+www-client/chromium			custom-cflags hangouts proprietary-codecs system-ffmpeg system-libvpx widevine system-icu wayland -ozone vaapi official gtk4
 www-client/firefox			custom-cflags custom-optimization hwaccel system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
 www-plugins/adobe-flash			abi_x86_32
 www-servers/apache			apache2_modules_auth_digest
@@ -356,3 +356,4 @@ net-libs/gnutls				pkcs11
 app-crypt/p11-kit			abi_x86_32
 media-libs/libpulse			abi_x86_32
 media-libs/freeglut			abi_x86_32
+dev-util/directx-headers		abi_x86_32
