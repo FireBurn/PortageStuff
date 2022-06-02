@@ -1,0 +1,56 @@
+From 5d7c8908bdd0c04e616c92f6a140613810169373 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Wed, 1 Jun 2022 23:56:55 +0100
+Subject: [PATCH] [spirv] Add utility include
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+This fixes a compile issue with GCC 12.1
+
+FAILED: src/spirv/libspirv.a.p/spirv_compression.cpp.obj
+i686-w64-mingw32-g++ -Isrc/spirv/libspirv.a.p -Isrc/spirv -I../dxvk-9999/src/spirv -I../dxvk-9999/include -fdiagnostics-color=always -D_FILE_OFFSET_BITS=64 -Wall -Winvalid-pch -Wnon-virtual-dtor -std=c++17 -O0 -DNOMINMAX -D_WIN32_WINNT=0xa00 -msse -msse2 -msse3 -mfpmath=sse -Wimplicit-fallthrough -O3 -march=native -pipe -flto=16 -mno-avx -MD -MQ src/spirv/libspirv.a.p/spirv_compression.cpp.obj -MF src/spirv/libspirv.a.p/spirv_compression.cpp.obj.d -o src/spirv/libspirv.a.p/spirv_compression.cpp.obj -c ../dxvk-9999/src/spirv/spirv_compression.cpp
+In file included from ../dxvk-9999/src/spirv/../util/util_flags.h:5,
+                 from ../dxvk-9999/src/spirv/spirv_include.h:7,
+                 from ../dxvk-9999/src/spirv/spirv_instruction.h:6,
+                 from ../dxvk-9999/src/spirv/spirv_code_buffer.h:8,
+                 from ../dxvk-9999/src/spirv/spirv_compression.h:5,
+                 from ../dxvk-9999/src/spirv/spirv_compression.cpp:1:
+../dxvk-9999/src/spirv/../util/util_bit.h:300:33: warning: ‘template<class _Category, class _Tp, class _Distance, class _Pointer, class _Reference> struct std::iterator’ is deprecated [-Wdeprecated-declarations]
+  300 |     class iterator: public std::iterator<std::input_iterator_tag,
+      |                                 ^~~~~~~~
+In file included from /usr/lib/gcc/i686-w64-mingw32/12.1.0/include/g++-v12/bits/stl_algobase.h:65,
+                 from /usr/lib/gcc/i686-w64-mingw32/12.1.0/include/g++-v12/vector:60,
+                 from ../dxvk-9999/src/spirv/spirv_compression.h:3:
+/usr/lib/gcc/i686-w64-mingw32/12.1.0/include/g++-v12/bits/stl_iterator_base_types.h:127:34: note: declared here
+  127 |     struct _GLIBCXX17_DEPRECATED iterator
+      |                                  ^~~~~~~~
+../dxvk-9999/src/spirv/spirv_code_buffer.h: In member function ‘size_t dxvk::SpirvCodeBuffer::endInsertion()’:
+../dxvk-9999/src/spirv/spirv_code_buffer.h:214:19: error: ‘exchange’ is not a member of ‘std’
+  214 |       return std::exchange(m_ptr, m_code.size());
+      |                   ^~~~~~~~
+
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>
+---
+ src/spirv/spirv_code_buffer.h | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/spirv/spirv_code_buffer.h b/src/spirv/spirv_code_buffer.h
+index 6bee2c9b0d..a0ed227276 100644
+--- a/src/spirv/spirv_code_buffer.h
++++ b/src/spirv/spirv_code_buffer.h
+@@ -3,6 +3,7 @@
+ #include <spirv/spirv.hpp>
+ 
+ #include <iostream>
++#include <utility>
+ #include <vector>
+ 
+ #include "spirv_instruction.h"
+@@ -221,4 +222,4 @@ namespace dxvk {
+     
+   };
+   
+-}
+\ No newline at end of file
++}
