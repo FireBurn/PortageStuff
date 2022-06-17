@@ -3,3 +3,4 @@
 -input_devices_libinput
 -gentoo-vm
 -custom-cflags
+-lua
