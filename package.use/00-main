@@ -348,7 +348,7 @@ sys-libs/libxcrypt			abi_x86_32
 app-crypt/libmd				abi_x86_32
 media-plugins/gst-plugins-opusparse	abi_x86_32
 media-libs/speexdsp			abi_x86_32
-media-video/pipewire			abi_x86_32
+media-video/pipewire			abi_x86_32 sound-server
 net-proxy/haproxy			lua -slz
 app-accessibility/speech-dispatcher	python
 dev-libs/libpcre2			-recursion-limit
