@@ -61,3 +61,4 @@ dev-libs/rocclr                         clango3.conf
 dev-libs/rocm-opencl-runtime            clango3.conf
 dev-util/rocminfo                       clango3.conf
 dev-util/clinfo                         clango3.conf
+dev-lang/rust				clango3lto.conf
