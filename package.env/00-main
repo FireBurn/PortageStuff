@@ -14,9 +14,10 @@ dev-qt/qtscript				o3.conf
 dev-util/valgrind			o3.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 #media-libs/mesa				clango3gold.conf
-#media-libs/mesa				clango3lto.conf
+media-libs/mesa				clango3lto.conf
+#media-libs/mesa				clango3.conf
 #media-libs/mesa				debug.conf
-media-libs/mesa				o3.conf
+#media-libs/mesa				o3.conf
 media-libs/x264                         o3.conf
 media-libs/dav1d			o3.conf
 media-video/ffmpeg			o3.conf
