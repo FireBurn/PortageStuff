@@ -57,9 +57,10 @@ dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 sys-devel/llvm-roc                      clango3.conf
 #dev-libs/rocm-comgr                     clango3.conf
-dev-libs/rocm-comgr			o3.conf
+dev-libs/rocm-comgr			debug.conf #o3.conf
 dev-libs/rocclr                         clango3.conf
 dev-libs/rocm-opencl-runtime            clango3.conf
 dev-util/rocminfo                       clango3.conf
 dev-util/clinfo                         clango3.conf
 dev-lang/rust				clango3lto.conf
+dev-libs/rocm-device-libs		clango3.conf
