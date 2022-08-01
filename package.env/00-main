@@ -13,7 +13,7 @@ dev-libs/libaio				o3.conf
 dev-qt/qtscript				o3.conf
 dev-util/valgrind			o3.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
-#media-libs/mesa				clango3gold.conf
+#media-libs/mesa				clangdebug.conf
 media-libs/mesa				clango3lto.conf
 #media-libs/mesa				clango3.conf
 #media-libs/mesa				debug.conf
@@ -38,10 +38,12 @@ app-office/libreoffice			clango3lto.conf
 #x11-base/xorg-server			debug.conf
 #x11-drivers/xf86-video-intel		debug.conf
 dev-libs/libgcrypt			o3.conf
-dev-util/intel-graphics-compiler	debug.conf
 sys-devel/llvm				clango3lto.conf
+#sys-devel/llvm				debug.conf
+#sys-devel/clang				debug.conf
 sys-devel/clang				clango3lto.conf
 sys-devel/lld				clango3lto.conf
+#sys-devel/lld				debug.conf
 dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
 media-libs/embree			o2.conf
@@ -56,10 +58,11 @@ dev-libs/jansson			bfd.conf
 dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 sys-devel/llvm-roc                      clango3.conf
-#dev-libs/rocm-comgr                     clango3.conf
-dev-libs/rocm-comgr			debug.conf #o3.conf
+dev-libs/rocm-comgr                     clango3.conf
+#dev-libs/rocm-comgr			clangdebug.conf #o3.conf
 dev-libs/rocclr                         clango3.conf
 dev-libs/rocm-opencl-runtime            clango3.conf
+#dev-libs/rocm-opencl-runtime		clangdebug.conf
 dev-util/rocminfo                       clango3.conf
 dev-util/clinfo                         clango3.conf
 dev-lang/rust				clango3lto.conf
