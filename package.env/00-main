@@ -67,3 +67,6 @@ dev-util/rocminfo                       clango3.conf
 dev-util/clinfo                         clango3.conf
 dev-lang/rust				clango3lto.conf
 dev-libs/rocm-device-libs		clango3.conf
+app-crypt/efitools			o3.conf
+sys-boot/gnu-efi			o3.conf
+sys-boot/grub				o3.conf
