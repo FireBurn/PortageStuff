@@ -71,3 +71,4 @@ dev-libs/rocm-device-libs		clango3.conf
 app-crypt/efitools			o3.conf
 sys-boot/gnu-efi			o3.conf
 sys-boot/grub				o3.conf
+app-crypt/gpgme				clango3lto.conf
