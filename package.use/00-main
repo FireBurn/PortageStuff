@@ -358,4 +358,4 @@ media-libs/libpulse			abi_x86_32
 media-libs/freeglut			abi_x86_32
 dev-util/directx-headers		abi_x86_32
 net-dns/c-ares				abi_x86_32
-app-crypt/libsecret			-introspection
+app-crypt/libsecret			-introspection -vala
