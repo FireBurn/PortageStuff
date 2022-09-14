@@ -41,10 +41,13 @@ app-office/libreoffice			clango3lto.conf
 dev-libs/libgcrypt			o3.conf
 sys-devel/llvm				clango3lto.conf
 #sys-devel/llvm				debug.conf
+#sys-devel/llvm				o3.conf
 #sys-devel/clang				debug.conf
 sys-devel/clang				clango3lto.conf
+#sys-devel/clang				o3.conf
 sys-devel/lld				clango3lto.conf
 #sys-devel/lld				debug.conf
+dev-util/spirv-llvm-translator		clango3lto.conf
 dev-libs/intel-neo			o3.conf
 dev-util/intel-graphics-compiler	o3.conf
 media-libs/embree			o2.conf
