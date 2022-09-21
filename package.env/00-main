@@ -46,6 +46,7 @@ sys-devel/llvm				clango3lto.conf
 sys-devel/clang				clango3lto.conf
 #sys-devel/clang				o3.conf
 sys-devel/lld				clango3lto.conf
+#sys-devel/lld				o3.conf
 #sys-devel/lld				debug.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
 dev-libs/intel-neo			o3.conf
