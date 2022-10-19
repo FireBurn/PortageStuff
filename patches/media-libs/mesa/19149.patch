@@ -1,0 +1,145 @@
+From 18ef7406840cc467f12407e014f4953d99e4bb26 Mon Sep 17 00:00:00 2001
+From: Karol Herbst <kherbst@redhat.com>
+Date: Sat, 15 Oct 2022 16:22:17 +0200
+Subject: [PATCH 1/2] rusticl: add RUSTICL_ENABLE to habe a global way of
+ enabling devices
+
+---
+ src/gallium/frontends/rusticl/core/device.rs  |  9 ++--
+ .../frontends/rusticl/mesa/pipe/device.rs     | 52 +++++++++++++++++--
+ 2 files changed, 55 insertions(+), 6 deletions(-)
+
+diff --git a/src/gallium/frontends/rusticl/core/device.rs b/src/gallium/frontends/rusticl/core/device.rs
+index f08757a9e637..88c21e950001 100644
+--- a/src/gallium/frontends/rusticl/core/device.rs
++++ b/src/gallium/frontends/rusticl/core/device.rs
+@@ -234,9 +234,12 @@ impl Device {
+     }
+ 
+     fn check_valid(screen: &PipeScreen) -> bool {
+-        if screen.param(pipe_cap::PIPE_CAP_COMPUTE) == 0 ||
+-         // even though we use PIPE_SHADER_IR_NIR, PIPE_SHADER_IR_NIR_SERIALIZED marks CL support by the driver
+-         screen.shader_param(pipe_shader_type::PIPE_SHADER_COMPUTE, pipe_shader_cap::PIPE_SHADER_CAP_SUPPORTED_IRS) & (1 << (pipe_shader_ir::PIPE_SHADER_IR_NIR_SERIALIZED as i32)) == 0
++        if screen.param(pipe_cap::PIPE_CAP_COMPUTE) == 0
++            || screen.shader_param(
++                pipe_shader_type::PIPE_SHADER_COMPUTE,
++                pipe_shader_cap::PIPE_SHADER_CAP_SUPPORTED_IRS,
++            ) & (1 << (pipe_shader_ir::PIPE_SHADER_IR_NIR as i32))
++                == 0
+         {
+             return false;
+         }
+diff --git a/src/gallium/frontends/rusticl/mesa/pipe/device.rs b/src/gallium/frontends/rusticl/mesa/pipe/device.rs
+index b82737cff902..02e0b952d728 100644
+--- a/src/gallium/frontends/rusticl/mesa/pipe/device.rs
++++ b/src/gallium/frontends/rusticl/mesa/pipe/device.rs
+@@ -1,9 +1,11 @@
+ use crate::pipe::screen::*;
+ 
+ use mesa_rust_gen::*;
++use mesa_rust_util::string::c_string_to_string;
+ 
+-use std::ptr;
++use std::collections::HashMap;
+ use std::sync::Arc;
++use std::{env, ptr};
+ 
+ #[derive(PartialEq)]
+ pub(super) struct PipeLoaderDevice {
+@@ -45,9 +47,53 @@ fn load_devs() -> Vec<PipeLoaderDevice> {
+         .collect()
+ }
+ 
++fn get_enabled_devs() -> HashMap<String, u32> {
++    let mut res = HashMap::new();
++
++    if let Ok(enabled_devs) = env::var("RUSTICL_ENABLE") {
++        for driver_str in enabled_devs.split(',') {
++            let driver_str: Vec<_> = driver_str.split(':').collect();
++
++            if driver_str.is_empty() {
++                continue;
++            }
++
++            let driver = driver_str[0].to_owned();
++            let mut devices = 0;
++
++            if driver_str.len() == 1 {
++                devices = !0;
++            } else {
++                for dev in driver_str[1].split(';') {
++                    if let Ok(dev_id) = dev.parse::<u8>() {
++                        devices |= 1 << dev_id;
++                    }
++                }
++            }
++            res.insert(driver, devices);
++        }
++    }
++
++    res
++}
++
+ pub fn load_screens() -> Vec<Arc<PipeScreen>> {
+-    load_devs()
+-        .into_iter()
++    let devs = load_devs();
++    let mut enabled_devs = get_enabled_devs();
++
++    devs.into_iter()
++        .filter(|dev| {
++            let driver_name = unsafe { c_string_to_string(dev.ldev.as_ref().unwrap().driver_name) };
++
++            if let Some(enabled_devs) = enabled_devs.get_mut(&driver_name) {
++                let res = (*enabled_devs & 1) == 1;
++                *enabled_devs >>= 1;
++
++                res
++            } else {
++                false
++            }
++        })
+         .filter_map(PipeLoaderDevice::load_screen)
+         .collect()
+ }
+-- 
+GitLab
+
+
+From ffec4aa88923a131f96c53badd21464ab59cb84b Mon Sep 17 00:00:00 2001
+From: Karol Herbst <kherbst@redhat.com>
+Date: Wed, 19 Oct 2022 00:10:12 +0200
+Subject: [PATCH 2/2] rusticl: Add env variables to docs
+
+---
+ docs/envvars.rst | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/docs/envvars.rst b/docs/envvars.rst
+index ad84505d5c94..1945da522aae 100644
+--- a/docs/envvars.rst
++++ b/docs/envvars.rst
+@@ -548,6 +548,20 @@ Clover environment variables
+    appended after the options set by the OpenCL program in
+    ``clLinkProgram``.
+ 
++Rusticl environment variables
++-----------------------------
++
++:envvar:`RUSTICL_DEVICE_TYPE`
++   allows to overwrite the device type of devices. Possible values are
++   `accelerator`, `cpu`, `custom` and `gpu`
++:envvar:`RUSTICL_CL_VERSION`
++   overwrites the auto detected OpenCL version of all devices. Specified as
++   `major.minor`.
++:envvar:`RUSTICL_ENABLE`
++   a comma-separated list of drivers to enable CL on. An optional list of
++   semicolon-separated integers can be passed to specify which devices to
++   enable.
++   Example: `RUSTICL_ENABLE=iris,radeonsi:0;2`
+ 
+ Nine frontend environment variables
+ -----------------------------------
+-- 
+GitLab
+
