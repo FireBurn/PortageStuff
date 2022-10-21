@@ -1,5 +1,5 @@
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index d8efa4190a2..098756231fa 100644
+index 17cbeeaa082..eb9112257f3 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -683,6 +683,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
@@ -1791,17 +1791,19 @@ index 0155eecb3f9..4fe3db90794 100644
  };
  
 diff --git a/src/gallium/targets/rusticl/meson.build b/src/gallium/targets/rusticl/meson.build
-index babc63ba3ac..938ff9d0efd 100644
+index babc63ba3ac..8fa62fedc7e 100644
 --- a/src/gallium/targets/rusticl/meson.build
 +++ b/src/gallium/targets/rusticl/meson.build
-@@ -45,6 +45,7 @@ librusticl = shared_library(
+@@ -45,7 +45,9 @@ librusticl = shared_library(
      driver_iris,
      driver_nouveau,
      driver_panfrost,
 +    driver_radeonsi,
      driver_swrast,
++    driver_zink,
      idep_nir,
    ],
+   version : '@0@.0.0'.format(opencl_version),
 diff --git a/src/gallium/tests/trivial/compute.c b/src/gallium/tests/trivial/compute.c
 deleted file mode 100644
 index 1def2182fd8..00000000000
