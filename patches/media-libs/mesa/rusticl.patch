@@ -472,20 +472,6 @@ index 22ac92e1fb7..b82520ec2d2 100644
     job_info.zero_initialize_shared_memory = llvmpipe->cs->zero_initialize_shared_memory;
     job_info.current = &llvmpipe->csctx->cs.current;
  
-diff --git a/src/gallium/drivers/nouveau/nouveau_buffer.c b/src/gallium/drivers/nouveau/nouveau_buffer.c
-index c1f5e60b905..bc41debd045 100644
---- a/src/gallium/drivers/nouveau/nouveau_buffer.c
-+++ b/src/gallium/drivers/nouveau/nouveau_buffer.c
-@@ -396,6 +396,9 @@ nouveau_buffer_transfer_map(struct pipe_context *pipe,
-    if (buf->status & NOUVEAU_BUFFER_STATUS_USER_PTR)
-       return nouveau_user_ptr_transfer_map(pipe, resource, level, usage, box, ptransfer);
- 
-+   if (usage & PIPE_MAP_DIRECTLY && buf->domain == NOUVEAU_BO_VRAM)
-+      return NULL;
-+
-    struct nouveau_transfer *tx = MALLOC_STRUCT(nouveau_transfer);
-    uint8_t *map;
-    int ret;
 diff --git a/src/gallium/drivers/nouveau/nv50/nv50_compute.c b/src/gallium/drivers/nouveau/nv50/nv50_compute.c
 index 1213effd53d..e6a597c8182 100644
 --- a/src/gallium/drivers/nouveau/nv50/nv50_compute.c
@@ -558,16 +544,6 @@ index 74996fbc867..536841f60f7 100644
        uint32_t smem_size; /* shared memory (TGSI LOCAL resource) size */
     } cp;
     uint8_t num_barriers;
-diff --git a/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c b/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-index afe8dd7d429..9207a7f237f 100644
---- a/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-+++ b/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-@@ -174,5 +174,4 @@ nvc0_screen_init_resource_functions(struct pipe_screen *pscreen)
-    pscreen->resource_from_handle = nvc0_resource_from_handle;
-    pscreen->resource_get_handle = nvc0_miptree_get_handle;
-    pscreen->resource_destroy = nvc0_resource_destroy;
--   pscreen->resource_from_user_memory = nvc0_resource_from_user_memory;
- }
 diff --git a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c b/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
 index 2f4a9c117d2..9eb442c3c10 100644
 --- a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
@@ -700,18 +676,18 @@ index 8c403dc993f..84aae30b120 100644
                  cfg.task_axis = MALI_TASK_AXIS_Z;
          }
 diff --git a/src/gallium/drivers/panfrost/pan_compute.c b/src/gallium/drivers/panfrost/pan_compute.c
-index 197e9b18432..409abee6854 100644
+index 780b2b521b5..4cbdb84cac6 100644
 --- a/src/gallium/drivers/panfrost/pan_compute.c
 +++ b/src/gallium/drivers/panfrost/pan_compute.c
-@@ -72,7 +72,7 @@ panfrost_create_compute_state(
+@@ -57,7 +57,7 @@ panfrost_create_compute_state(
  
          panfrost_shader_compile(pctx->screen, &ctx->shaders, &ctx->descs,
-                                 deserialized ?: cso->prog,
--                                &ctx->base.debug, v, cso->req_local_mem);
-+                                &ctx->base.debug, v, cso->static_shared_mem);
+                                 cso->prog, &ctx->base.debug, v,
+-                                cso->req_local_mem);
++                                cso->static_shared_mem);
  
-         /* There are no variants so we won't need the NIR again */
-         ralloc_free(deserialized);
+         return so;
+ }
 diff --git a/src/gallium/drivers/r600/evergreen_compute.c b/src/gallium/drivers/r600/evergreen_compute.c
 index d1fe115bbd2..8f22d2d5d15 100644
 --- a/src/gallium/drivers/r600/evergreen_compute.c
@@ -1791,19 +1767,17 @@ index 0155eecb3f9..4fe3db90794 100644
  };
  
 diff --git a/src/gallium/targets/rusticl/meson.build b/src/gallium/targets/rusticl/meson.build
-index babc63ba3ac..8fa62fedc7e 100644
+index babc63ba3ac..938ff9d0efd 100644
 --- a/src/gallium/targets/rusticl/meson.build
 +++ b/src/gallium/targets/rusticl/meson.build
-@@ -45,7 +45,9 @@ librusticl = shared_library(
+@@ -45,6 +45,7 @@ librusticl = shared_library(
      driver_iris,
      driver_nouveau,
      driver_panfrost,
 +    driver_radeonsi,
      driver_swrast,
-+    driver_zink,
      idep_nir,
    ],
-   version : '@0@.0.0'.format(opencl_version),
 diff --git a/src/gallium/tests/trivial/compute.c b/src/gallium/tests/trivial/compute.c
 deleted file mode 100644
 index 1def2182fd8..00000000000
