@@ -1,5 +1,5 @@
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 9ab8d0d58a4..5d6916d27f9 100644
+index 17cbeeaa082..eb9112257f3 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -683,6 +683,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
@@ -42,7 +42,7 @@ index 9ab8d0d58a4..5d6916d27f9 100644
     case nir_op_f2f16_rtne:
     case nir_op_f2f32:
     case nir_op_f2f64:
-@@ -2297,31 +2314,32 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx, nir_intrin
+@@ -2290,31 +2307,32 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx, nir_intrin
     if (ctx->abi->load_ubo)
        rsrc = ctx->abi->load_ubo(ctx->abi, rsrc);
  
@@ -95,7 +95,7 @@ index 9ab8d0d58a4..5d6916d27f9 100644
  
     return exit_waterfall(ctx, &wctx, ret);
 diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
-index 9ceb4ddc9ed..aa3be6425fb 100644
+index c1a62c79472..06754aacb68 100644
 --- a/src/amd/vulkan/radv_pipeline_rt.c
 +++ b/src/amd/vulkan/radv_pipeline_rt.c
 @@ -818,7 +818,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
@@ -108,10 +108,10 @@ index 9ceb4ddc9ed..aa3be6425fb 100644
  
     return shader;
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
-index f4bd677e454..358295725b6 100644
+index 21f465de94e..a81389778d1 100644
 --- a/src/amd/vulkan/radv_shader.c
 +++ b/src/amd/vulkan/radv_shader.c
-@@ -1053,9 +1053,9 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
+@@ -1051,9 +1051,9 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
     };
     NIR_PASS(_, nir, nir_opt_access, &opt_access_options);
  
@@ -123,7 +123,7 @@ index f4bd677e454..358295725b6 100644
              nir_address_format_vec2_index_32bit_offset);
  
     NIR_PASS(_, nir, lower_intrinsics, key);
-@@ -1073,7 +1073,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
+@@ -1071,7 +1071,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
        if (!nir->info.shared_memory_explicit_layout) {
           NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, var_modes, shared_var_info);
        }
@@ -132,7 +132,7 @@ index f4bd677e454..358295725b6 100644
  
        if (nir->info.zero_initialize_shared_memory && nir->info.shared_size > 0) {
           const unsigned chunk_size = 16; /* max single store size */
-@@ -1082,7 +1082,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
+@@ -1080,7 +1080,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
        }
     }
  
@@ -155,10 +155,10 @@ index 12a2aebb858..0dfb4085b59 100644
     }
  
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index 908cbe78f80..7587c2453d2 100644
+index c7372301f4a..f2d986a472e 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
-@@ -4832,6 +4832,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
+@@ -4824,6 +4824,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
  
  bool nir_lower_explicit_io(nir_shader *shader,
                             nir_variable_mode modes,
@@ -166,7 +166,7 @@ index 908cbe78f80..7587c2453d2 100644
                             nir_address_format);
  
  bool
-@@ -5488,7 +5489,7 @@ bool nir_lower_ssa_defs_to_regs_block(nir_block *block);
+@@ -5480,7 +5481,7 @@ bool nir_lower_ssa_defs_to_regs_block(nir_block *block);
  bool nir_rematerialize_derefs_in_use_blocks_impl(nir_function_impl *impl);
  
  bool nir_lower_samplers(nir_shader *shader);
@@ -260,7 +260,7 @@ index 1776648c456..d5306b6591d 100644
     }
  
 diff --git a/src/compiler/nir/nir_opt_algebraic.py b/src/compiler/nir/nir_opt_algebraic.py
-index cc55b866657..d1230510de1 100644
+index 834565d6ce9..8d33490f5c2 100644
 --- a/src/compiler/nir/nir_opt_algebraic.py
 +++ b/src/compiler/nir/nir_opt_algebraic.py
 @@ -1053,7 +1053,7 @@ for s in [8, 16, 32, 64]:
@@ -283,7 +283,7 @@ index cc55b866657..d1230510de1 100644
     (('uror@16', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 16, b))), 'options->lower_rotate'),
     (('uror@32', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 32, b))), 'options->lower_rotate'),
     # Exponential/logarithmic identities
-@@ -2600,6 +2602,11 @@ late_optimizations = [
+@@ -2564,6 +2566,11 @@ late_optimizations = [
     (('~feq', ('fadd(is_used_once)', a, b), 0.0), ('feq', a, ('fneg', b))),
     (('~fneu', ('fadd(is_used_once)', a, b), 0.0), ('fneu', a, ('fneg', b))),
  
@@ -410,15 +410,16 @@ index 0c3841fc2ff..1bd97a48258 100644
        struct iris_state_ref grid_size;
        /** Reference to the SURFACE_STATE for the compute grid resource */
 diff --git a/src/gallium/drivers/iris/iris_draw.c b/src/gallium/drivers/iris/iris_draw.c
-index 2bf23ab1b3e..529381ef307 100644
+index 2bf23ab1b3e..04680097d80 100644
 --- a/src/gallium/drivers/iris/iris_draw.c
 +++ b/src/gallium/drivers/iris/iris_draw.c
-@@ -408,6 +408,11 @@ iris_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info *grid)
+@@ -408,6 +408,12 @@ iris_launch_grid(struct pipe_context *ctx, const struct pipe_grid_info *grid)
        ice->state.shaders[MESA_SHADER_COMPUTE].sysvals_need_upload = true;
     }
  
 +   if (ice->state.last_grid_dim != grid->work_dim) {
 +      ice->state.last_grid_dim = grid->work_dim;
++      ice->state.stage_dirty |= IRIS_STAGE_DIRTY_CONSTANTS_CS;
 +      ice->state.shaders[MESA_SHADER_COMPUTE].sysvals_need_upload = true;
 +   }
 +
@@ -472,20 +473,6 @@ index 22ac92e1fb7..b82520ec2d2 100644
     job_info.zero_initialize_shared_memory = llvmpipe->cs->zero_initialize_shared_memory;
     job_info.current = &llvmpipe->csctx->cs.current;
  
-diff --git a/src/gallium/drivers/nouveau/nouveau_buffer.c b/src/gallium/drivers/nouveau/nouveau_buffer.c
-index c1f5e60b905..bc41debd045 100644
---- a/src/gallium/drivers/nouveau/nouveau_buffer.c
-+++ b/src/gallium/drivers/nouveau/nouveau_buffer.c
-@@ -396,6 +396,9 @@ nouveau_buffer_transfer_map(struct pipe_context *pipe,
-    if (buf->status & NOUVEAU_BUFFER_STATUS_USER_PTR)
-       return nouveau_user_ptr_transfer_map(pipe, resource, level, usage, box, ptransfer);
- 
-+   if (usage & PIPE_MAP_DIRECTLY && buf->domain == NOUVEAU_BO_VRAM)
-+      return NULL;
-+
-    struct nouveau_transfer *tx = MALLOC_STRUCT(nouveau_transfer);
-    uint8_t *map;
-    int ret;
 diff --git a/src/gallium/drivers/nouveau/nv50/nv50_compute.c b/src/gallium/drivers/nouveau/nv50/nv50_compute.c
 index 1213effd53d..e6a597c8182 100644
 --- a/src/gallium/drivers/nouveau/nv50/nv50_compute.c
@@ -558,16 +545,6 @@ index 74996fbc867..536841f60f7 100644
        uint32_t smem_size; /* shared memory (TGSI LOCAL resource) size */
     } cp;
     uint8_t num_barriers;
-diff --git a/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c b/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-index afe8dd7d429..9207a7f237f 100644
---- a/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-+++ b/src/gallium/drivers/nouveau/nvc0/nvc0_resource.c
-@@ -174,5 +174,4 @@ nvc0_screen_init_resource_functions(struct pipe_screen *pscreen)
-    pscreen->resource_from_handle = nvc0_resource_from_handle;
-    pscreen->resource_get_handle = nvc0_miptree_get_handle;
-    pscreen->resource_destroy = nvc0_resource_destroy;
--   pscreen->resource_from_user_memory = nvc0_resource_from_user_memory;
- }
 diff --git a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c b/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
 index 2f4a9c117d2..9eb442c3c10 100644
 --- a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
