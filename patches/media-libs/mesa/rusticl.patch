@@ -440,10 +440,10 @@ index 4d909b8bb01..49f40ac4ef2 100644
     // XXX: disallow more than 64KB of shared variables
  
 diff --git a/src/gallium/drivers/iris/iris_state.c b/src/gallium/drivers/iris/iris_state.c
-index 5fa58a9a69c..b8648a341f3 100644
+index 4f157c8a83c..be487102f39 100644
 --- a/src/gallium/drivers/iris/iris_state.c
 +++ b/src/gallium/drivers/iris/iris_state.c
-@@ -7372,7 +7372,7 @@ iris_upload_gpgpu_walker(struct iris_context *ice,
+@@ -7374,7 +7374,7 @@ iris_upload_gpgpu_walker(struct iris_context *ice,
  
        iris_pack_state(GENX(INTERFACE_DESCRIPTOR_DATA), desc, idd) {
           idd.SharedLocalMemorySize =
@@ -1140,7 +1140,7 @@ index 88c21e95000..92aa6938801 100644
          HelperContext {
              lock: self.helper_ctx.lock().unwrap(),
 diff --git a/src/gallium/frontends/rusticl/core/kernel.rs b/src/gallium/frontends/rusticl/core/kernel.rs
-index 927b1592e1d..b952422dc22 100644
+index 5da5ac697b8..35bb9a7ca13 100644
 --- a/src/gallium/frontends/rusticl/core/kernel.rs
 +++ b/src/gallium/frontends/rusticl/core/kernel.rs
 @@ -12,6 +12,7 @@ use mesa_rust::compiler::clc::*;
@@ -1151,31 +1151,7 @@ index 927b1592e1d..b952422dc22 100644
  use mesa_rust::pipe::screen::ResourceType;
  use mesa_rust_gen::*;
  use mesa_rust_util::math::*;
-@@ -59,6 +60,7 @@ pub enum InternalKernelArgType {
-     InlineSampler((cl_addressing_mode, cl_filter_mode, bool)),
-     FormatArray,
-     OrderArray,
-+    WorkDim,
- }
- 
- #[derive(Hash, PartialEq, Eq, Clone)]
-@@ -210,6 +212,7 @@ impl InternalKernelArg {
-             }
-             InternalKernelArgType::FormatArray => bin.push(4),
-             InternalKernelArgType::OrderArray => bin.push(5),
-+            InternalKernelArgType::WorkDim => bin.push(6),
-         }
- 
-         bin
-@@ -231,6 +234,7 @@ impl InternalKernelArg {
-             }
-             4 => InternalKernelArgType::FormatArray,
-             5 => InternalKernelArgType::OrderArray,
-+            6 => InternalKernelArgType::WorkDim,
-             _ => return None,
-         };
- 
-@@ -242,6 +246,79 @@ impl InternalKernelArg {
+@@ -245,6 +246,79 @@ impl InternalKernelArg {
      }
  }
  
@@ -1255,7 +1231,7 @@ index 927b1592e1d..b952422dc22 100644
  #[repr(C)]
  pub struct Kernel {
      pub base: CLObjectBase<CL_INVALID_KERNEL>,
-@@ -252,7 +329,7 @@ pub struct Kernel {
+@@ -255,7 +329,7 @@ pub struct Kernel {
      pub work_group_size: [usize; 3],
      pub attributes_string: String,
      internal_args: Vec<InternalKernelArg>,
@@ -1264,7 +1240,7 @@ index 927b1592e1d..b952422dc22 100644
  }
  
  impl_cl_type_trait!(cl_kernel, Kernel, CL_INVALID_KERNEL);
-@@ -436,7 +513,7 @@ fn lower_and_optimize_nir_late(
+@@ -439,7 +513,7 @@ fn lower_and_optimize_nir_late(
      }
  
      nir.pass1(nir_lower_readonly_images_to_tex, false);
@@ -1273,25 +1249,7 @@ index 927b1592e1d..b952422dc22 100644
  
      nir.reset_scratch_size();
      nir.pass2(
-@@ -514,6 +591,17 @@ fn lower_and_optimize_nir_late(
-             "image_orders",
-         );
-     }
-+    res.push(InternalKernelArg {
-+        kind: InternalKernelArgType::WorkDim,
-+        size: 1,
-+        offset: 0,
-+    });
-+    lower_state.work_dim = nir.add_var(
-+        nir_variable_mode::nir_var_uniform,
-+        unsafe { glsl_uint8_t_type() },
-+        args.len() + res.len() - 1,
-+        "work_dim",
-+    );
- 
-     nir.pass2(
-         nir_lower_vars_to_explicit_types,
-@@ -534,9 +622,10 @@ fn lower_and_optimize_nir_late(
+@@ -557,18 +631,20 @@ fn lower_and_optimize_nir_late(
          shared_address_format = nir_address_format::nir_address_format_32bit_offset_as_64bit;
      }
  
@@ -1302,9 +1260,6 @@ index 927b1592e1d..b952422dc22 100644
 +        false,
          global_address_format,
      );
-     nir.pass0(nir_lower_system_values);
-@@ -545,11 +634,12 @@ fn lower_and_optimize_nir_late(
-     nir.pass1(nir_lower_compute_system_values, &compute_options);
  
      nir.pass1(rusticl_lower_intrinsics, &mut lower_state);
 -    nir.pass2(
@@ -1317,7 +1272,7 @@ index 927b1592e1d..b952422dc22 100644
          shared_address_format,
      );
  
-@@ -557,6 +647,10 @@ fn lower_and_optimize_nir_late(
+@@ -576,6 +652,10 @@ fn lower_and_optimize_nir_late(
          nir.pass0(nir_lower_int64);
      }
  
@@ -1328,7 +1283,7 @@ index 927b1592e1d..b952422dc22 100644
      nir.pass1(nir_lower_convert_alu_types, None);
  
      opt_nir(nir, dev);
-@@ -694,7 +788,7 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
+@@ -713,7 +793,7 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
  }
  
  fn optimize_local_size(d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
@@ -1337,7 +1292,7 @@ index 927b1592e1d..b952422dc22 100644
      let dim_threads = d.max_block_sizes();
      let subgroups = d.subgroups();
  
-@@ -755,8 +849,7 @@ impl Kernel {
+@@ -774,8 +854,7 @@ impl Kernel {
              attributes_string: attributes_string,
              values: values,
              internal_args: internal_args,
@@ -1347,7 +1302,7 @@ index 927b1592e1d..b952422dc22 100644
          })
      }
  
-@@ -770,13 +863,15 @@ impl Kernel {
+@@ -789,13 +868,15 @@ impl Kernel {
          grid: &[usize],
          offsets: &[usize],
      ) -> CLResult<EventSig> {
@@ -1365,7 +1320,7 @@ index 927b1592e1d..b952422dc22 100644
          let printf_size = q.device.printf_buffer_size() as u32;
          let mut samplers = Vec::new();
          let mut iviews = Vec::new();
-@@ -806,7 +901,7 @@ impl Kernel {
+@@ -825,7 +906,7 @@ impl Kernel {
                      let res = mem.get_res_of_dev(&q.device)?;
                      if mem.is_buffer() {
                          input.extend_from_slice(&mem.offset.to_ne_bytes());
@@ -1374,7 +1329,7 @@ index 927b1592e1d..b952422dc22 100644
                      } else {
                          let format = mem.image_format.to_pipe_format().unwrap();
                          let (formats, orders) = if arg.kind == KernelArgType::Image {
-@@ -832,9 +927,10 @@ impl Kernel {
+@@ -851,9 +932,10 @@ impl Kernel {
                  KernelArgValue::LocalMem(size) => {
                      // TODO 32 bit
                      let pot = cmp::min(*size, 0x80);
@@ -1388,7 +1343,7 @@ index 927b1592e1d..b952422dc22 100644
                  }
                  KernelArgValue::Sampler(sampler) => {
                      samplers.push(sampler.pipe());
-@@ -849,6 +945,9 @@ impl Kernel {
+@@ -868,6 +950,9 @@ impl Kernel {
              }
          }
  
@@ -1398,7 +1353,7 @@ index 927b1592e1d..b952422dc22 100644
          let mut printf_buf = None;
          for arg in &self.internal_args {
              if arg.offset > input.len() {
-@@ -856,21 +955,9 @@ impl Kernel {
+@@ -875,21 +960,9 @@ impl Kernel {
              }
              match arg.kind {
                  InternalKernelArgType::ConstantBuffer => {
@@ -1422,7 +1377,7 @@ index 927b1592e1d..b952422dc22 100644
                  }
                  InternalKernelArgType::GlobalWorkOffsets => {
                      input.extend_from_slice(&cl_prop::<[u64; 3]>(offsets));
-@@ -879,12 +966,12 @@ impl Kernel {
+@@ -898,12 +971,12 @@ impl Kernel {
                      let buf = Arc::new(
                          q.device
                              .screen
@@ -1437,15 +1392,7 @@ index 927b1592e1d..b952422dc22 100644
  
                      printf_buf = Some(buf);
                  }
-@@ -899,16 +986,19 @@ impl Kernel {
-                     input.extend_from_slice(&cl_prop::<&Vec<u16>>(&tex_orders));
-                     input.extend_from_slice(&cl_prop::<&Vec<u16>>(&img_orders));
-                 }
-+                InternalKernelArgType::WorkDim => {
-+                    input.extend_from_slice(&[work_dim as u8; 1]);
-+                }
-             }
-         }
+@@ -926,11 +999,11 @@ impl Kernel {
  
          let k = Arc::clone(self);
          Ok(Box::new(move |q, ctx| {
@@ -1459,7 +1406,7 @@ index 927b1592e1d..b952422dc22 100644
  
              let mut sviews: Vec<_> = sviews
                  .iter()
-@@ -933,21 +1023,32 @@ impl Kernel {
+@@ -955,21 +1028,32 @@ impl Kernel {
                      init_data.len() as u32,
                  );
              }
@@ -1495,7 +1442,7 @@ index 927b1592e1d..b952422dc22 100644
              ctx.memory_barrier(PIPE_BARRIER_GLOBAL_BUFFER);
  
              samplers.iter().for_each(|s| ctx.delete_sampler_state(*s));
-@@ -1048,12 +1149,12 @@ impl Kernel {
+@@ -1070,12 +1154,12 @@ impl Kernel {
      }
  
      pub fn priv_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
@@ -1510,7 +1457,7 @@ index 927b1592e1d..b952422dc22 100644
      }
  }
  
-@@ -1068,7 +1169,7 @@ impl Clone for Kernel {
+@@ -1090,7 +1174,7 @@ impl Clone for Kernel {
              work_group_size: self.work_group_size,
              attributes_string: self.attributes_string.clone(),
              internal_args: self.internal_args.clone(),
@@ -1619,7 +1566,7 @@ index 37bd1b88dbb..c8b9a19f18f 100644
              },
              self,
 diff --git a/src/gallium/frontends/rusticl/rusticl_nir.c b/src/gallium/frontends/rusticl/rusticl_nir.c
-index 542f735612c..69cd1679ca7 100644
+index 82543a14456..0b4e471530d 100644
 --- a/src/gallium/frontends/rusticl/rusticl_nir.c
 +++ b/src/gallium/frontends/rusticl/rusticl_nir.c
 @@ -39,6 +39,12 @@ rusticl_lower_intrinsics_instr(
@@ -1635,16 +1582,7 @@ index 542f735612c..69cd1679ca7 100644
          // we put write images after read images
          if (nir_intrinsic_access(intrins) & ACCESS_NON_WRITEABLE) {
              val = nir_iadd_imm(b, val, b->shader->info.num_textures);
-@@ -59,6 +65,8 @@ rusticl_lower_intrinsics_instr(
-         return nir_load_var(b, state->const_buf);
-     case nir_intrinsic_load_printf_buffer_address:
-         return nir_load_var(b, state->printf_buf);
-+    case nir_intrinsic_load_work_dim:
-+        return nir_u2u(b, nir_load_var(b, state->work_dim), nir_dest_bit_size(intrins->dest));
-     default:
-         return NULL;
-     }
-@@ -74,3 +82,73 @@ rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state* state)
+@@ -77,3 +83,73 @@ rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state* state)
          state
      );
  }
@@ -1719,14 +1657,10 @@ index 542f735612c..69cd1679ca7 100644
 +   return progress;
 +}
 diff --git a/src/gallium/frontends/rusticl/rusticl_nir.h b/src/gallium/frontends/rusticl/rusticl_nir.h
-index fefd0b3bcf7..227ffe54e16 100644
+index 8237b804118..227ffe54e16 100644
 --- a/src/gallium/frontends/rusticl/rusticl_nir.h
 +++ b/src/gallium/frontends/rusticl/rusticl_nir.h
-@@ -4,6 +4,8 @@ struct rusticl_lower_state {
-     nir_variable *printf_buf;
-     nir_variable *format_arr;
-     nir_variable *order_arr;
-+    nir_variable *work_dim;
+@@ -8,3 +8,4 @@ struct rusticl_lower_state {
  };
  
  bool rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state *state);
@@ -3568,10 +3502,10 @@ index b124928b293..b18248391ab 100644
  }
  
 diff --git a/src/intel/vulkan/anv_pipeline.c b/src/intel/vulkan/anv_pipeline.c
-index 82c1a10a9fa..d04a314169b 100644
+index ef9b1f92751..9cc652199d1 100644
 --- a/src/intel/vulkan/anv_pipeline.c
 +++ b/src/intel/vulkan/anv_pipeline.c
-@@ -919,9 +919,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -945,9 +945,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
  
     NIR_PASS(_, nir, brw_nir_lower_storage_image, compiler->devinfo);
  
@@ -3583,7 +3517,7 @@ index 82c1a10a9fa..d04a314169b 100644
              nir_address_format_32bit_offset);
  
     NIR_PASS(_, nir, brw_nir_lower_ray_queries, &pdevice->info);
-@@ -934,10 +934,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -960,10 +960,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                pdevice, pipeline->device->robust_buffer_access,
                layout, &stage->bind_map);
  
@@ -3596,7 +3530,7 @@ index 82c1a10a9fa..d04a314169b 100644
              anv_nir_ssbo_addr_format(pdevice,
                 pipeline->device->robust_buffer_access));
  
-@@ -982,7 +982,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -1008,7 +1008,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
        }
  
        NIR_PASS(_, nir, nir_lower_explicit_io,
