@@ -1,5 +1,5 @@
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 69dc14c3cad..4d3fa0b2539 100644
+index 05a1aee69a3..67b2c29f2bb 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -683,6 +683,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
@@ -154,8 +154,21 @@ index 12a2aebb858..0dfb4085b59 100644
                              nir_address_format_32bit_index_offset);
     }
  
+diff --git a/src/compiler/glsl_types.cpp b/src/compiler/glsl_types.cpp
+index 63190eec9dd..895a0d4ca3e 100644
+--- a/src/compiler/glsl_types.cpp
++++ b/src/compiler/glsl_types.cpp
+@@ -1050,7 +1050,7 @@ glsl_type::get_texture_instance(enum glsl_sampler_dim dim,
+       case GLSL_SAMPLER_DIM_3D:
+          return (array ? error_type : vtexture3D_type);
+       case GLSL_SAMPLER_DIM_BUF:
+-         return (array ? error_type : vbuffer_type);
++         return (array ? error_type : vtextureBuffer_type);
+       default:
+          return error_type;
+       }
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index af5fbfb6f55..9a67e8c0605 100644
+index 2342662ad21..2e7399735d6 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
 @@ -4832,6 +4832,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
@@ -166,34 +179,60 @@ index af5fbfb6f55..9a67e8c0605 100644
                             nir_address_format);
  
  typedef struct nir_lower_shader_calls_options {
-@@ -5490,7 +5491,7 @@ bool nir_lower_ssa_defs_to_regs_block(nir_block *block);
+@@ -5493,7 +5494,7 @@ bool nir_lower_ssa_defs_to_regs_block(nir_block *block);
  bool nir_rematerialize_derefs_in_use_blocks_impl(nir_function_impl *impl);
  
  bool nir_lower_samplers(nir_shader *shader);
 -bool nir_lower_cl_images(nir_shader *shader);
-+bool nir_lower_cl_images(nir_shader *shader, bool lower_derefs);
++bool nir_lower_cl_images(nir_shader *shader, bool lower_image_derefs, bool lower_sampler_derefs);
  bool nir_dedup_inline_samplers(nir_shader *shader);
  bool nir_lower_ssbo(nir_shader *shader);
  
+diff --git a/src/compiler/nir/nir_gather_info.c b/src/compiler/nir/nir_gather_info.c
+index 8b13a699e48..e3c5ad1850a 100644
+--- a/src/compiler/nir/nir_gather_info.c
++++ b/src/compiler/nir/nir_gather_info.c
+@@ -1001,7 +1001,10 @@ nir_shader_gather_info(nir_shader *shader, nir_function_impl *entrypoint)
+       if (var->data.bindless || var->interface_type)
+          continue;
+ 
+-      shader->info.num_textures += glsl_type_get_sampler_count(var->type);
++      if (glsl_type_is_texture(var->type))
++         shader->info.num_textures += glsl_type_get_texture_count(var->type);
++      else
++         shader->info.num_textures += glsl_type_get_sampler_count(var->type);
+       shader->info.num_images += glsl_type_get_image_count(var->type);
+    }
+ 
 diff --git a/src/compiler/nir/nir_lower_cl_images.c b/src/compiler/nir/nir_lower_cl_images.c
-index 8b4423fff47..0498607bcef 100644
+index 8b4423fff47..62b334d58ea 100644
 --- a/src/compiler/nir/nir_lower_cl_images.c
 +++ b/src/compiler/nir/nir_lower_cl_images.c
-@@ -108,7 +108,7 @@ nir_dedup_inline_samplers(nir_shader *nir)
+@@ -108,13 +108,16 @@ nir_dedup_inline_samplers(nir_shader *nir)
  }
  
  bool
 -nir_lower_cl_images(nir_shader *shader)
-+nir_lower_cl_images(nir_shader *shader, bool lower_deref)
++nir_lower_cl_images(nir_shader *shader, bool lower_image_derefs, bool lower_sampler_derefs)
  {
     nir_function_impl *impl = nir_shader_get_entrypoint(shader);
  
-@@ -155,6 +155,12 @@ nir_lower_cl_images(nir_shader *shader)
+    ASSERTED int last_loc = -1;
+    int num_rd_images = 0, num_wr_images = 0;
+-   nir_foreach_image_variable(var, shader) {
++   nir_foreach_variable_with_modes(var, shader, nir_var_image | nir_var_uniform) {
++      if (var->data.mode == nir_var_uniform && !glsl_type_is_texture(var->type))
++         continue;
++
+       /* Assume they come in order */
+       assert(var->data.location > last_loc);
+       last_loc = var->data.location;
+@@ -155,6 +158,12 @@ nir_lower_cl_images(nir_shader *shader)
     nir_builder b;
     nir_builder_init(&b, impl);
  
 +   /* don't need any lowering if we can keep the derefs */
-+   if (!lower_deref) {
++   if (!lower_image_derefs && !lower_sampler_derefs) {
 +      nir_metadata_preserve(impl, nir_metadata_all);
 +      return false;
 +   }
@@ -201,8 +240,46 @@ index 8b4423fff47..0498607bcef 100644
     bool progress = false;
     nir_foreach_block_reverse(block, impl) {
        nir_foreach_instr_reverse_safe(instr, block) {
+@@ -165,9 +174,17 @@ nir_lower_cl_images(nir_shader *shader)
+                break;
+ 
+             if (!glsl_type_is_image(deref->type) &&
++                !glsl_type_is_texture(deref->type) &&
+                 !glsl_type_is_sampler(deref->type))
+                break;
+ 
++            if (!lower_image_derefs && glsl_type_is_image(deref->type))
++               break;
++
++            if (!lower_sampler_derefs &&
++                (glsl_type_is_sampler(deref->type) || glsl_type_is_texture(deref->type)))
++               break;
++
+             b.cursor = nir_instr_remove(&deref->instr);
+             nir_ssa_def *loc =
+                nir_imm_intN_t(&b, deref->var->data.driver_location,
+@@ -178,6 +195,9 @@ nir_lower_cl_images(nir_shader *shader)
+          }
+ 
+          case nir_instr_type_tex: {
++            if (!lower_sampler_derefs)
++               break;
++
+             nir_tex_instr *tex = nir_instr_as_tex(instr);
+             unsigned count = 0;
+             for (unsigned i = 0; i < tex->num_srcs; i++) {
+@@ -242,6 +262,9 @@ nir_lower_cl_images(nir_shader *shader)
+             case nir_intrinsic_image_deref_atomic_dec_wrap:
+             case nir_intrinsic_image_deref_size:
+             case nir_intrinsic_image_deref_samples: {
++               if (!lower_image_derefs)
++                  break;
++
+                assert(intrin->src[0].is_ssa);
+                b.cursor = nir_before_instr(&intrin->instr);
+                /* Back-ends expect a 32-bit thing, not 64-bit */
 diff --git a/src/compiler/nir/nir_lower_io.c b/src/compiler/nir/nir_lower_io.c
-index 1776648c456..d5306b6591d 100644
+index 1776648c456..9de79d6e293 100644
 --- a/src/compiler/nir/nir_lower_io.c
 +++ b/src/compiler/nir/nir_lower_io.c
 @@ -925,7 +925,7 @@ static nir_ssa_def *
@@ -234,16 +311,17 @@ index 1776648c456..d5306b6591d 100644
  {
     bool progress = false;
  
-@@ -2222,6 +2226,8 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
+@@ -2222,6 +2226,9 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
           case nir_instr_type_deref: {
              nir_deref_instr *deref = nir_instr_as_deref(instr);
              if (nir_deref_mode_is_in_set(deref, modes)) {
-+               if (glsl_type_is_sampler(deref->var->type) && skip_samplers)
++               if (skip_samplers && (
++                  (glsl_type_is_sampler(deref->var->type) || glsl_type_is_texture(deref->var->type))))
 +                  break;
                 lower_explicit_io_deref(&b, deref, addr_format);
                 progress = true;
              }
-@@ -2352,13 +2358,13 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
+@@ -2352,13 +2359,13 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
   */
  bool
  nir_lower_explicit_io(nir_shader *shader, nir_variable_mode modes,
@@ -259,8 +337,103 @@ index 1776648c456..d5306b6591d 100644
           progress = true;
     }
  
+diff --git a/src/compiler/nir/nir_lower_readonly_images_to_tex.c b/src/compiler/nir/nir_lower_readonly_images_to_tex.c
+index 39d45551191..fcfcf7c8e43 100644
+--- a/src/compiler/nir/nir_lower_readonly_images_to_tex.c
++++ b/src/compiler/nir/nir_lower_readonly_images_to_tex.c
+@@ -39,14 +39,14 @@ get_texture_type_for_image(const struct glsl_type *type)
+                             glsl_get_sampler_result_type(type));
+ }
+ 
+-static void
++static bool
+ replace_image_type_with_sampler(nir_deref_instr *deref)
+ {
+    const struct glsl_type *type = deref->type;
+ 
+    /* If we've already chased up the deref chain this far from a different intrinsic, we're done */
+    if (glsl_type_is_texture(glsl_without_array(type)))
+-      return;
++      return false;
+ 
+    deref->type = get_texture_type_for_image(type);
+    deref->modes = nir_var_uniform;
+@@ -62,6 +62,8 @@ replace_image_type_with_sampler(nir_deref_instr *deref)
+       if (parent)
+          replace_image_type_with_sampler(parent);
+    }
++
++   return true;
+ }
+ 
+ struct readonly_image_lower_options {
+@@ -69,14 +71,9 @@ struct readonly_image_lower_options {
+ };
+ 
+ static bool
+-lower_readonly_image_instr(nir_builder *b, nir_instr *instr, void *context)
++lower_readonly_image_instr_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
++                                     const struct readonly_image_lower_options *options)
+ {
+-   struct readonly_image_lower_options *options = (struct readonly_image_lower_options *)context;
+-
+-   if (instr->type != nir_instr_type_intrinsic)
+-      return false;
+-
+-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
+    if (intrin->intrinsic != nir_intrinsic_image_deref_load &&
+        intrin->intrinsic != nir_intrinsic_image_deref_size)
+       return false;
+@@ -188,6 +185,38 @@ lower_readonly_image_instr(nir_builder *b, nir_instr *instr, void *context)
+    return true;
+ }
+ 
++static bool
++lower_readonly_image_instr_tex(nir_builder *b, nir_tex_instr *tex,
++                               const struct readonly_image_lower_options *options)
++{
++   int deref_idx = nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
++   if (deref_idx == -1)
++      return false;
++
++   nir_deref_instr *deref = nir_src_as_deref(tex->src[deref_idx].src);
++   if (options->per_variable) {
++      assert(nir_deref_instr_get_variable(deref));
++      return replace_image_type_with_sampler(deref);
++   }
++
++   return false;
++}
++
++static bool
++lower_readonly_image_instr(nir_builder *b, nir_instr *instr, void *context)
++{
++   struct readonly_image_lower_options *options = (struct readonly_image_lower_options *)context;
++
++   switch (instr->type) {
++   case nir_instr_type_intrinsic:
++      return lower_readonly_image_instr_intrinsic(b, nir_instr_as_intrinsic(instr), options);
++   case nir_instr_type_tex:
++      return lower_readonly_image_instr_tex(b, nir_instr_as_tex(instr), options);
++   default:
++      return false;
++   }
++}
++
+ /** Lowers image ops to texture ops for read-only images
+  *
+  * If per_variable is set:
+@@ -201,8 +230,6 @@ lower_readonly_image_instr(nir_builder *b, nir_instr *instr, void *context)
+ bool
+ nir_lower_readonly_images_to_tex(nir_shader *shader, bool per_variable)
+ {
+-   assert(shader->info.stage != MESA_SHADER_KERNEL || !per_variable);
+-
+    struct readonly_image_lower_options options = { per_variable };
+    return nir_shader_instructions_pass(shader, lower_readonly_image_instr,
+                                        nir_metadata_block_index |
 diff --git a/src/compiler/nir/nir_opt_algebraic.py b/src/compiler/nir/nir_opt_algebraic.py
-index cc55b866657..d1230510de1 100644
+index 953b67f7e2c..56df6aa4078 100644
 --- a/src/compiler/nir/nir_opt_algebraic.py
 +++ b/src/compiler/nir/nir_opt_algebraic.py
 @@ -1053,7 +1053,7 @@ for s in [8, 16, 32, 64]:
@@ -272,18 +445,7 @@ index cc55b866657..d1230510de1 100644
         (('ishr', 'a@{}'.format(s), ('iand', s - 1, b)), ('ishr', a, b)),
         (('ushr', 'a@{}'.format(s), ('iand', s - 1, b)), ('ushr', a, b)),
         (('ushr', 'a@{}'.format(s), ('ishl(is_used_once)', ('iand', b, 1), last_shift_bit)), ('ushr', a, ('ishl', b, last_shift_bit))),
-@@ -1266,8 +1266,10 @@ optimizations.extend([
-    (('ior', ('ushr@16', a, b), ('ishl@16', a, ('isub', 16, b))), ('uror', a, b), '!options->lower_rotate'),
-    (('ior', ('ushr@32', a, b), ('ishl@32', a, ('iadd', 32, ('ineg', b)))), ('uror', a, b), '!options->lower_rotate'),
-    (('ior', ('ushr@32', a, b), ('ishl@32', a, ('isub', 32, b))), ('uror', a, b), '!options->lower_rotate'),
-+   (('urol@8',  a, b), ('ior', ('ishl', a, b), ('ushr', a, ('isub',  8, b))), 'options->lower_rotate'),
-    (('urol@16', a, b), ('ior', ('ishl', a, b), ('ushr', a, ('isub', 16, b))), 'options->lower_rotate'),
-    (('urol@32', a, b), ('ior', ('ishl', a, b), ('ushr', a, ('isub', 32, b))), 'options->lower_rotate'),
-+   (('urol@64', a, b), ('ior', ('ishl', a, b), ('ushr', a, ('isub', 64, b))), 'options->lower_rotate'),
-    (('uror@16', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 16, b))), 'options->lower_rotate'),
-    (('uror@32', a, b), ('ior', ('ushr', a, b), ('ishl', a, ('isub', 32, b))), 'options->lower_rotate'),
-    # Exponential/logarithmic identities
-@@ -2600,6 +2602,11 @@ late_optimizations = [
+@@ -2616,6 +2616,11 @@ late_optimizations = [
     (('~feq', ('fadd(is_used_once)', a, b), 0.0), ('feq', a, ('fneg', b))),
     (('~fneu', ('fadd(is_used_once)', a, b), 0.0), ('fneu', a, ('fneg', b))),
  
@@ -646,10 +808,10 @@ index 23d157fd4bf..e673984bc87 100644
     NVC3C0_QMDV02_02_VAL_SET(qmd, CTA_RASTER_WIDTH, info->grid[0]);
     NVC3C0_QMDV02_02_VAL_SET(qmd, CTA_RASTER_HEIGHT, info->grid[1]);
 diff --git a/src/gallium/drivers/panfrost/pan_cmdstream.c b/src/gallium/drivers/panfrost/pan_cmdstream.c
-index ad170821187..5aec6dcc4db 100644
+index f666eae9cc1..7e1de8fa6f1 100644
 --- a/src/gallium/drivers/panfrost/pan_cmdstream.c
 +++ b/src/gallium/drivers/panfrost/pan_cmdstream.c
-@@ -1625,7 +1625,7 @@ panfrost_emit_shared_memory(struct panfrost_batch *batch,
+@@ -1628,7 +1628,7 @@ panfrost_emit_shared_memory(struct panfrost_batch *batch,
  
          struct pan_tls_info info = {
                  .tls.size = ss->info.tls_size,
@@ -658,7 +820,7 @@ index ad170821187..5aec6dcc4db 100644
                  .wls.instances = panfrost_choose_wls_instance_count(grid),
          };
  
-@@ -4156,7 +4156,16 @@ panfrost_launch_grid(struct pipe_context *pipe,
+@@ -4164,7 +4164,16 @@ panfrost_launch_grid(struct pipe_context *pipe,
                                       batch->rsd[PIPE_SHADER_COMPUTE],
                                       panfrost_emit_shared_memory(batch, info));
  
@@ -910,7 +1072,7 @@ index 95e252187b4..0dcddfa7e39 100644
  };
  
 diff --git a/src/gallium/drivers/radeonsi/si_shader_nir.c b/src/gallium/drivers/radeonsi/si_shader_nir.c
-index 04722413240..207d62bf465 100644
+index 04722413240..f3cf8de5913 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_nir.c
 +++ b/src/gallium/drivers/radeonsi/si_shader_nir.c
 @@ -342,7 +342,7 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
@@ -922,6 +1084,14 @@ index 04722413240..207d62bf465 100644
  
     /* Remove dead derefs, so that we can remove uniforms. */
     NIR_PASS_V(nir, nir_opt_dce);
+@@ -350,6 +350,7 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
+    /* Remove uniforms because those should have been lowered to UBOs already. */
+    nir_foreach_variable_with_modes_safe(var, nir, nir_var_uniform) {
+       if (!glsl_type_get_image_count(var->type) &&
++          !glsl_type_get_texture_count(var->type) &&
+           !glsl_type_get_sampler_count(var->type))
+          exec_node_remove(&var->node);
+    }
 diff --git a/src/gallium/drivers/softpipe/sp_compute.c b/src/gallium/drivers/softpipe/sp_compute.c
 index 221ef7ec797..2b70fb9777b 100644
 --- a/src/gallium/drivers/softpipe/sp_compute.c
@@ -973,6 +1143,19 @@ index dbd572da0ed..c1ea961092d 100644
                                     new_tokens);
     if (ret) {
        FREE((void *)ntt_tokens);
+diff --git a/src/gallium/drivers/zink/zink_context.c b/src/gallium/drivers/zink/zink_context.c
+index 57da7503d86..4b69a71ee1b 100644
+--- a/src/gallium/drivers/zink/zink_context.c
++++ b/src/gallium/drivers/zink/zink_context.c
+@@ -340,7 +340,7 @@ zink_create_sampler_state(struct pipe_context *pctx,
+    sci.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    if (screen->info.have_EXT_non_seamless_cube_map && !state->seamless_cube_map)
+       sci.flags |= VK_SAMPLER_CREATE_NON_SEAMLESS_CUBE_MAP_BIT_EXT;
+-   assert(!state->unnormalized_coords);
++   sci.unnormalizedCoordinates = state->unnormalized_coords;
+    sci.magFilter = zink_filter(state->mag_img_filter);
+    if (sci.unnormalizedCoordinates)
+       sci.minFilter = sci.magFilter;
 diff --git a/src/gallium/frontends/clover/core/kernel.cpp b/src/gallium/frontends/clover/core/kernel.cpp
 index b07907e471b..f1ff5a49b1a 100644
 --- a/src/gallium/frontends/clover/core/kernel.cpp
@@ -1003,7 +1186,7 @@ index b07907e471b..f1ff5a49b1a 100644
        st = q->pipe->create_compute_state(q->pipe, &cs);
        if (!st) {
 diff --git a/src/gallium/frontends/clover/nir/invocation.cpp b/src/gallium/frontends/clover/nir/invocation.cpp
-index 907f79bce08..d6ce8641bcd 100644
+index 907f79bce08..5fc80b9dbd1 100644
 --- a/src/gallium/frontends/clover/nir/invocation.cpp
 +++ b/src/gallium/frontends/clover/nir/invocation.cpp
 @@ -359,7 +359,7 @@ binary clover::nir::spirv_to_nir(const binary &mod, const device &dev,
@@ -1020,7 +1203,7 @@ index 907f79bce08..d6ce8641bcd 100644
        NIR_PASS_V(nir, nir_opt_deref);
        NIR_PASS_V(nir, nir_lower_readonly_images_to_tex, false);
 -      NIR_PASS_V(nir, nir_lower_cl_images);
-+      NIR_PASS_V(nir, nir_lower_cl_images, true);
++      NIR_PASS_V(nir, nir_lower_cl_images, true, true);
        NIR_PASS_V(nir, nir_lower_memcpy);
  
        /* use offsets for kernel inputs (uniform) */
@@ -1085,7 +1268,7 @@ index 87d9da57764..22cad864c76 100644
     } else {
        struct pipe_shader_state shstate = {0};
 diff --git a/src/gallium/frontends/rusticl/core/device.rs b/src/gallium/frontends/rusticl/core/device.rs
-index 88c21e95000..92aa6938801 100644
+index 88c21e95000..1e47b796443 100644
 --- a/src/gallium/frontends/rusticl/core/device.rs
 +++ b/src/gallium/frontends/rusticl/core/device.rs
 @@ -73,6 +73,9 @@ pub trait HelperContextWrapper {
@@ -1123,24 +1306,27 @@ index 88c21e95000..92aa6938801 100644
      }
  
      pub fn device_type(&self, internal: bool) -> cl_device_type {
-@@ -727,6 +737,15 @@ impl Device {
+@@ -727,6 +737,18 @@ impl Device {
          id as u32
      }
  
-+    pub fn shareable_shaders(&self) -> bool {
-+        self.screen.param(pipe_cap::PIPE_CAP_SHAREABLE_SHADERS) == 1
-+    }
-+
 +    pub fn images_as_deref(&self) -> bool {
 +        self.screen.param(pipe_cap::PIPE_CAP_NIR_IMAGES_AS_DEREF) == 1
-+            && self.screen.param(pipe_cap::PIPE_CAP_NIR_SAMPLERS_AS_DEREF) == 1
++    }
++
++    pub fn samplers_as_deref(&self) -> bool {
++        self.screen.param(pipe_cap::PIPE_CAP_NIR_SAMPLERS_AS_DEREF) == 1
++    }
++
++    pub fn shareable_shaders(&self) -> bool {
++        self.screen.param(pipe_cap::PIPE_CAP_SHAREABLE_SHADERS) == 1
 +    }
 +
      pub fn helper_ctx(&self) -> impl HelperContextWrapper + '_ {
          HelperContext {
              lock: self.helper_ctx.lock().unwrap(),
 diff --git a/src/gallium/frontends/rusticl/core/kernel.rs b/src/gallium/frontends/rusticl/core/kernel.rs
-index 5da5ac697b8..35bb9a7ca13 100644
+index 11199bfbf44..87a5d324f0b 100644
 --- a/src/gallium/frontends/rusticl/core/kernel.rs
 +++ b/src/gallium/frontends/rusticl/core/kernel.rs
 @@ -12,6 +12,7 @@ use mesa_rust::compiler::clc::*;
@@ -1240,16 +1426,64 @@ index 5da5ac697b8..35bb9a7ca13 100644
  }
  
  impl_cl_type_trait!(cl_kernel, Kernel, CL_INVALID_KERNEL);
-@@ -439,7 +513,7 @@ fn lower_and_optimize_nir_late(
+@@ -378,6 +452,8 @@ extern "C" fn can_remove_var(var: *mut nir_variable, _: *mut c_void) -> bool {
+     unsafe {
+         let var = var.as_ref().unwrap();
+         !glsl_type_is_image(var.type_)
++            && !glsl_type_is_texture(var.type_)
++            && !glsl_type_is_sampler(var.type_)
+     }
+ }
+ 
+@@ -449,8 +525,8 @@ fn lower_and_optimize_nir_late(
+         }
      }
  
-     nir.pass1(nir_lower_readonly_images_to_tex, false);
+-    nir.pass1(nir_lower_readonly_images_to_tex, false);
 -    nir.pass0(nir_lower_cl_images);
-+    nir.pass1(nir_lower_cl_images, !dev.images_as_deref());
++    nir.pass1(nir_lower_readonly_images_to_tex, true);
++    nir.pass2(nir_lower_cl_images, !dev.images_as_deref(), !dev.samplers_as_deref());
  
      nir.reset_scratch_size();
      nir.pass2(
-@@ -557,18 +631,20 @@ fn lower_and_optimize_nir_late(
+@@ -507,30 +583,30 @@ fn lower_and_optimize_nir_late(
+     compute_options.set_has_base_global_invocation_id(true);
+     nir.pass1(nir_lower_compute_system_values, &compute_options);
+     nir.pass1(nir_shader_gather_info, nir.entrypoint());
+-
+-    if nir.num_images() > 0 {
++    if nir.num_images() > 0 || nir.num_textures() > 0 {
++        let count = nir.num_images() + nir.num_textures();
+         res.push(InternalKernelArg {
+             kind: InternalKernelArgType::FormatArray,
+             offset: 0,
+-            size: 2 * nir.num_images() as usize,
++            size: 2 * count as usize,
+         });
+ 
+         res.push(InternalKernelArg {
+             kind: InternalKernelArgType::OrderArray,
+             offset: 0,
+-            size: 2 * nir.num_images() as usize,
++            size: 2 * count as usize,
+         });
+ 
+         lower_state.format_arr = nir.add_var(
+             nir_variable_mode::nir_var_uniform,
+-            unsafe { glsl_array_type(glsl_int16_t_type(), nir.num_images() as u32, 2) },
++            unsafe { glsl_array_type(glsl_int16_t_type(), count as u32, 2) },
+             args.len() + res.len() - 2,
+             "image_formats",
+         );
+ 
+         lower_state.order_arr = nir.add_var(
+             nir_variable_mode::nir_var_uniform,
+-            unsafe { glsl_array_type(glsl_int16_t_type(), nir.num_images() as u32, 2) },
++            unsafe { glsl_array_type(glsl_int16_t_type(), count as u32, 2) },
+             args.len() + res.len() - 1,
+             "image_orders",
+         );
+@@ -569,18 +645,20 @@ fn lower_and_optimize_nir_late(
          shared_address_format = nir_address_format::nir_address_format_32bit_offset_as_64bit;
      }
  
@@ -1268,11 +1502,11 @@ index 5da5ac697b8..35bb9a7ca13 100644
          nir_variable_mode::nir_var_mem_shared
              | nir_variable_mode::nir_var_function_temp
              | nir_variable_mode::nir_var_uniform,
-+        dev.images_as_deref(),
++        dev.samplers_as_deref(),
          shared_address_format,
      );
  
-@@ -576,6 +652,10 @@ fn lower_and_optimize_nir_late(
+@@ -588,6 +666,10 @@ fn lower_and_optimize_nir_late(
          nir.pass0(nir_lower_int64);
      }
  
@@ -1283,7 +1517,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
      nir.pass1(nir_lower_convert_alu_types, None);
  
      opt_nir(nir, dev);
-@@ -713,7 +793,7 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
+@@ -725,7 +807,7 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
  }
  
  fn optimize_local_size(d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
@@ -1292,7 +1526,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
      let dim_threads = d.max_block_sizes();
      let subgroups = d.subgroups();
  
-@@ -774,8 +854,7 @@ impl Kernel {
+@@ -786,8 +868,7 @@ impl Kernel {
              attributes_string: attributes_string,
              values: values,
              internal_args: internal_args,
@@ -1302,7 +1536,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
          })
      }
  
-@@ -789,13 +868,15 @@ impl Kernel {
+@@ -801,13 +882,15 @@ impl Kernel {
          grid: &[usize],
          offsets: &[usize],
      ) -> CLResult<EventSig> {
@@ -1320,30 +1554,30 @@ index 5da5ac697b8..35bb9a7ca13 100644
          let printf_size = q.device.printf_buffer_size() as u32;
          let mut samplers = Vec::new();
          let mut iviews = Vec::new();
-@@ -825,7 +906,7 @@ impl Kernel {
-                     let res = mem.get_res_of_dev(&q.device)?;
-                     if mem.is_buffer() {
-                         input.extend_from_slice(&mem.offset.to_ne_bytes());
+@@ -846,7 +929,6 @@ impl Kernel {
+                         } else {
+                             input.extend_from_slice(&(mem.offset as u32).to_ne_bytes());
+                         }
 -                        resource_info.push((Some(res.clone()), arg.offset));
-+                        resource_info.push((res.clone(), arg.offset));
                      } else {
                          let format = mem.image_format.to_pipe_format().unwrap();
                          let (formats, orders) = if arg.kind == KernelArgType::Image {
-@@ -851,9 +932,10 @@ impl Kernel {
+@@ -872,13 +954,12 @@ impl Kernel {
                  KernelArgValue::LocalMem(size) => {
                      // TODO 32 bit
                      let pot = cmp::min(*size, 0x80);
 -                    local_size = align(local_size, pot.next_power_of_two() as u64);
--                    input.extend_from_slice(&local_size.to_ne_bytes());
--                    local_size += *size as u64;
 +                    variable_local_size =
-+                        align(variable_local_size, pot.next_power_of_two() as u64);
-+                    input.extend_from_slice(&variable_local_size.to_ne_bytes());
-+                    variable_local_size += *size as u64;
+                     if q.device.address_bits() == 64 {
+                         input.extend_from_slice(&local_size.to_ne_bytes());
+                     } else {
+                         input.extend_from_slice(&(local_size as u32).to_ne_bytes());
+                     }
+-                    local_size += *size as u64;
                  }
                  KernelArgValue::Sampler(sampler) => {
                      samplers.push(sampler.pipe());
-@@ -868,6 +950,9 @@ impl Kernel {
+@@ -893,6 +974,9 @@ impl Kernel {
              }
          }
  
@@ -1353,12 +1587,10 @@ index 5da5ac697b8..35bb9a7ca13 100644
          let mut printf_buf = None;
          for arg in &self.internal_args {
              if arg.offset > input.len() {
-@@ -875,21 +960,9 @@ impl Kernel {
-             }
+@@ -901,20 +985,7 @@ impl Kernel {
              match arg.kind {
                  InternalKernelArgType::ConstantBuffer => {
-+                    assert!(dev_state.constant_buffer.is_some());
-                     input.extend_from_slice(&[0; 8]);
+                     input.extend_from_slice(null_ptr);
 -                    let buf = nir.get_constant_buffer();
 -                    let res = Arc::new(
 -                        q.device
@@ -1376,8 +1608,8 @@ index 5da5ac697b8..35bb9a7ca13 100644
 +                    resource_info.push((dev_state.constant_buffer.clone().unwrap(), arg.offset));
                  }
                  InternalKernelArgType::GlobalWorkOffsets => {
-                     input.extend_from_slice(&cl_prop::<[u64; 3]>(offsets));
-@@ -898,12 +971,12 @@ impl Kernel {
+                     if q.device.address_bits() == 64 {
+@@ -931,12 +1002,12 @@ impl Kernel {
                      let buf = Arc::new(
                          q.device
                              .screen
@@ -1386,13 +1618,13 @@ index 5da5ac697b8..35bb9a7ca13 100644
                              .unwrap(),
                      );
  
-                     input.extend_from_slice(&[0; 8]);
+                     input.extend_from_slice(null_ptr);
 -                    resource_info.push((Some(buf.clone()), arg.offset));
 +                    resource_info.push((buf.clone(), arg.offset));
  
                      printf_buf = Some(buf);
                  }
-@@ -926,11 +999,11 @@ impl Kernel {
+@@ -959,11 +1030,11 @@ impl Kernel {
  
          let k = Arc::clone(self);
          Ok(Box::new(move |q, ctx| {
@@ -1406,7 +1638,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
  
              let mut sviews: Vec<_> = sviews
                  .iter()
-@@ -955,21 +1028,32 @@ impl Kernel {
+@@ -988,21 +1059,32 @@ impl Kernel {
                      init_data.len() as u32,
                  );
              }
@@ -1442,7 +1674,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
              ctx.memory_barrier(PIPE_BARRIER_GLOBAL_BUFFER);
  
              samplers.iter().for_each(|s| ctx.delete_sampler_state(*s));
-@@ -1070,12 +1154,12 @@ impl Kernel {
+@@ -1103,12 +1185,12 @@ impl Kernel {
      }
  
      pub fn priv_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
@@ -1457,7 +1689,7 @@ index 5da5ac697b8..35bb9a7ca13 100644
      }
  }
  
-@@ -1090,7 +1174,7 @@ impl Clone for Kernel {
+@@ -1123,7 +1205,7 @@ impl Clone for Kernel {
              work_group_size: self.work_group_size,
              attributes_string: self.attributes_string.clone(),
              internal_args: self.internal_args.clone(),
@@ -1466,6 +1698,21 @@ index 5da5ac697b8..35bb9a7ca13 100644
          }
      }
  }
+diff --git a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
+index c9d1c7815dd..347b3c95c2a 100644
+--- a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
++++ b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
+@@ -174,6 +174,10 @@ impl NirShader {
+         unsafe { (*self.nir.as_ptr()).info.num_images }
+     }
+ 
++    pub fn num_textures(&self) -> u8 {
++        unsafe { (*self.nir.as_ptr()).info.num_textures }
++    }
++
+     pub fn reset_scratch_size(&self) {
+         unsafe {
+             (*self.nir.as_ptr()).scratch_size = 0;
 diff --git a/src/gallium/frontends/rusticl/mesa/pipe/context.rs b/src/gallium/frontends/rusticl/mesa/pipe/context.rs
 index 234874fcf0c..0df09a25f1a 100644
 --- a/src/gallium/frontends/rusticl/mesa/pipe/context.rs
@@ -1566,23 +1813,31 @@ index 37bd1b88dbb..c8b9a19f18f 100644
              },
              self,
 diff --git a/src/gallium/frontends/rusticl/rusticl_nir.c b/src/gallium/frontends/rusticl/rusticl_nir.c
-index 82543a14456..0b4e471530d 100644
+index 82543a14456..61a55d5c6d5 100644
 --- a/src/gallium/frontends/rusticl/rusticl_nir.c
 +++ b/src/gallium/frontends/rusticl/rusticl_nir.c
-@@ -39,6 +39,12 @@ rusticl_lower_intrinsics_instr(
+@@ -39,8 +39,19 @@ rusticl_lower_intrinsics_instr(
          }
  
          val = intrins->src[0].ssa;
 +
++        nir_address_format addr_format =
++            val->bit_size == 64
++                ? nir_address_format_32bit_offset_as_64bit
++                : nir_address_format_32bit_offset;
++
 +        if (val->parent_instr->type == nir_instr_type_deref) {
 +            nir_deref_instr *deref = nir_instr_as_deref(val->parent_instr);
-+            val = nir_explicit_io_address_from_deref(b, deref, NULL, nir_address_format_32bit_offset_as_64bit);
++            val = nir_explicit_io_address_from_deref(b, deref, NULL, addr_format);
 +        }
 +
          // we put write images after read images
-         if (nir_intrinsic_access(intrins) & ACCESS_NON_WRITEABLE) {
+-        if (nir_intrinsic_access(intrins) & ACCESS_NON_WRITEABLE) {
++        if (glsl_type_is_image(var->type)) {
              val = nir_iadd_imm(b, val, b->shader->info.num_textures);
-@@ -77,3 +83,73 @@ rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state* state)
+         }
+ 
+@@ -77,3 +88,73 @@ rusticl_lower_intrinsics(nir_shader *nir, struct rusticl_lower_state* state)
          state
      );
  }
@@ -3539,6 +3794,19 @@ index ef9b1f92751..9cc652199d1 100644
  
        if (nir->info.zero_initialize_shared_memory &&
            nir->info.shared_size > 0) {
+diff --git a/src/intel/vulkan/anv_pipeline_cache.c b/src/intel/vulkan/anv_pipeline_cache.c
+index b94eea76f3d..7f9ef7138e3 100644
+--- a/src/intel/vulkan/anv_pipeline_cache.c
++++ b/src/intel/vulkan/anv_pipeline_cache.c
+@@ -473,7 +473,7 @@ anv_load_fp64_shader(struct anv_device *device)
+    NIR_PASS_V(nir, nir_opt_peephole_select, 1, false, false);
+    NIR_PASS_V(nir, nir_opt_dce);
+ 
+-   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_function_temp,
++   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_function_temp, false,
+               nir_address_format_62bit_generic);
+ 
+    anv_device_upload_nir(device, device->internal_cache,
 diff --git a/src/intel/vulkan_hasvk/anv_pipeline.c b/src/intel/vulkan_hasvk/anv_pipeline.c
 index 3df2ab64a11..a0944a6f7c5 100644
 --- a/src/intel/vulkan_hasvk/anv_pipeline.c
