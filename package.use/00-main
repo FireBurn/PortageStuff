@@ -362,3 +362,4 @@ dev-util/directx-headers		abi_x86_32
 net-dns/c-ares				abi_x86_32
 app-crypt/libsecret			-introspection -vala
 dev-libs/libpcre2			abi_x86_32
+dev-util/spirv-llvm-translator		abi_x86_32
