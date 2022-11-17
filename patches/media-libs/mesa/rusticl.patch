@@ -1,5 +1,5 @@
 diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
-index 3464bab4eb8..08d6c8b0f31 100644
+index 86fe1585787..fcaf84b2b1e 100644
 --- a/src/amd/compiler/aco_instruction_selection.cpp
 +++ b/src/amd/compiler/aco_instruction_selection.cpp
 @@ -3500,6 +3500,10 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
@@ -124,7 +124,7 @@ index b89fe706516..e0e1668c521 100644
  
     return exit_waterfall(ctx, &wctx, ret);
 diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
-index 603afd384cf..204dddac6cf 100644
+index 86b5c77ec06..3e8623650a5 100644
 --- a/src/amd/vulkan/radv_pipeline.c
 +++ b/src/amd/vulkan/radv_pipeline.c
 @@ -3880,6 +3880,12 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
@@ -140,11 +140,11 @@ index 603afd384cf..204dddac6cf 100644
     NIR_PASS(_, stage->nir, radv_nir_lower_ycbcr_textures, pipeline_layout);
  
     if (stage->nir->info.uses_resource_info_query)
-diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
-index 49ef06fa36e..9ef71643624 100644
---- a/src/amd/vulkan/radv_pipeline_rt.c
-+++ b/src/amd/vulkan/radv_pipeline_rt.c
-@@ -901,7 +901,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index 150c272c551..88e78ca01d9 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -704,7 +704,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
  
     NIR_PASS(_, shader, lower_rt_derefs);
  
