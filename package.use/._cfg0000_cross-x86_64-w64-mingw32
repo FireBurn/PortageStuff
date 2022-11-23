@@ -1,0 +1,9 @@
+cross-x86_64-w64-mingw32/binutils -multilib
+cross-x86_64-w64-mingw32/mingw64-runtime -selinux -multilib
+cross-x86_64-w64-mingw32/gcc -sanitize -vtv -pie nopie -selinux -boundschecking -d -gcj -gtk -libffi -mudflap -objc -objc++ -objc-gc -multilib
+# required by virtual/opencl-3-r2::gentoo
+# required by media-video/ffmpeg-4.4.3::gentoo[opencl]
+# required by kde-apps/ffmpegthumbs-22.08.3::gentoo
+# required by @selected
+# required by @world (argument)
+>=dev-libs/opencl-icd-loader-2022.09.30 abi_x86_32
