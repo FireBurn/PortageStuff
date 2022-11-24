@@ -298,8 +298,8 @@ cross-x86_64-w64-mingw32/binutils	-default-gold
 cross-i686-w64-mingw32/binutils		-default-gold
 cross-x86_64-w64-mingw32/gcc		-sanitize -fortran -vtv -pie -hardened libssp zstd
 cross-i686-w64-mingw32/gcc		-sanitize -fortran -vtv -pie -hardened libssp zstd
-cross-x86_64-w64-mingw32/mingw64-runtime	libraries
-cross-i686-w64-mingw32/mingw64-runtime	libraries
+cross-x86_64-w64-mingw32/mingw64-runtime	libraries widl
+cross-i686-w64-mingw32/mingw64-runtime	libraries widl
 sys-devel/gcc				zstd
 app-crypt/pinentry			gnome-keyring
 dev-libs/folks				eds

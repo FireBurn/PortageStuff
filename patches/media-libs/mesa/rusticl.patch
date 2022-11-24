@@ -1,18 +1,20 @@
 diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
-index 86fe1585787..fcaf84b2b1e 100644
+index 2de6e9a6deb..2d774de46ff 100644
 --- a/src/amd/compiler/aco_instruction_selection.cpp
 +++ b/src/amd/compiler/aco_instruction_selection.cpp
-@@ -3500,6 +3500,10 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
-       bld.copy(Definition(dst), get_alu_src(ctx, instr->src[0]));
-       emit_split_vector(ctx, dst, instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
-       break;
+@@ -3497,8 +3497,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
+    case nir_op_unpack_64_2x32:
+    case nir_op_unpack_32_2x16:
+    case nir_op_unpack_64_4x16:
 +   case nir_op_unpack_32_4x8:
-+      bld.copy(Definition(dst), get_alu_src(ctx, instr->src[0]));
-+      emit_split_vector(ctx, dst, 4);
-+      break;
+       bld.copy(Definition(dst), get_alu_src(ctx, instr->src[0]));
+-      emit_split_vector(ctx, dst, instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
++      emit_split_vector(ctx, dst,
++                        instr->op == nir_op_unpack_32_4x8 ||
++                        instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
+       break;
     case nir_op_pack_64_2x32_split: {
        Temp src0 = get_alu_src(ctx, instr->src[0]);
-       Temp src1 = get_alu_src(ctx, instr->src[1]);
 diff --git a/src/amd/llvm/ac_llvm_build.c b/src/amd/llvm/ac_llvm_build.c
 index 8f08ca47c50..3ff67ab1a37 100644
 --- a/src/amd/llvm/ac_llvm_build.c
@@ -38,7 +40,7 @@ index 823005ebb37..0983f1ad757 100644
     LLVMTypeRef v4i16;
     LLVMTypeRef v2f16;
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index b89fe706516..e0e1668c521 100644
+index 7b69c1ca013..163862ec865 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -556,6 +556,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
@@ -123,28 +125,40 @@ index b89fe706516..e0e1668c521 100644
     ret = LLVMBuildBitCast(ctx->ac.builder, ret, get_def_type(ctx, &instr->dest.ssa), "");
  
     return exit_waterfall(ctx, &wctx, ret);
+@@ -3182,7 +3186,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
+    LLVMValueRef result;
+    LLVMValueRef src = get_src(ctx, instr->src[src_idx]);
+ 
+-   const char *sync_scope = "workgroup-one-as";
++   const char *sync_scope = "workgroup";
+ 
+    if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
+       LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
 diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
-index 86b5c77ec06..3e8623650a5 100644
+index a4161cb0614..9294c3f2bb7 100644
 --- a/src/amd/vulkan/radv_pipeline.c
 +++ b/src/amd/vulkan/radv_pipeline.c
-@@ -3880,6 +3880,12 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
+@@ -3884,6 +3884,15 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
        nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
     }
  
 +   NIR_PASS(_, stage->nir, nir_lower_subdword_loads,
 +            (nir_lower_subdword_options) {
 +               .modes_1_comp = nir_var_mem_ubo,
-+               .modes_N_comps = nir_var_mem_ubo | nir_var_mem_ssbo
++               .modes_N_comps =
++                  nir_var_mem_ubo |
++                  /* TODO: ACO fails VKCTS if we lower SSBOs, but not LLVM. */
++                  (radv_use_llvm_for_stage(device, stage->stage) ? nir_var_mem_ssbo : 0)
 +            });
 +
     NIR_PASS(_, stage->nir, radv_nir_lower_ycbcr_textures, pipeline_layout);
  
     if (stage->nir->info.uses_resource_info_query)
 diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
-index 150c272c551..88e78ca01d9 100644
+index 64b33c1c8cd..388f9bf991c 100644
 --- a/src/amd/vulkan/radv_rt_shader.c
 +++ b/src/amd/vulkan/radv_rt_shader.c
-@@ -704,7 +704,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
+@@ -711,7 +711,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
  
     NIR_PASS(_, shader, lower_rt_derefs);
  
@@ -154,7 +168,7 @@ index 150c272c551..88e78ca01d9 100644
  
     return shader;
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
-index 90c8fa3bdb1..c865d433764 100644
+index e633afe92ed..6ee5ed49a19 100644
 --- a/src/amd/vulkan/radv_shader.c
 +++ b/src/amd/vulkan/radv_shader.c
 @@ -975,7 +975,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
@@ -210,7 +224,7 @@ index 12a2aebb858..0dfb4085b59 100644
     }
  
 diff --git a/src/compiler/nir/meson.build b/src/compiler/nir/meson.build
-index f1a1879f6d2..837bb972db3 100644
+index 5f9d3095f2a..ccd91dcaa06 100644
 --- a/src/compiler/nir/meson.build
 +++ b/src/compiler/nir/meson.build
 @@ -199,6 +199,7 @@ files_libnir = files(
@@ -222,7 +236,7 @@ index f1a1879f6d2..837bb972db3 100644
    'nir_lower_system_values.c',
    'nir_lower_task_shader.c',
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index 18bcfe59dd0..7f17054ba50 100644
+index a8990f85dba..d2e266d46e2 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
 @@ -4875,6 +4875,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
@@ -242,7 +256,7 @@ index 18bcfe59dd0..7f17054ba50 100644
  bool nir_lower_io_to_scalar_early(nir_shader *shader, nir_variable_mode mask);
  bool nir_lower_io_to_vector(nir_shader *shader, nir_variable_mode mask);
  bool nir_vectorize_tess_levels(nir_shader *shader);
-@@ -5795,6 +5796,17 @@ nir_function_impl *nir_shader_get_preamble(nir_shader *shader);
+@@ -5796,6 +5797,17 @@ nir_function_impl *nir_shader_get_preamble(nir_shader *shader);
  bool nir_lower_point_smooth(nir_shader *shader);
  bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sample);
  
@@ -273,7 +287,7 @@ index c75fc75f574..9b1b3d0a750 100644
        return NULL;
  
 diff --git a/src/compiler/nir/nir_lower_io.c b/src/compiler/nir/nir_lower_io.c
-index 37bc6a6d377..69902f4deaa 100644
+index 784ce507af5..aa17095c464 100644
 --- a/src/compiler/nir/nir_lower_io.c
 +++ b/src/compiler/nir/nir_lower_io.c
 @@ -2208,7 +2208,7 @@ lower_explicit_io_mode_check(nir_builder *b, nir_intrinsic_instr *intrin,
@@ -295,7 +309,7 @@ index 37bc6a6d377..69902f4deaa 100644
                 lower_explicit_io_deref(&b, deref, addr_format);
                 progress = true;
              }
-@@ -2355,13 +2358,13 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
+@@ -2354,13 +2357,13 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
   */
  bool
  nir_lower_explicit_io(nir_shader *shader, nir_variable_mode modes,
@@ -609,7 +623,7 @@ index 00000000000..06466a0b20d
 +                                       nir_metadata_block_index, &options);
 +}
 diff --git a/src/compiler/nir/nir_opt_algebraic.py b/src/compiler/nir/nir_opt_algebraic.py
-index f35232a66ca..cabee768678 100644
+index 86c01f49ee8..e6e7df8346b 100644
 --- a/src/compiler/nir/nir_opt_algebraic.py
 +++ b/src/compiler/nir/nir_opt_algebraic.py
 @@ -1059,7 +1059,7 @@ for s in [8, 16, 32, 64]:
@@ -621,6 +635,36 @@ index f35232a66ca..cabee768678 100644
         (('ishr', 'a@{}'.format(s), ('iand', s - 1, b)), ('ishr', a, b)),
         (('ushr', 'a@{}'.format(s), ('iand', s - 1, b)), ('ushr', a, b)),
         (('ushr', 'a@{}'.format(s), ('ishl(is_used_once)', ('iand', b, 1), last_shift_bit)), ('ushr', a, ('ishl', b, last_shift_bit))),
+diff --git a/src/compiler/shader_info.h b/src/compiler/shader_info.h
+index 86d197655fa..7fcdba7fc02 100644
+--- a/src/compiler/shader_info.h
++++ b/src/compiler/shader_info.h
+@@ -498,6 +498,11 @@ typedef struct shader_info {
+           */
+          enum gl_derivative_group derivative_group:2;
+ 
++         /*
++          * If the shader might run with shared mem on top of `shared_size`.
++          */
++         bool has_variable_shared_mem:1;
++
+          /**
+           * pointer size is:
+           *   AddressingModelLogical:    0    (default)
+diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
+index 827ad823e47..6efb1346aca 100644
+--- a/src/compiler/spirv/spirv_to_nir.c
++++ b/src/compiler/spirv/spirv_to_nir.c
+@@ -6451,6 +6451,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
+    for (unsigned i = 0; i < entry_point->num_params; ++i) {
+       struct vtn_type *param_type = b->entry_point->func->type->params[i];
+ 
++      b->shader->info.cs.has_variable_shared_mem |=
++         param_type->storage_class == SpvStorageClassWorkgroup;
++
+       /* consider all pointers to function memory to be parameters passed
+        * by value
+        */
 diff --git a/src/compiler/spirv/vtn_opencl.c b/src/compiler/spirv/vtn_opencl.c
 index c41628fd475..5c2ec15a15f 100644
 --- a/src/compiler/spirv/vtn_opencl.c
@@ -642,6 +686,97 @@ index c41628fd475..5c2ec15a15f 100644
     default:
        break;
     }
+diff --git a/src/gallium/drivers/iris/iris_program.c b/src/gallium/drivers/iris/iris_program.c
+index 6d6933c5250..7c3ab11d833 100644
+--- a/src/gallium/drivers/iris/iris_program.c
++++ b/src/gallium/drivers/iris/iris_program.c
+@@ -2553,6 +2553,24 @@ iris_create_compute_state(struct pipe_context *ctx,
+    return ish;
+ }
+ 
++static void
++iris_get_compute_state_info(struct pipe_context *ctx, void *state,
++                            struct pipe_compute_state_object_info *info)
++{
++   struct iris_screen *screen = (void *) ctx->screen;
++   struct iris_uncompiled_shader *ish = state;
++
++   info->max_threads = MIN2(1024, 32 * screen->devinfo.max_cs_workgroup_threads);
++   info->private_memory = 0;
++   info->preferred_simd_size = 32;
++
++   list_for_each_entry_safe(struct iris_compiled_shader, shader,
++                            &ish->variants, link) {
++      info->private_memory = MAX2(info->private_memory,
++                                  shader->prog_data->total_scratch);
++   }
++}
++
+ static void
+ iris_compile_shader(void *_job, UNUSED void *_gdata, UNUSED int thread_index)
+ {
+@@ -3010,4 +3028,6 @@ iris_init_program_functions(struct pipe_context *ctx)
+    ctx->bind_gs_state  = iris_bind_gs_state;
+    ctx->bind_fs_state  = iris_bind_fs_state;
+    ctx->bind_compute_state = iris_bind_cs_state;
++
++   ctx->get_compute_state_info = iris_get_compute_state_info;
+ }
+diff --git a/src/gallium/drivers/radeonsi/si_compute.c b/src/gallium/drivers/radeonsi/si_compute.c
+index caf4b05a52c..fcc075ce46e 100644
+--- a/src/gallium/drivers/radeonsi/si_compute.c
++++ b/src/gallium/drivers/radeonsi/si_compute.c
+@@ -29,6 +29,7 @@
+ #include "amd_kernel_code_t.h"
+ #include "nir/tgsi_to_nir.h"
+ #include "si_build_pm4.h"
++#include "si_shader_internal.h"
+ #include "util/u_async_debug.h"
+ #include "util/u_memory.h"
+ #include "util/u_upload_mgr.h"
+@@ -293,6 +294,34 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
+    return program;
+ }
+ 
++static void si_get_compute_state_info(struct pipe_context *ctx, void *state,
++                                      struct pipe_compute_state_object_info *info)
++{
++   struct si_compute *program = (struct si_compute *)state;
++   struct si_shader_selector *sel = &program->sel;
++
++   /* Wait because we need the compilation to finish first */
++   if (program->ir_type != PIPE_SHADER_IR_NATIVE)
++      util_queue_fence_wait(&sel->ready);
++
++   uint8_t wave_size = program->shader.wave_size;
++   uint8_t max_waves = program->shader.info.max_simd_waves;
++   uint32_t max_threads = si_get_max_workgroup_size(&program->shader);
++
++   if (wave_size == 32)
++      max_waves *= 2;
++   max_waves = MIN2(max_waves, 16);
++
++   info->private_memory = DIV_ROUND_UP(program->shader.config.scratch_bytes_per_wave, wave_size);
++   info->preferred_simd_size = wave_size;
++
++   if (sel->info.base.cs.has_variable_shared_mem)
++      /* assume the worst case */
++      info->max_threads = wave_size;
++   else
++      info->max_threads = MIN2(max_threads, wave_size * max_waves);
++}
++
+ static void si_bind_compute_state(struct pipe_context *ctx, void *state)
+ {
+    struct si_context *sctx = (struct si_context *)ctx;
+@@ -1132,6 +1161,7 @@ void si_init_compute_functions(struct si_context *sctx)
+    sctx->b.create_compute_state = si_create_compute_state;
+    sctx->b.delete_compute_state = si_delete_compute_state;
+    sctx->b.bind_compute_state = si_bind_compute_state;
++   sctx->b.get_compute_state_info = si_get_compute_state_info;
+    sctx->b.set_compute_resources = si_set_compute_resources;
+    sctx->b.set_global_binding = si_set_global_binding;
+    sctx->b.launch_grid = si_launch_grid;
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
 index 2cd374f39d4..8c918667ecd 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
@@ -848,11 +983,48 @@ index 2efd36c9c45..22cad864c76 100644
     }
  
     NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_shader_temp, NULL);
+diff --git a/src/gallium/frontends/rusticl/api/kernel.rs b/src/gallium/frontends/rusticl/api/kernel.rs
+index 2e793a8cf36..023331c229b 100644
+--- a/src/gallium/frontends/rusticl/api/kernel.rs
++++ b/src/gallium/frontends/rusticl/api/kernel.rs
+@@ -89,11 +89,10 @@ impl CLInfoObj<cl_kernel_work_group_info, cl_device_id> for cl_kernel {
+             CL_KERNEL_COMPILE_WORK_GROUP_SIZE => cl_prop::<[usize; 3]>(kernel.work_group_size),
+             CL_KERNEL_LOCAL_MEM_SIZE => cl_prop::<cl_ulong>(kernel.local_mem_size(&dev)),
+             CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE => {
+-                cl_prop::<usize>(dev.subgroups() as usize)
++                cl_prop::<usize>(kernel.preferred_simd_size(&dev))
+             }
+             CL_KERNEL_PRIVATE_MEM_SIZE => cl_prop::<cl_ulong>(kernel.priv_mem_size(&dev)),
+-            // TODO
+-            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(dev.subgroups() as usize),
++            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(kernel.max_threads_per_block(&dev)),
+             // CL_INVALID_VALUE if param_name is not one of the supported values
+             _ => return Err(CL_INVALID_VALUE),
+         })
 diff --git a/src/gallium/frontends/rusticl/core/device.rs b/src/gallium/frontends/rusticl/core/device.rs
-index 5a73f6f389c..fe63ee3cca4 100644
+index 5a73f6f389c..9b45ce16120 100644
 --- a/src/gallium/frontends/rusticl/core/device.rs
 +++ b/src/gallium/frontends/rusticl/core/device.rs
-@@ -536,8 +536,11 @@ impl Device {
+@@ -75,6 +75,7 @@ pub trait HelperContextWrapper {
+ 
+     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
+     fn delete_compute_state(&self, cso: *mut c_void);
++    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info;
+ 
+     fn unmap(&self, tx: PipeTransfer);
+ }
+@@ -159,6 +160,10 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
+         self.lock.delete_compute_state(cso)
+     }
+ 
++    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
++        self.lock.compute_state_info(state)
++    }
++
+     fn unmap(&self, tx: PipeTransfer) {
+         tx.with_ctx(&self.lock);
+     }
+@@ -536,8 +541,11 @@ impl Device {
      }
  
      pub fn const_max_size(&self) -> cl_ulong {
@@ -866,7 +1038,7 @@ index 5a73f6f389c..fe63ee3cca4 100644
      }
  
      pub fn device_type(&self, internal: bool) -> cl_device_type {
-@@ -705,10 +708,7 @@ impl Device {
+@@ -705,10 +713,7 @@ impl Device {
      }
  
      pub fn param_max_size(&self) -> usize {
@@ -879,10 +1051,51 @@ index 5a73f6f389c..fe63ee3cca4 100644
  
      pub fn printf_buffer_size(&self) -> usize {
 diff --git a/src/gallium/frontends/rusticl/core/kernel.rs b/src/gallium/frontends/rusticl/core/kernel.rs
-index 2d35682fc43..3e892197b8d 100644
+index 2d35682fc43..654aa130f34 100644
 --- a/src/gallium/frontends/rusticl/core/kernel.rs
 +++ b/src/gallium/frontends/rusticl/core/kernel.rs
-@@ -657,18 +657,20 @@ fn lower_and_optimize_nir_late(
+@@ -258,6 +258,7 @@ struct KernelDevStateInner {
+     nir: NirShader,
+     constant_buffer: Option<Arc<PipeResource>>,
+     cso: *mut c_void,
++    info: pipe_compute_state_object_info,
+ }
+ 
+ struct KernelDevState {
+@@ -279,21 +280,25 @@ impl KernelDevState {
+         let states = nirs
+             .into_iter()
+             .map(|(dev, nir)| {
+-                let cso = if dev.shareable_shaders() {
+-                    dev.helper_ctx()
+-                        .create_compute_state(&nir, nir.shared_size())
+-                } else {
+-                    ptr::null_mut()
+-                };
+-
++                let mut cso = dev
++                    .helper_ctx()
++                    .create_compute_state(&nir, nir.shared_size());
++                let info = dev.helper_ctx().compute_state_info(cso);
+                 let cb = Self::create_nir_constant_buffer(&dev, &nir);
+ 
++                // if we can't share the cso between threads, destroy it now.
++                if !dev.shareable_shaders() {
++                    dev.helper_ctx().delete_compute_state(cso);
++                    cso = ptr::null_mut();
++                };
++
+                 (
+                     dev,
+                     KernelDevStateInner {
+                         nir: nir,
+                         constant_buffer: cb,
+                         cso: cso,
++                        info: info,
+                     },
+                 )
+             })
+@@ -657,18 +662,20 @@ fn lower_and_optimize_nir_late(
          shared_address_format = nir_address_format::nir_address_format_32bit_offset_as_64bit;
      }
  
@@ -905,16 +1118,119 @@ index 2d35682fc43..3e892197b8d 100644
          shared_address_format,
      );
  
-@@ -817,7 +819,7 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
+@@ -688,6 +695,12 @@ fn lower_and_optimize_nir_late(
+      * other things we depend on
+      */
+     KernelArg::assign_locations(args, &mut res, nir);
++
++    /* update the has_variable_shared_mem info as we might have DCEed all of them */
++    nir.set_has_variable_shared_mem(
++        args.iter()
++            .any(|arg| arg.kind == KernelArgType::MemLocal && !arg.dead),
++    );
+     dev.screen.finalize_nir(nir);
+ 
+     nir.pass0(nir_opt_dce);
+@@ -816,44 +829,6 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
+     val.try_into().unwrap()
  }
  
- fn optimize_local_size(d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
+-fn optimize_local_size(d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
 -    let mut threads = d.max_threads_per_block() as u32;
-+    let mut threads = d.max_threads_per_block() as u32 / 4;
-     let dim_threads = d.max_block_sizes();
-     let subgroups = d.subgroups();
+-    let dim_threads = d.max_block_sizes();
+-    let subgroups = d.subgroups();
+-
+-    if !block.contains(&0) {
+-        for i in 0..3 {
+-            // we already made sure everything is fine
+-            grid[i] /= block[i];
+-        }
+-        return;
+-    }
+-
+-    for i in 0..3 {
+-        let t = cmp::min(threads, dim_threads[i] as u32);
+-        let gcd = gcd(t, grid[i]);
+-
+-        block[i] = gcd;
+-        grid[i] /= gcd;
+-
+-        // update limits
+-        threads /= block[i];
+-    }
+-
+-    // if we didn't fill the subgroup we can do a bit better if we have threads remaining
+-    let total_threads = block[0] * block[1] * block[2];
+-    if threads != 1 && total_threads < subgroups {
+-        for i in 0..3 {
+-            if grid[i] * total_threads < threads {
+-                block[i] *= grid[i];
+-                grid[i] = 1;
+-                // can only do it once as nothing is cleanly divisible
+-                break;
+-            }
+-        }
+-    }
+-}
+-
+ impl Kernel {
+     pub fn new(name: String, prog: Arc<Program>, args: Vec<spirv::SPIRVKernelArg>) -> Arc<Kernel> {
+         let (mut nirs, args, internal_args, attributes_string) =
+@@ -882,6 +857,44 @@ impl Kernel {
+         })
+     }
  
-@@ -1017,7 +1019,7 @@ impl Kernel {
++    fn optimize_local_size(&self, d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
++        let mut threads = self.max_threads_per_block(d) as u32;
++        let dim_threads = d.max_block_sizes();
++        let subgroups = self.preferred_simd_size(d) as u32;
++
++        if !block.contains(&0) {
++            for i in 0..3 {
++                // we already made sure everything is fine
++                grid[i] /= block[i];
++            }
++            return;
++        }
++
++        for i in 0..3 {
++            let t = cmp::min(threads, dim_threads[i] as u32);
++            let gcd = gcd(t, grid[i]);
++
++            block[i] = gcd;
++            grid[i] /= gcd;
++
++            // update limits
++            threads /= block[i];
++        }
++
++        // if we didn't fill the subgroup we can do a bit better if we have threads remaining
++        let total_threads = block[0] * block[1] * block[2];
++        if threads != 1 && total_threads < subgroups {
++            for i in 0..3 {
++                if grid[i] * total_threads < threads {
++                    block[i] *= grid[i];
++                    grid[i] = 1;
++                    // can only do it once as nothing is cleanly divisible
++                    break;
++                }
++            }
++        }
++    }
++
+     // the painful part is, that host threads are allowed to modify the kernel object once it was
+     // enqueued, so return a closure with all req data included.
+     pub fn launch(
+@@ -915,7 +928,7 @@ impl Kernel {
+             &[0; 4]
+         };
+ 
+-        optimize_local_size(&q.device, &mut grid, &mut block);
++        self.optimize_local_size(&q.device, &mut grid, &mut block);
+ 
+         for (arg, val) in self.args.iter().zip(&self.values) {
+             if arg.dead {
+@@ -1017,7 +1030,7 @@ impl Kernel {
                      let buf = Arc::new(
                          q.device
                              .screen
@@ -923,11 +1239,77 @@ index 2d35682fc43..3e892197b8d 100644
                              .unwrap(),
                      );
  
+@@ -1200,7 +1213,15 @@ impl Kernel {
+     }
+ 
+     pub fn priv_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
+-        self.dev_state.get(dev).nir.scratch_size() as cl_ulong
++        self.dev_state.get(dev).info.private_memory.into()
++    }
++
++    pub fn max_threads_per_block(&self, dev: &Device) -> usize {
++        self.dev_state.get(dev).info.max_threads as usize
++    }
++
++    pub fn preferred_simd_size(&self, dev: &Device) -> usize {
++        self.dev_state.get(dev).info.preferred_simd_size as usize
+     }
+ 
+     pub fn local_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
+diff --git a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
+index 347b3c95c2a..2bceac53ce2 100644
+--- a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
++++ b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
+@@ -205,6 +205,17 @@ impl NirShader {
+         }
+     }
+ 
++    pub fn set_has_variable_shared_mem(&mut self, val: bool) {
++        unsafe {
++            self.nir
++                .as_mut()
++                .info
++                .anon_1
++                .cs
++                .set_has_variable_shared_mem(val)
++        }
++    }
++
+     pub fn variables_with_mode(
+         &mut self,
+         mode: nir_variable_mode,
+diff --git a/src/gallium/frontends/rusticl/mesa/pipe/context.rs b/src/gallium/frontends/rusticl/mesa/pipe/context.rs
+index 06bbe3da027..a31a9c83ff6 100644
+--- a/src/gallium/frontends/rusticl/mesa/pipe/context.rs
++++ b/src/gallium/frontends/rusticl/mesa/pipe/context.rs
+@@ -284,6 +284,14 @@ impl PipeContext {
+         unsafe { self.pipe.as_ref().delete_compute_state.unwrap()(self.pipe.as_ptr(), state) }
+     }
+ 
++    pub fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
++        let mut info = pipe_compute_state_object_info::default();
++        unsafe {
++            self.pipe.as_ref().get_compute_state_info.unwrap()(self.pipe.as_ptr(), state, &mut info)
++        }
++        info
++    }
++
+     pub fn create_sampler_state(&self, state: &pipe_sampler_state) -> *mut c_void {
+         unsafe { self.pipe.as_ref().create_sampler_state.unwrap()(self.pipe.as_ptr(), state) }
+     }
+@@ -491,6 +499,7 @@ fn has_required_cbs(context: &pipe_context) -> bool {
+         & has_required_feature!(context, delete_compute_state)
+         & has_required_feature!(context, delete_sampler_state)
+         & has_required_feature!(context, flush)
++        & has_required_feature!(context, get_compute_state_info)
+         & has_required_feature!(context, launch_grid)
+         & has_required_feature!(context, memory_barrier)
+         & has_required_feature!(context, resource_copy_region)
 diff --git a/src/gallium/frontends/rusticl/mesa/pipe/screen.rs b/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
-index 37bd1b88dbb..c8b9a19f18f 100644
+index fa1ddd42578..053d423af15 100644
 --- a/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
 +++ b/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
-@@ -93,7 +93,7 @@ impl PipeScreen {
+@@ -95,7 +95,7 @@ impl PipeScreen {
                  (*self.screen).context_create.unwrap()(
                      self.screen,
                      ptr::null_mut(),
@@ -936,8 +1318,62 @@ index 37bd1b88dbb..c8b9a19f18f 100644
                  )
              },
              self,
+diff --git a/src/gallium/include/pipe/p_context.h b/src/gallium/include/pipe/p_context.h
+index 9eff0d87e50..705bed02776 100644
+--- a/src/gallium/include/pipe/p_context.h
++++ b/src/gallium/include/pipe/p_context.h
+@@ -46,6 +46,7 @@ struct pipe_blend_state;
+ struct pipe_blit_info;
+ struct pipe_box;
+ struct pipe_clip_state;
++struct pipe_compute_state_object_info;
+ struct pipe_constant_buffer;
+ struct pipe_depth_stencil_alpha_state;
+ struct pipe_device_reset_callback;
+@@ -931,6 +932,9 @@ struct pipe_context {
+    void (*bind_compute_state)(struct pipe_context *, void *);
+    void (*delete_compute_state)(struct pipe_context *, void *);
+ 
++   void (*get_compute_state_info)(struct pipe_context *, void *,
++                                  struct pipe_compute_state_object_info *);
++
+    /**
+     * Bind an array of shader resources that will be used by the
+     * compute program.  Any resources that were previously bound to
+diff --git a/src/gallium/include/pipe/p_state.h b/src/gallium/include/pipe/p_state.h
+index e2003f3369f..20f0eb9171e 100644
+--- a/src/gallium/include/pipe/p_state.h
++++ b/src/gallium/include/pipe/p_state.h
+@@ -1016,6 +1016,27 @@ struct pipe_compute_state
+    unsigned req_input_mem; /**< Required size of the INPUT resource. */
+ };
+ 
++struct pipe_compute_state_object_info
++{
++    /**
++     * max amount of threads supported for the given cso
++     */
++   unsigned max_threads;
++
++   /**
++    * which multiple should the block size be of for best performance.
++    *
++    * E.g. if the value of 8, then a block with 8/16/24/... threads would result in optimial
++    * utilization of the hardware.
++    */
++   unsigned preferred_simd_size;
++
++   /**
++    * How much private memory does this CSO require (a.k.a. NIR scratch memory)
++    */
++   unsigned private_memory;
++};
++
+ /**
+  * Structure that contains a callback for device reset messages from the driver
+  * back to the gallium frontend.
 diff --git a/src/gallium/targets/rusticl/meson.build b/src/gallium/targets/rusticl/meson.build
-index a968dee52db..c3a9cf27eb0 100644
+index 71c5da2129e..f87094c3c02 100644
 --- a/src/gallium/targets/rusticl/meson.build
 +++ b/src/gallium/targets/rusticl/meson.build
 @@ -45,6 +45,7 @@ librusticl = shared_library(
@@ -1007,7 +1443,7 @@ index 2250771f365..be0e68a360b 100644
  }
  
 diff --git a/src/intel/compiler/brw_nir.c b/src/intel/compiler/brw_nir.c
-index 1ab004b68d4..f094c595332 100644
+index 81057e36803..8561411f405 100644
 --- a/src/intel/compiler/brw_nir.c
 +++ b/src/intel/compiler/brw_nir.c
 @@ -1271,7 +1271,7 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
