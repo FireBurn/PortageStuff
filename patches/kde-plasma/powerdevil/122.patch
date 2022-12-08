@@ -1,0 +1,74 @@
+From 913fbabd7cac73d40cef25c5f9fb54b7c8f7d363 Mon Sep 17 00:00:00 2001
+From: Kai Uwe Broulik <kde@privat.broulik.de>
+Date: Wed, 7 Dec 2022 21:06:35 +0100
+Subject: [PATCH] Handle Button Events: Turn off keyboard backlight when lid is
+ closed
+
+There apparently exists hardware that doesn't do that by itself.
+
+BUG: 444029
+---
+ daemon/actions/bundled/handlebuttonevents.cpp | 19 +++++++++++++++++++
+ daemon/actions/bundled/handlebuttonevents.h   |  2 ++
+ 2 files changed, 21 insertions(+)
+
+diff --git a/daemon/actions/bundled/handlebuttonevents.cpp b/daemon/actions/bundled/handlebuttonevents.cpp
+index 6f648129..654b0780 100644
+--- a/daemon/actions/bundled/handlebuttonevents.cpp
++++ b/daemon/actions/bundled/handlebuttonevents.cpp
+@@ -95,6 +95,15 @@ HandleButtonEvents::HandleButtonEvents(QObject *parent, const QVariantList &)
+                 KScreen::ConfigMonitor::instance()->addConfig(m_screenConfiguration);
+                 connect(KScreen::ConfigMonitor::instance(), &KScreen::ConfigMonitor::configurationChanged, this, &HandleButtonEvents::checkOutputs);
+     });
++
++    m_oldKeyboardBrightness = backend()->brightness(BackendInterface::Keyboard);
++    connect(backend(), &PowerDevil::BackendInterface::brightnessChanged, this, [this](const BrightnessLogic::BrightnessInfo &brightnessInfo, BackendInterface::BrightnessControlType type) {
++        // By the time the lid close is processed, the backend brightness will already be updated.
++        // That's why we track the brightness here as long as the lid is open.
++        if (type == BackendInterface::Keyboard && !backend()->isLidClosed()) {
++            m_oldKeyboardBrightness = brightnessInfo.value;
++        }
++    });
+ }
+ 
+ HandleButtonEvents::~HandleButtonEvents()
+@@ -133,6 +142,10 @@ void HandleButtonEvents::onButtonPressed(BackendInterface::ButtonType type)
+ {
+     switch (type) {
+         case BackendInterface::LidClose:
++            if (m_oldKeyboardBrightness > 0) {
++                backend()->setBrightness(0, BackendInterface::Keyboard);
++            }
++
+             if (!triggersLidAction()) {
+                 qCWarning(POWERDEVIL) << "Lid action was suppressed because an external monitor is present";
+                 return;
+@@ -141,6 +154,12 @@ void HandleButtonEvents::onButtonPressed(BackendInterface::ButtonType type)
+             processAction(m_lidAction);
+             break;
+         case BackendInterface::LidOpen:
++            // When we restore the keyboard brightness before waking up, we shouldn't conflict
++            // with dimdisplay or dpms also messing with the keyboard.
++            if (m_oldKeyboardBrightness > 0) {
++                backend()->setBrightness(m_oldKeyboardBrightness, BackendInterface::Keyboard);
++            }
++
+             // In this case, let's send a wakeup event
+             KIdleTime::instance()->simulateUserActivity();
+             break;
+diff --git a/daemon/actions/bundled/handlebuttonevents.h b/daemon/actions/bundled/handlebuttonevents.h
+index e1d05103..ca2d4c94 100644
+--- a/daemon/actions/bundled/handlebuttonevents.h
++++ b/daemon/actions/bundled/handlebuttonevents.h
+@@ -79,6 +79,8 @@ private:
+     uint m_powerDownButtonAction = 0;
+     uint m_sleepButtonAction = 1;
+     uint m_hibernateButtonAction = 2;
++
++    int m_oldKeyboardBrightness = 0;
+ };
+ 
+ }
+-- 
+GitLab
+
