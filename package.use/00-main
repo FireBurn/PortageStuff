@@ -364,3 +364,5 @@ app-crypt/libsecret			-introspection -vala
 dev-libs/libpcre2			abi_x86_32
 dev-util/spirv-llvm-translator		abi_x86_32
 dev-libs/opencl-icd-loader		abi_x86_32
+dev-libs/modsecurity			fuzzyhash geoip2 json lmdb lua pcre2
+www-apache/modsecurity-crs		-apache2

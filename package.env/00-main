@@ -79,3 +79,4 @@ sys-boot/grub				o3.conf
 app-crypt/gpgme				clango3lto.conf
 net-misc/openssh			o3lto.conf
 net-libs/libssh2			clango3.conf
+dev-libs/modsecurity			debug.conf
