@@ -1,5 +1,5 @@
 diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
-index d52e703d7df..79d0cc6b9a0 100644
+index 8181b215858..35b86d43e9d 100644
 --- a/src/amd/compiler/aco_instruction_selection.cpp
 +++ b/src/amd/compiler/aco_instruction_selection.cpp
 @@ -3500,8 +3500,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
@@ -174,10 +174,10 @@ index 58f12a17043..3a56e6fbbfc 100644
     if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
        LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
 diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
-index a250fa2eb1e..ba9abaf8f72 100644
+index 2de3f2376d8..a63b26b2445 100644
 --- a/src/amd/vulkan/radv_pipeline.c
 +++ b/src/amd/vulkan/radv_pipeline.c
-@@ -3639,6 +3639,15 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
+@@ -3638,6 +3638,15 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
        nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));
     }
  
@@ -194,12 +194,12 @@ index a250fa2eb1e..ba9abaf8f72 100644
  
     if (stage->nir->info.uses_resource_info_query)
 diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
-index 36834fdf57a..d3cef6717b4 100644
+index 292373c58c5..e7418c16449 100644
 --- a/src/amd/vulkan/radv_rt_shader.c
 +++ b/src/amd/vulkan/radv_rt_shader.c
-@@ -713,7 +713,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
- 
+@@ -807,7 +807,7 @@ parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreateInfo
     NIR_PASS(_, shader, lower_rt_derefs);
+    NIR_PASS(_, shader, lower_hit_attrib_derefs);
  
 -   NIR_PASS(_, shader, nir_lower_explicit_io, nir_var_function_temp,
 +   NIR_PASS(_, shader, nir_lower_explicit_io, nir_var_function_temp, false,
@@ -207,7 +207,7 @@ index 36834fdf57a..d3cef6717b4 100644
  
     return shader;
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
-index 300fe904c15..3c95f84a0ac 100644
+index 7a1e0e69d0a..8489bab8dd7 100644
 --- a/src/amd/vulkan/radv_shader.c
 +++ b/src/amd/vulkan/radv_shader.c
 @@ -975,7 +975,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
@@ -231,16 +231,16 @@ index 300fe904c15..3c95f84a0ac 100644
              nir_address_format_vec2_index_32bit_offset);
  
     NIR_PASS(_, nir, lower_intrinsics, key);
-@@ -1080,7 +1080,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
-       if (!nir->info.shared_memory_explicit_layout) {
-          NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, var_modes, shared_var_info);
-       }
+@@ -1082,7 +1082,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
+       else if (var_modes & ~nir_var_mem_shared)
+          NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, var_modes & ~nir_var_mem_shared,
+                   shared_var_info);
 -      NIR_PASS(_, nir, nir_lower_explicit_io, var_modes, nir_address_format_32bit_offset);
 +      NIR_PASS(_, nir, nir_lower_explicit_io, var_modes, false, nir_address_format_32bit_offset);
  
        if (nir->info.zero_initialize_shared_memory && nir->info.shared_size > 0) {
           const unsigned chunk_size = 16; /* max single store size */
-@@ -1089,7 +1089,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
+@@ -1091,7 +1091,7 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_pipeline_
        }
     }
  
@@ -275,10 +275,10 @@ index f7eb260f392..092c8be994b 100644
    'nir_lower_system_values.c',
    'nir_lower_task_shader.c',
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index 073e6635e9f..5300bb5a83d 100644
+index d81c04ad2aa..c114305b97b 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
-@@ -4875,6 +4875,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
+@@ -4878,6 +4878,7 @@ void nir_lower_explicit_io_instr(struct nir_builder *b,
  
  bool nir_lower_explicit_io(nir_shader *shader,
                             nir_variable_mode modes,
@@ -286,7 +286,7 @@ index 073e6635e9f..5300bb5a83d 100644
                             nir_address_format);
  
  typedef bool (*nir_should_vectorize_mem_func)(unsigned align_mul,
-@@ -4982,7 +4983,7 @@ bool nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all);
+@@ -4985,7 +4986,7 @@ bool nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all);
  void nir_lower_io_arrays_to_elements(nir_shader *producer, nir_shader *consumer);
  void nir_lower_io_arrays_to_elements_no_indirects(nir_shader *shader,
                                                    bool outputs_only);
@@ -295,7 +295,7 @@ index 073e6635e9f..5300bb5a83d 100644
  bool nir_lower_io_to_scalar_early(nir_shader *shader, nir_variable_mode mask);
  bool nir_lower_io_to_vector(nir_shader *shader, nir_variable_mode mask);
  bool nir_vectorize_tess_levels(nir_shader *shader);
-@@ -5810,6 +5811,17 @@ nir_function_impl *nir_shader_get_preamble(nir_shader *shader);
+@@ -5813,6 +5814,17 @@ nir_function_impl *nir_shader_get_preamble(nir_shader *shader);
  bool nir_lower_point_smooth(nir_shader *shader);
  bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sample);
  
@@ -692,10 +692,10 @@ index 41adaa14ae3..cfdc0e512b7 100644
         * by value
         */
 diff --git a/src/gallium/drivers/iris/iris_program.c b/src/gallium/drivers/iris/iris_program.c
-index d332e3bcb00..52db4f25557 100644
+index c87c1216048..ed6f267bdc1 100644
 --- a/src/gallium/drivers/iris/iris_program.c
 +++ b/src/gallium/drivers/iris/iris_program.c
-@@ -2560,6 +2560,24 @@ iris_create_compute_state(struct pipe_context *ctx,
+@@ -2558,6 +2558,24 @@ iris_create_compute_state(struct pipe_context *ctx,
     return ish;
  }
  
@@ -720,7 +720,7 @@ index d332e3bcb00..52db4f25557 100644
  static void
  iris_compile_shader(void *_job, UNUSED void *_gdata, UNUSED int thread_index)
  {
-@@ -3017,4 +3035,6 @@ iris_init_program_functions(struct pipe_context *ctx)
+@@ -3015,4 +3033,6 @@ iris_init_program_functions(struct pipe_context *ctx)
     ctx->bind_gs_state  = iris_bind_gs_state;
     ctx->bind_fs_state  = iris_bind_fs_state;
     ctx->bind_compute_state = iris_bind_cs_state;
@@ -915,7 +915,7 @@ index caf4b05a52c..fcc075ce46e 100644
     sctx->b.set_global_binding = si_set_global_binding;
     sctx->b.launch_grid = si_launch_grid;
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index 2cd374f39d4..8c918667ecd 100644
+index 5ea86b8a3d0..42172de8b6d 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
 +++ b/src/gallium/drivers/radeonsi/si_get.c
 @@ -1177,7 +1177,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
@@ -1580,7 +1580,7 @@ index 4843f94f278..bf2653cb3fa 100644
  }
  
 diff --git a/src/intel/compiler/brw_nir.c b/src/intel/compiler/brw_nir.c
-index b89d7db4ddb..4b0b80887b7 100644
+index 1933c487ab7..1e412d4dafe 100644
 --- a/src/intel/compiler/brw_nir.c
 +++ b/src/intel/compiler/brw_nir.c
 @@ -1274,7 +1274,7 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
@@ -1606,10 +1606,10 @@ index 0c67e14446e..0ffdd58e9d6 100644
  }
  
 diff --git a/src/intel/vulkan/anv_pipeline.c b/src/intel/vulkan/anv_pipeline.c
-index f5862eca274..c2e7d8e7c3d 100644
+index ec154ac07e2..d4e09802875 100644
 --- a/src/intel/vulkan/anv_pipeline.c
 +++ b/src/intel/vulkan/anv_pipeline.c
-@@ -920,9 +920,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -902,9 +902,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
  
     NIR_PASS(_, nir, brw_nir_lower_storage_image, compiler->devinfo);
  
@@ -1621,7 +1621,7 @@ index f5862eca274..c2e7d8e7c3d 100644
              nir_address_format_32bit_offset);
  
     NIR_PASS(_, nir, brw_nir_lower_ray_queries, &pdevice->info);
-@@ -935,10 +935,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -917,10 +917,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                pdevice, pipeline->device->robust_buffer_access,
                layout, &stage->bind_map);
  
@@ -1634,7 +1634,7 @@ index f5862eca274..c2e7d8e7c3d 100644
              anv_nir_ssbo_addr_format(pdevice,
                 pipeline->device->robust_buffer_access));
  
-@@ -983,7 +983,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -965,7 +965,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
        }
  
        NIR_PASS(_, nir, nir_lower_explicit_io,
@@ -1657,10 +1657,10 @@ index e3894df6a42..88e163ae538 100644
  
     anv_device_upload_nir(device, device->internal_cache,
 diff --git a/src/intel/vulkan_hasvk/anv_pipeline.c b/src/intel/vulkan_hasvk/anv_pipeline.c
-index bdeed3fe9d0..2cc747dfa98 100644
+index 66d8d77bb39..3dbd9015c27 100644
 --- a/src/intel/vulkan_hasvk/anv_pipeline.c
 +++ b/src/intel/vulkan_hasvk/anv_pipeline.c
-@@ -581,9 +581,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -562,9 +562,9 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
  
     NIR_PASS(_, nir, brw_nir_lower_storage_image, compiler->devinfo);
  
@@ -1672,7 +1672,7 @@ index bdeed3fe9d0..2cc747dfa98 100644
              nir_address_format_32bit_offset);
  
     /* Apply the actual pipeline layout to UBOs, SSBOs, and textures */
-@@ -591,10 +591,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -572,10 +572,10 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                pdevice, pipeline->device->robust_buffer_access,
                layout, &stage->bind_map);
  
@@ -1685,7 +1685,7 @@ index bdeed3fe9d0..2cc747dfa98 100644
              anv_nir_ssbo_addr_format(pdevice,
                 pipeline->device->robust_buffer_access));
  
-@@ -639,7 +639,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
+@@ -620,7 +620,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
        }
  
        NIR_PASS(_, nir, nir_lower_explicit_io,
