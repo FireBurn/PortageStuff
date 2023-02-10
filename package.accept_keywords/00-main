@@ -3,17 +3,6 @@ media-libs/vulkan-demos			**
 x11-libs/libvdpau-va-gl			**
 x11-drivers/xf86-video-amdgpu		**
 x11-drivers/xf86-video-intel		**
-#dev-qt/*:5/5.11				-~amd64
-#x11-base/xorg-drivers			**
 =x11-libs/libdrm-9999			**
-#=x11-base/xorg-server-9999 		**
-#=x11-libs/libva-intel-driver-9999	**
 app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
-#app-emulation/wine-staging		**
-x11-apps/mesa-progs			**
-#kde-misc/kdiff3				**
-=app-office/libreoffice-7.3.3.2		**
-=sys-devel/gcc-12.1.0			**
-=cross-i686-w64-mingw32/gcc-12.1.0	**
-=cross-x86_64-w64-mingw32/gcc-12.1.0	**
