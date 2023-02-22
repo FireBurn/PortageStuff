@@ -1,5 +1,5 @@
 diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
-index b67b173abab..8e6aa5627b1 100644
+index 5b4e0931edc..7a7de610a88 100644
 --- a/src/amd/compiler/aco_instruction_selection.cpp
 +++ b/src/amd/compiler/aco_instruction_selection.cpp
 @@ -3504,8 +3504,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
@@ -16,7 +16,7 @@ index b67b173abab..8e6aa5627b1 100644
     case nir_op_pack_64_2x32_split: {
        Temp src0 = get_alu_src(ctx, instr->src[0]);
 diff --git a/src/amd/llvm/ac_llvm_build.c b/src/amd/llvm/ac_llvm_build.c
-index 9d3fd897642..d42f12c93df 100644
+index 179a1d5136f..d22e0d08c9d 100644
 --- a/src/amd/llvm/ac_llvm_build.c
 +++ b/src/amd/llvm/ac_llvm_build.c
 @@ -85,6 +85,7 @@ void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *
@@ -40,7 +40,7 @@ index 49d89d60f09..033763d50ab 100644
     LLVMTypeRef v4i16;
     LLVMTypeRef v2f16;
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 5f90edd7619..e87ca341d24 100644
+index 63af9f5e77d..1688fffb683 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -528,6 +528,26 @@ static LLVMValueRef exit_waterfall(struct ac_nir_context *ctx, struct waterfall_
@@ -174,10 +174,10 @@ index 5f90edd7619..e87ca341d24 100644
     if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
        LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
 diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
-index 9265ddee4fa..dfb308bc667 100644
+index af2b2af1cd8..d8861ec8bc8 100644
 --- a/src/amd/vulkan/radv_pipeline.c
 +++ b/src/amd/vulkan/radv_pipeline.c
-@@ -3176,6 +3176,12 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
+@@ -3181,6 +3181,12 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
        }
     }
  
@@ -191,10 +191,10 @@ index 9265ddee4fa..dfb308bc667 100644
     NIR_PASS(progress, stage->nir, nir_vk_lower_ycbcr_tex, ycbcr_conversion_lookup, pipeline_layout);
     /* Gather info in the case that nir_vk_lower_ycbcr_tex might have emitted resinfo instructions. */
 diff --git a/src/compiler/nir/meson.build b/src/compiler/nir/meson.build
-index 1c63f140abb..ff207fa6de0 100644
+index 1948ba24448..3dcd1bbbedd 100644
 --- a/src/compiler/nir/meson.build
 +++ b/src/compiler/nir/meson.build
-@@ -199,6 +199,7 @@ files_libnir = files(
+@@ -201,6 +201,7 @@ files_libnir = files(
    'nir_lower_shader_calls.c',
    'nir_lower_single_sampled.c',
    'nir_lower_ssbo.c',
@@ -203,10 +203,10 @@ index 1c63f140abb..ff207fa6de0 100644
    'nir_lower_system_values.c',
    'nir_lower_task_shader.c',
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index d410f118b12..44c4b07feed 100644
+index 872f5156567..b052a1d6907 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
-@@ -5001,7 +5001,7 @@ bool nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all);
+@@ -5054,7 +5054,7 @@ bool nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all);
  void nir_lower_io_arrays_to_elements(nir_shader *producer, nir_shader *consumer);
  void nir_lower_io_arrays_to_elements_no_indirects(nir_shader *shader,
                                                    bool outputs_only);
@@ -215,7 +215,7 @@ index d410f118b12..44c4b07feed 100644
  bool nir_lower_io_to_scalar_early(nir_shader *shader, nir_variable_mode mask);
  bool nir_lower_io_to_vector(nir_shader *shader, nir_variable_mode mask);
  bool nir_vectorize_tess_levels(nir_shader *shader);
-@@ -5854,6 +5854,17 @@ bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sampl
+@@ -5908,6 +5908,17 @@ bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sampl
  
  bool nir_mod_analysis(nir_ssa_scalar val, nir_alu_type val_type, unsigned div, unsigned *mod);
  
@@ -245,20 +245,6 @@ index c75fc75f574..9b1b3d0a750 100644
     case nir_op_unpack_double_2x32_dxil:
        return NULL;
  
-diff --git a/src/compiler/nir/nir_lower_io.c b/src/compiler/nir/nir_lower_io.c
-index 608b268b5d5..373949c0dc4 100644
---- a/src/compiler/nir/nir_lower_io.c
-+++ b/src/compiler/nir/nir_lower_io.c
-@@ -2222,6 +2222,9 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
-          switch (instr->type) {
-          case nir_instr_type_deref: {
-             nir_deref_instr *deref = nir_instr_as_deref(instr);
-+            if (glsl_type_is_sampler(deref->var->type) || glsl_type_is_texture(deref->var->type))
-+               break;
-+
-             if (nir_deref_mode_is_in_set(deref, modes)) {
-                lower_explicit_io_deref(&b, deref, addr_format);
-                progress = true;
 diff --git a/src/compiler/nir/nir_lower_io_to_scalar.c b/src/compiler/nir/nir_lower_io_to_scalar.c
 index 6e14b3ddfc5..6b157926541 100644
 --- a/src/compiler/nir/nir_lower_io_to_scalar.c
@@ -541,7 +527,7 @@ index fd673d135d5..b5000d1bc5e 100644
            * pointer size is:
            *   AddressingModelLogical:    0    (default)
 diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
-index 802936fd6ce..da44b511e03 100644
+index 2c9c75b4c8a..e8778078a4f 100644
 --- a/src/compiler/spirv/spirv_to_nir.c
 +++ b/src/compiler/spirv/spirv_to_nir.c
 @@ -6490,6 +6490,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
@@ -555,10 +541,10 @@ index 802936fd6ce..da44b511e03 100644
         * by value
         */
 diff --git a/src/gallium/drivers/iris/iris_program.c b/src/gallium/drivers/iris/iris_program.c
-index f168d2d3a5b..d2aaf08a37f 100644
+index e8997340fed..7d598ecdc88 100644
 --- a/src/gallium/drivers/iris/iris_program.c
 +++ b/src/gallium/drivers/iris/iris_program.c
-@@ -2563,6 +2563,24 @@ iris_create_compute_state(struct pipe_context *ctx,
+@@ -2561,6 +2561,24 @@ iris_create_compute_state(struct pipe_context *ctx,
     return ish;
  }
  
@@ -583,7 +569,7 @@ index f168d2d3a5b..d2aaf08a37f 100644
  static void
  iris_compile_shader(void *_job, UNUSED void *_gdata, UNUSED int thread_index)
  {
-@@ -3021,4 +3039,6 @@ iris_init_program_functions(struct pipe_context *ctx)
+@@ -3019,4 +3037,6 @@ iris_init_program_functions(struct pipe_context *ctx)
     ctx->bind_gs_state  = iris_bind_gs_state;
     ctx->bind_fs_state  = iris_bind_fs_state;
     ctx->bind_compute_state = iris_bind_cs_state;
@@ -923,8 +909,54 @@ index 2e793a8cf36..023331c229b 100644
              // CL_INVALID_VALUE if param_name is not one of the supported values
              _ => return Err(CL_INVALID_VALUE),
          })
+diff --git a/src/gallium/frontends/rusticl/api/program.rs b/src/gallium/frontends/rusticl/api/program.rs
+index daa2180b6c9..a4bbec2e85b 100644
+--- a/src/gallium/frontends/rusticl/api/program.rs
++++ b/src/gallium/frontends/rusticl/api/program.rs
+@@ -270,8 +270,8 @@ pub fn build_program(
+ 
+     // CL_BUILD_PROGRAM_FAILURE if there is a failure to build the program executable. This error
+     // will be returned if clBuildProgram does not return until the build has completed.
+-    for dev in devs {
+-        res &= p.build(&dev, c_string_to_string(options));
++    for dev in &devs {
++        res &= p.build(dev, c_string_to_string(options));
+     }
+ 
+     call_cb(pfn_notify, program, user_data);
+@@ -284,6 +284,9 @@ pub fn build_program(
+     if res {
+         Ok(())
+     } else {
++        for dev in &devs {
++            eprintln!("{}", p.log(dev));
++        }
+         Err(CL_BUILD_PROGRAM_FAILURE)
+     }
+ }
+@@ -337,8 +340,8 @@ pub fn compile_program(
+ 
+     // CL_COMPILE_PROGRAM_FAILURE if there is a failure to compile the program source. This error
+     // will be returned if clCompileProgram does not return until the compile has completed.
+-    for dev in devs {
+-        res &= p.compile(&dev, c_string_to_string(options), &headers);
++    for dev in &devs {
++        res &= p.compile(dev, c_string_to_string(options), &headers);
+     }
+ 
+     call_cb(pfn_notify, program, user_data);
+@@ -349,6 +352,9 @@ pub fn compile_program(
+     if res {
+         Ok(())
+     } else {
++        for dev in &devs {
++            eprintln!("{}", p.log(dev));
++        }
+         Err(CL_COMPILE_PROGRAM_FAILURE)
+     }
+ }
 diff --git a/src/gallium/frontends/rusticl/core/device.rs b/src/gallium/frontends/rusticl/core/device.rs
-index 99cdce94117..aedf2591dab 100644
+index dfd6fc22a4b..3fa3c7ee1e2 100644
 --- a/src/gallium/frontends/rusticl/core/device.rs
 +++ b/src/gallium/frontends/rusticl/core/device.rs
 @@ -75,6 +75,7 @@ pub trait HelperContextWrapper {
@@ -946,47 +978,8 @@ index 99cdce94117..aedf2591dab 100644
      fn unmap(&self, tx: PipeTransfer) {
          tx.with_ctx(&self.lock);
      }
-@@ -257,9 +262,9 @@ impl Device {
- 
-         // CL_DEVICE_MAX_PARAMETER_SIZE
-         // For this minimum value, only a maximum of 128 arguments can be passed to a kernel
--        if ComputeParam::<u64>::compute_param(
--            screen,
--            pipe_compute_cap::PIPE_COMPUTE_CAP_MAX_INPUT_SIZE,
-+        if screen.shader_param(
-+            pipe_shader_type::PIPE_SHADER_COMPUTE,
-+            pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE,
-         ) < 128
-         {
-             return false;
-@@ -535,8 +540,11 @@ impl Device {
-     }
- 
-     pub fn const_max_size(&self) -> cl_ulong {
--        self.screen
--            .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64
-+        min(
-+            self.max_mem_alloc(),
-+            self.screen
-+                .param(pipe_cap::PIPE_CAP_MAX_SHADER_BUFFER_SIZE_UINT) as u64,
-+        )
-     }
- 
-     pub fn device_type(&self, internal: bool) -> cl_device_type {
-@@ -704,10 +712,7 @@ impl Device {
-     }
- 
-     pub fn param_max_size(&self) -> usize {
--        ComputeParam::<u64>::compute_param(
--            self.screen.as_ref(),
--            pipe_compute_cap::PIPE_COMPUTE_CAP_MAX_INPUT_SIZE,
--        ) as usize
-+        self.shader_param(pipe_shader_cap::PIPE_SHADER_CAP_MAX_CONST_BUFFER0_SIZE) as usize
-     }
- 
-     pub fn printf_buffer_size(&self) -> usize {
 diff --git a/src/gallium/frontends/rusticl/core/kernel.rs b/src/gallium/frontends/rusticl/core/kernel.rs
-index f1dde309fa2..f606763df0a 100644
+index a043407d77a..f606763df0a 100644
 --- a/src/gallium/frontends/rusticl/core/kernel.rs
 +++ b/src/gallium/frontends/rusticl/core/kernel.rs
 @@ -258,6 +258,7 @@ struct KernelDevStateInner {
@@ -1142,15 +1135,6 @@ index f1dde309fa2..f606763df0a 100644
  
          for (arg, val) in self.args.iter().zip(&self.values) {
              if arg.dead {
-@@ -1024,7 +1035,7 @@ impl Kernel {
-                     let buf = Arc::new(
-                         q.device
-                             .screen
--                            .resource_create_buffer(printf_size, ResourceType::Normal)
-+                            .resource_create_buffer(printf_size, ResourceType::Staging)
-                             .unwrap(),
-                     );
- 
 @@ -1207,7 +1218,15 @@ impl Kernel {
      }
  
@@ -1217,19 +1201,6 @@ index 06bbe3da027..a31a9c83ff6 100644
          & has_required_feature!(context, launch_grid)
          & has_required_feature!(context, memory_barrier)
          & has_required_feature!(context, resource_copy_region)
-diff --git a/src/gallium/frontends/rusticl/mesa/pipe/screen.rs b/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
-index fa1ddd42578..053d423af15 100644
---- a/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
-+++ b/src/gallium/frontends/rusticl/mesa/pipe/screen.rs
-@@ -95,7 +95,7 @@ impl PipeScreen {
-                 (*self.screen).context_create.unwrap()(
-                     self.screen,
-                     ptr::null_mut(),
--                    PIPE_CONTEXT_COMPUTE_ONLY,
-+                    0, //PIPE_CONTEXT_COMPUTE_ONLY,
-                 )
-             },
-             self,
 diff --git a/src/gallium/include/pipe/p_context.h b/src/gallium/include/pipe/p_context.h
 index c59dde608ca..dd4529f0251 100644
 --- a/src/gallium/include/pipe/p_context.h
@@ -1297,7 +1268,7 @@ index 279951a782c..4011c9a47e6 100644
      idep_nir,
    ],
 diff --git a/src/panfrost/lib/pan_props.c b/src/panfrost/lib/pan_props.c
-index 7b698dec8e8..e18319c2404 100644
+index 32644df7142..2a2dc106065 100644
 --- a/src/panfrost/lib/pan_props.c
 +++ b/src/panfrost/lib/pan_props.c
 @@ -170,40 +170,13 @@ panfrost_query_core_count(int fd, unsigned *core_id_range)
