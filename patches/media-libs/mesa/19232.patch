@@ -1,46 +1,5 @@
-diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
-index 5b4e0931edc..7a7de610a88 100644
---- a/src/amd/compiler/aco_instruction_selection.cpp
-+++ b/src/amd/compiler/aco_instruction_selection.cpp
-@@ -3504,8 +3504,11 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
-    case nir_op_unpack_64_2x32:
-    case nir_op_unpack_32_2x16:
-    case nir_op_unpack_64_4x16:
-+   case nir_op_unpack_32_4x8:
-       bld.copy(Definition(dst), get_alu_src(ctx, instr->src[0]));
--      emit_split_vector(ctx, dst, instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
-+      emit_split_vector(ctx, dst,
-+                        instr->op == nir_op_unpack_32_4x8 ||
-+                        instr->op == nir_op_unpack_64_4x16 ? 4 : 2);
-       break;
-    case nir_op_pack_64_2x32_split: {
-       Temp src0 = get_alu_src(ctx, instr->src[0]);
-diff --git a/src/amd/llvm/ac_llvm_build.c b/src/amd/llvm/ac_llvm_build.c
-index 179a1d5136f..d22e0d08c9d 100644
---- a/src/amd/llvm/ac_llvm_build.c
-+++ b/src/amd/llvm/ac_llvm_build.c
-@@ -85,6 +85,7 @@ void ac_llvm_context_init(struct ac_llvm_context *ctx, struct ac_llvm_compiler *
-    ctx->f16 = LLVMHalfTypeInContext(ctx->context);
-    ctx->f32 = LLVMFloatTypeInContext(ctx->context);
-    ctx->f64 = LLVMDoubleTypeInContext(ctx->context);
-+   ctx->v4i8 = LLVMVectorType(ctx->i8, 4);
-    ctx->v2i16 = LLVMVectorType(ctx->i16, 2);
-    ctx->v4i16 = LLVMVectorType(ctx->i16, 4);
-    ctx->v2f16 = LLVMVectorType(ctx->f16, 2);
-diff --git a/src/amd/llvm/ac_llvm_build.h b/src/amd/llvm/ac_llvm_build.h
-index 49d89d60f09..033763d50ab 100644
---- a/src/amd/llvm/ac_llvm_build.h
-+++ b/src/amd/llvm/ac_llvm_build.h
-@@ -96,6 +96,7 @@ struct ac_llvm_context {
-    LLVMTypeRef f16;
-    LLVMTypeRef f32;
-    LLVMTypeRef f64;
-+   LLVMTypeRef v4i8;
-    LLVMTypeRef v2i16;
-    LLVMTypeRef v4i16;
-    LLVMTypeRef v2f16;
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 63af9f5e77d..1688fffb683 100644
+index 0389682ff0f..da53171d710 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -528,6 +528,26 @@ static LLVMValueRef exit_waterfall(struct ac_nir_context *ctx, struct waterfall_
@@ -70,15 +29,7 @@ index 63af9f5e77d..1688fffb683 100644
  static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
  {
     LLVMValueRef src[16], result = NULL;
-@@ -543,6 +563,7 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
-    case nir_op_vec5:
-    case nir_op_vec8:
-    case nir_op_vec16:
-+   case nir_op_unpack_32_4x8:
-    case nir_op_unpack_32_2x16:
-    case nir_op_unpack_64_2x32:
-    case nir_op_unpack_64_4x16:
-@@ -670,6 +691,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
+@@ -671,6 +691,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
     case nir_op_fmul:
        src[0] = ac_to_float(&ctx->ac, src[0]);
        src[1] = ac_to_float(&ctx->ac, src[1]);
@@ -102,7 +53,7 @@ index 63af9f5e77d..1688fffb683 100644
        result = LLVMBuildFMul(ctx->ac.builder, src[0], src[1], "");
        break;
     case nir_op_fmulz:
-@@ -709,9 +747,9 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
+@@ -710,9 +747,9 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
        else if (ac_get_elem_bits(&ctx->ac, LLVMTypeOf(src[1])) >
                 ac_get_elem_bits(&ctx->ac, LLVMTypeOf(src[0])))
           src[1] = LLVMBuildTrunc(ctx->ac.builder, src[1], LLVMTypeOf(src[0]), "");
@@ -114,57 +65,7 @@ index 63af9f5e77d..1688fffb683 100644
        switch (instr->op) {
        case nir_op_ishl:
           result = LLVMBuildShl(ctx->ac.builder, src[0], src[1], "");
-@@ -1223,6 +1261,9 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
-       break;
-    }
- 
-+   case nir_op_unpack_32_4x8:
-+      result = LLVMBuildBitCast(ctx->ac.builder, src[0], ctx->ac.v4i8, "");
-+      break;
-    case nir_op_unpack_32_2x16: {
-       result = LLVMBuildBitCast(ctx->ac.builder, src[0],
-             ctx->ac.v2i16, "");
-@@ -2320,34 +2361,17 @@ static LLVMValueRef visit_load_ubo_buffer(struct ac_nir_context *ctx, nir_intrin
-    LLVMValueRef offset = get_src(ctx, instr->src[1]);
-    int num_components = instr->num_components;
- 
-+   assert(instr->dest.ssa.bit_size >= 32 && instr->dest.ssa.bit_size % 32 == 0);
-+
-    if (ctx->abi->load_ubo)
-       rsrc = ctx->abi->load_ubo(ctx->abi, rsrc);
- 
--   /* Convert to a scalar 32-bit load. */
-+   /* Convert to a 32-bit load. */
-    if (instr->dest.ssa.bit_size == 64)
-       num_components *= 2;
--   else if (instr->dest.ssa.bit_size == 16)
--      num_components = DIV_ROUND_UP(num_components, 2);
--   else if (instr->dest.ssa.bit_size == 8)
--      num_components = DIV_ROUND_UP(num_components, 4);
--
--   ret =
--      ac_build_buffer_load(&ctx->ac, rsrc, num_components, NULL, offset, NULL,
--                           ctx->ac.f32, 0, true, true);
--
--   /* Convert to the original type. */
--   if (instr->dest.ssa.bit_size == 64) {
--      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
--                             LLVMVectorType(ctx->ac.i64, num_components / 2), "");
--   } else if (instr->dest.ssa.bit_size == 16) {
--      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
--                             LLVMVectorType(ctx->ac.i16, num_components * 2), "");
--   } else if (instr->dest.ssa.bit_size == 8) {
--      ret = LLVMBuildBitCast(ctx->ac.builder, ret,
--                             LLVMVectorType(ctx->ac.i8, num_components * 4), "");
--   }
- 
--   ret = ac_trim_vector(&ctx->ac, ret, instr->num_components);
-+   ret = ac_build_buffer_load(&ctx->ac, rsrc, num_components, NULL, offset, NULL,
-+                              ctx->ac.f32, 0, true, true);
-    ret = LLVMBuildBitCast(ctx->ac.builder, ret, get_def_type(ctx, &instr->dest.ssa), "");
- 
-    return exit_waterfall(ctx, &wctx, ret);
-@@ -3063,7 +3087,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
+@@ -3044,7 +3081,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
     LLVMValueRef result;
     LLVMValueRef src = get_src(ctx, instr->src[src_idx]);
  
@@ -173,23 +74,6 @@ index 63af9f5e77d..1688fffb683 100644
  
     if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
        LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
-diff --git a/src/amd/vulkan/radv_pipeline.c b/src/amd/vulkan/radv_pipeline.c
-index af2b2af1cd8..d8861ec8bc8 100644
---- a/src/amd/vulkan/radv_pipeline.c
-+++ b/src/amd/vulkan/radv_pipeline.c
-@@ -3181,6 +3181,12 @@ radv_postprocess_nir(struct radv_pipeline *pipeline,
-       }
-    }
- 
-+   NIR_PASS(_, stage->nir, nir_lower_subdword_loads,
-+            (nir_lower_subdword_options) {
-+               .modes_1_comp = nir_var_mem_ubo,
-+               .modes_N_comps = nir_var_mem_ubo | nir_var_mem_ssbo
-+            });
-+
-    progress = false;
-    NIR_PASS(progress, stage->nir, nir_vk_lower_ycbcr_tex, ycbcr_conversion_lookup, pipeline_layout);
-    /* Gather info in the case that nir_vk_lower_ycbcr_tex might have emitted resinfo instructions. */
 diff --git a/src/compiler/nir/meson.build b/src/compiler/nir/meson.build
 index 1948ba24448..3dcd1bbbedd 100644
 --- a/src/compiler/nir/meson.build
@@ -203,19 +87,10 @@ index 1948ba24448..3dcd1bbbedd 100644
    'nir_lower_system_values.c',
    'nir_lower_task_shader.c',
 diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index 872f5156567..b052a1d6907 100644
+index 4d516595d50..beefa975458 100644
 --- a/src/compiler/nir/nir.h
 +++ b/src/compiler/nir/nir.h
-@@ -5054,7 +5054,7 @@ bool nir_lower_phis_to_scalar(nir_shader *shader, bool lower_all);
- void nir_lower_io_arrays_to_elements(nir_shader *producer, nir_shader *consumer);
- void nir_lower_io_arrays_to_elements_no_indirects(nir_shader *shader,
-                                                   bool outputs_only);
--void nir_lower_io_to_scalar(nir_shader *shader, nir_variable_mode mask);
-+bool nir_lower_io_to_scalar(nir_shader *shader, nir_variable_mode mask);
- bool nir_lower_io_to_scalar_early(nir_shader *shader, nir_variable_mode mask);
- bool nir_lower_io_to_vector(nir_shader *shader, nir_variable_mode mask);
- bool nir_vectorize_tess_levels(nir_shader *shader);
-@@ -5908,6 +5908,17 @@ bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sampl
+@@ -5926,6 +5926,17 @@ bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sampl
  
  bool nir_mod_analysis(nir_ssa_scalar val, nir_alu_type val_type, unsigned div, unsigned *mod);
  
@@ -233,43 +108,6 @@ index 872f5156567..b052a1d6907 100644
  #include "nir_inline_helpers.h"
  
  #ifdef __cplusplus
-diff --git a/src/compiler/nir/nir_lower_alu_width.c b/src/compiler/nir/nir_lower_alu_width.c
-index c75fc75f574..9b1b3d0a750 100644
---- a/src/compiler/nir/nir_lower_alu_width.c
-+++ b/src/compiler/nir/nir_lower_alu_width.c
-@@ -328,6 +328,7 @@ lower_alu_instr_width(nir_builder *b, nir_instr *instr, void *_data)
-    case nir_op_unpack_64_2x32:
-    case nir_op_unpack_64_4x16:
-    case nir_op_unpack_32_2x16:
-+   case nir_op_unpack_32_4x8:
-    case nir_op_unpack_double_2x32_dxil:
-       return NULL;
- 
-diff --git a/src/compiler/nir/nir_lower_io_to_scalar.c b/src/compiler/nir/nir_lower_io_to_scalar.c
-index 6e14b3ddfc5..6b157926541 100644
---- a/src/compiler/nir/nir_lower_io_to_scalar.c
-+++ b/src/compiler/nir/nir_lower_io_to_scalar.c
-@@ -268,14 +268,14 @@ nir_lower_io_to_scalar_instr(nir_builder *b, nir_instr *instr, void *data)
-    return false;
- }
- 
--void
-+bool
- nir_lower_io_to_scalar(nir_shader *shader, nir_variable_mode mask)
- {
--   nir_shader_instructions_pass(shader,
--                                nir_lower_io_to_scalar_instr,
--                                nir_metadata_block_index |
--                                nir_metadata_dominance,
--                                &mask);
-+   return nir_shader_instructions_pass(shader,
-+                                       nir_lower_io_to_scalar_instr,
-+                                       nir_metadata_block_index |
-+                                       nir_metadata_dominance,
-+                                       &mask);
- }
- 
- static nir_variable **
 diff --git a/src/compiler/nir/nir_lower_subdword_loads.c b/src/compiler/nir/nir_lower_subdword_loads.c
 new file mode 100644
 index 00000000000..b8d6e024148
@@ -511,10 +349,10 @@ index 00000000000..b8d6e024148
 +                                       nir_metadata_block_index, &options);
 +}
 diff --git a/src/compiler/shader_info.h b/src/compiler/shader_info.h
-index fd673d135d5..b5000d1bc5e 100644
+index 2e3caa01700..75a18f31250 100644
 --- a/src/compiler/shader_info.h
 +++ b/src/compiler/shader_info.h
-@@ -510,6 +510,11 @@ typedef struct shader_info {
+@@ -511,6 +511,11 @@ typedef struct shader_info {
            */
           enum gl_derivative_group derivative_group:2;
  
@@ -527,10 +365,10 @@ index fd673d135d5..b5000d1bc5e 100644
            * pointer size is:
            *   AddressingModelLogical:    0    (default)
 diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
-index 2c9c75b4c8a..e8778078a4f 100644
+index 299f4208c91..295bd996e77 100644
 --- a/src/compiler/spirv/spirv_to_nir.c
 +++ b/src/compiler/spirv/spirv_to_nir.c
-@@ -6490,6 +6490,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
+@@ -6495,6 +6495,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
     for (unsigned i = 0; i < entry_point->num_params; ++i) {
        struct vtn_type *param_type = b->entry_point->func->type->params[i];
  
@@ -713,7 +551,7 @@ index e3935651219..92b2d614a86 100644
     pctx->delete_compute_state = panfrost_delete_shader_state;
  }
 diff --git a/src/gallium/drivers/radeonsi/si_compute.c b/src/gallium/drivers/radeonsi/si_compute.c
-index caf4b05a52c..fcc075ce46e 100644
+index d8491fb4c0d..884236c2714 100644
 --- a/src/gallium/drivers/radeonsi/si_compute.c
 +++ b/src/gallium/drivers/radeonsi/si_compute.c
 @@ -29,6 +29,7 @@
@@ -759,7 +597,7 @@ index caf4b05a52c..fcc075ce46e 100644
  static void si_bind_compute_state(struct pipe_context *ctx, void *state)
  {
     struct si_context *sctx = (struct si_context *)ctx;
-@@ -1132,6 +1161,7 @@ void si_init_compute_functions(struct si_context *sctx)
+@@ -1136,6 +1165,7 @@ void si_init_compute_functions(struct si_context *sctx)
     sctx->b.create_compute_state = si_create_compute_state;
     sctx->b.delete_compute_state = si_delete_compute_state;
     sctx->b.bind_compute_state = si_bind_compute_state;
@@ -768,10 +606,10 @@ index caf4b05a52c..fcc075ce46e 100644
     sctx->b.set_global_binding = si_set_global_binding;
     sctx->b.launch_grid = si_launch_grid;
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index caf07a7479f..3d78cc3ed69 100644
+index 8c7c8a7db84..29b013314b1 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
 +++ b/src/gallium/drivers/radeonsi/si_get.c
-@@ -1213,7 +1213,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
+@@ -1216,7 +1216,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
        .lower_fisnormal = true,
        .lower_rotate = true,
        .lower_to_scalar = true,
@@ -781,10 +619,10 @@ index caf07a7479f..3d78cc3ed69 100644
        .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
        .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
 diff --git a/src/gallium/drivers/radeonsi/si_shader.c b/src/gallium/drivers/radeonsi/si_shader.c
-index ea388731699..a98dd462b50 100644
+index 095ed12ded5..0cb7412738b 100644
 --- a/src/gallium/drivers/radeonsi/si_shader.c
 +++ b/src/gallium/drivers/radeonsi/si_shader.c
-@@ -2398,7 +2398,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
+@@ -2400,7 +2400,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
     }
  
     struct si_shader_context ctx;
@@ -794,10 +632,10 @@ index ea388731699..a98dd462b50 100644
     ctx.shader = &shader;
     ctx.stage = stage;
 diff --git a/src/gallium/drivers/radeonsi/si_shader_internal.h b/src/gallium/drivers/radeonsi/si_shader_internal.h
-index 77dca9e5a20..c324b045624 100644
+index 961a20ee73c..867e49ae249 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_internal.h
 +++ b/src/gallium/drivers/radeonsi/si_shader_internal.h
-@@ -194,7 +194,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
+@@ -175,7 +175,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
                       gl_shader_stage stage, const char *name, bool less_optimized);
  void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
                            struct ac_llvm_compiler *compiler, unsigned wave_size,
@@ -808,7 +646,7 @@ index 77dca9e5a20..c324b045624 100644
                           unsigned num_return_elems, unsigned max_workgroup_size);
  void si_llvm_create_main_func(struct si_shader_context *ctx);
 diff --git a/src/gallium/drivers/radeonsi/si_shader_llvm.c b/src/gallium/drivers/radeonsi/si_shader_llvm.c
-index 3c199e58b7f..1f3d74b3f8d 100644
+index 425cc281b21..e3e21b48d47 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_llvm.c
 +++ b/src/gallium/drivers/radeonsi/si_shader_llvm.c
 @@ -128,14 +128,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
@@ -830,7 +668,7 @@ index 3c199e58b7f..1f3d74b3f8d 100644
                          wave_size, 64, exports_color_null, exports_mrtz);
  }
  
-@@ -1111,7 +1113,8 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
+@@ -1091,7 +1093,8 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
     if (!exports_mrtz && !exports_color_null)
        exports_color_null = si_shader_uses_discard(shader) || sscreen->info.gfx_level < GFX10;
  
@@ -841,10 +679,10 @@ index 3c199e58b7f..1f3d74b3f8d 100644
  
     if (!si_llvm_translate_nir(&ctx, shader, nir, false)) {
 diff --git a/src/gallium/drivers/radeonsi/si_shader_nir.c b/src/gallium/drivers/radeonsi/si_shader_nir.c
-index f2d588a2fe0..61b081106b9 100644
+index db2ac4c31dc..02556a8e8b9 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_nir.c
 +++ b/src/gallium/drivers/radeonsi/si_shader_nir.c
-@@ -62,6 +62,26 @@ static uint8_t si_vectorize_callback(const nir_instr *instr, const void *data)
+@@ -63,6 +63,26 @@ static uint8_t si_vectorize_callback(const nir_instr *instr, const void *data)
     return 1;
  }
  
@@ -871,7 +709,7 @@ index f2d588a2fe0..61b081106b9 100644
  void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
  {
     bool progress;
-@@ -104,6 +124,7 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
+@@ -105,6 +125,7 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
        NIR_PASS(progress, nir, nir_opt_peephole_select, 8, true, true);
  
        /* Needed for algebraic lowering */
@@ -879,18 +717,6 @@ index f2d588a2fe0..61b081106b9 100644
        NIR_PASS(progress, nir, nir_opt_algebraic);
        NIR_PASS(progress, nir, nir_opt_constant_folding);
  
-@@ -357,6 +378,11 @@ char *si_finalize_nir(struct pipe_screen *screen, void *nirptr)
- 
-    nir_lower_io_passes(nir);
- 
-+   NIR_PASS_V(nir, nir_lower_subdword_loads,
-+              (nir_lower_subdword_options) {
-+                 .modes_1_comp = nir_var_mem_ubo,
-+                 .modes_N_comps = nir_var_mem_ubo | nir_var_mem_ssbo
-+              });
-    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_shared, nir_address_format_32bit_offset);
- 
-    /* Remove dead derefs, so that we can remove uniforms. */
 diff --git a/src/gallium/frontends/rusticl/api/kernel.rs b/src/gallium/frontends/rusticl/api/kernel.rs
 index 2e793a8cf36..023331c229b 100644
 --- a/src/gallium/frontends/rusticl/api/kernel.rs
