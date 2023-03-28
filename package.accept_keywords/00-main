@@ -6,3 +6,5 @@ x11-drivers/xf86-video-intel		**
 =x11-libs/libdrm-9999			**
 app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
+=app-office/libreoffice-7.5.2.2		**
+=app-office/libreoffice-l10n-7.5*	**
