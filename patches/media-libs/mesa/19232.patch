@@ -1,5 +1,5 @@
 diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 0389682ff0f..da53171d710 100644
+index 129ec5f9eab..5437ad0ce66 100644
 --- a/src/amd/llvm/ac_nir_to_llvm.c
 +++ b/src/amd/llvm/ac_nir_to_llvm.c
 @@ -528,6 +528,26 @@ static LLVMValueRef exit_waterfall(struct ac_nir_context *ctx, struct waterfall_
@@ -65,7 +65,7 @@ index 0389682ff0f..da53171d710 100644
        switch (instr->op) {
        case nir_op_ishl:
           result = LLVMBuildShl(ctx->ac.builder, src[0], src[1], "");
-@@ -3044,7 +3081,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
+@@ -3062,7 +3099,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
     LLVMValueRef result;
     LLVMValueRef src = get_src(ctx, instr->src[src_idx]);
  
@@ -74,484 +74,8 @@ index 0389682ff0f..da53171d710 100644
  
     if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
        LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
-diff --git a/src/compiler/nir/meson.build b/src/compiler/nir/meson.build
-index 1948ba24448..3dcd1bbbedd 100644
---- a/src/compiler/nir/meson.build
-+++ b/src/compiler/nir/meson.build
-@@ -201,6 +201,7 @@ files_libnir = files(
-   'nir_lower_shader_calls.c',
-   'nir_lower_single_sampled.c',
-   'nir_lower_ssbo.c',
-+  'nir_lower_subdword_loads.c',
-   'nir_lower_subgroups.c',
-   'nir_lower_system_values.c',
-   'nir_lower_task_shader.c',
-diff --git a/src/compiler/nir/nir.h b/src/compiler/nir/nir.h
-index 4d516595d50..beefa975458 100644
---- a/src/compiler/nir/nir.h
-+++ b/src/compiler/nir/nir.h
-@@ -5926,6 +5926,17 @@ bool nir_lower_poly_line_smooth(nir_shader *shader, unsigned num_smooth_aa_sampl
- 
- bool nir_mod_analysis(nir_ssa_scalar val, nir_alu_type val_type, unsigned div, unsigned *mod);
- 
-+typedef struct {
-+   /* Which load instructions to lower depending on whether the number of
-+    * components being loaded is 1 or more than 1.
-+    */
-+   nir_variable_mode modes_1_comp;  /* lower 1-component loads for these */
-+   nir_variable_mode modes_N_comps; /* lower multi-component loads for these */
-+} nir_lower_subdword_options;
-+
-+bool nir_lower_subdword_loads(nir_shader *nir,
-+                              nir_lower_subdword_options options);
-+
- #include "nir_inline_helpers.h"
- 
- #ifdef __cplusplus
-diff --git a/src/compiler/nir/nir_lower_subdword_loads.c b/src/compiler/nir/nir_lower_subdword_loads.c
-new file mode 100644
-index 00000000000..b8d6e024148
---- /dev/null
-+++ b/src/compiler/nir/nir_lower_subdword_loads.c
-@@ -0,0 +1,234 @@
-+/*
-+ * Copyright © 2022 Advanced Micro Devices, Inc.
-+ *
-+ * Permission is hereby granted, free of charge, to any person obtaining a
-+ * copy of this software and associated documentation files (the "Software"),
-+ * to deal in the Software without restriction, including without limitation
-+ * the rights to use, copy, modify, merge, publish, distribute, sublicense,
-+ * and/or sell copies of the Software, and to permit persons to whom the
-+ * Software is furnished to do so, subject to the following conditions:
-+ *
-+ * The above copyright notice and this permission notice (including the next
-+ * paragraph) shall be included in all copies or substantial portions of the
-+ * Software.
-+ *
-+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-+ * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
-+ * IN THE SOFTWARE.
-+ */
-+
-+/* Convert 8-bit and 16-bit UBO loads to 32 bits. This is for drivers that
-+ * don't support non-32-bit UBO loads.
-+ *
-+ * nir_opt_load_store_vectorize should be run before this because it analyzes
-+ * offset calculations and recomputes align_mul and align_offset.
-+ *
-+ * nir_opt_algebraic and (optionally) ALU scalarization are recommended to be
-+ * run after this.
-+ *
-+ * Running nir_opt_load_store_vectorize after this pass may lead to further
-+ * vectorization, e.g. adjacent 2x16-bit and 1x32-bit loads will become
-+ * 2x32-bit loads.
-+ */
-+
-+#include "nir_builder.h"
-+#include "util/u_math.h"
-+
-+static bool
-+lower_subdword_loads(nir_builder *b, nir_instr *instr, void *data)
-+{
-+   nir_lower_subdword_options *options = data;
-+
-+   if (instr->type != nir_instr_type_intrinsic)
-+      return false;
-+
-+   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-+   unsigned num_components = intr->num_components;
-+   nir_variable_mode modes =
-+      num_components == 1 ? options->modes_1_comp
-+                          : options->modes_N_comps;
-+
-+   switch (intr->intrinsic) {
-+   case nir_intrinsic_load_ubo:
-+      if (!(modes & nir_var_mem_ubo))
-+         return false;
-+      break;
-+   case nir_intrinsic_load_ssbo:
-+      if (!(modes & nir_var_mem_ssbo))
-+         return false;
-+      break;
-+   case nir_intrinsic_load_global:
-+      if (!(modes & nir_var_mem_global))
-+         return false;
-+      break;
-+   default:
-+      return false;
-+   }
-+
-+   unsigned bit_size = intr->dest.ssa.bit_size;
-+   if (bit_size != 8 && bit_size != 16)
-+      return false;
-+
-+   unsigned component_size = bit_size / 8;
-+   unsigned comp_per_dword = 4 / component_size;
-+
-+   /* Get the offset alignment relative to the closest dword. */
-+   unsigned align_mul = MIN2(nir_intrinsic_align_mul(intr), 4);
-+   unsigned align_offset = nir_intrinsic_align_offset(intr) % align_mul;
-+
-+   nir_src *src_offset = nir_get_io_offset_src(intr);
-+   nir_ssa_def *offset = src_offset->ssa;
-+   nir_ssa_def *result = &intr->dest.ssa;
-+
-+   /* Change the load to 32 bits per channel, update the channel count,
-+    * and increase the declared load alignment.
-+    */
-+   intr->dest.ssa.bit_size = 32;
-+
-+   if (align_mul == 4 && align_offset == 0) {
-+      intr->num_components = intr->dest.ssa.num_components =
-+         DIV_ROUND_UP(num_components, comp_per_dword);
-+
-+      /* Aligned loads. Just bitcast the vector and trim it if there are
-+       * trailing unused elements.
-+       */
-+      b->cursor = nir_after_instr(instr);
-+      result = nir_extract_bits(b, &result, 1, 0, num_components, bit_size);
-+
-+      nir_ssa_def_rewrite_uses_after(&intr->dest.ssa, result,
-+                                     result->parent_instr);
-+      return true;
-+   }
-+
-+   /* Multi-component unaligned loads may straddle the dword boundary.
-+    * E.g. for 2 components, we need to load an extra dword, and so on.
-+    */
-+   intr->num_components = intr->dest.ssa.num_components =
-+      DIV_ROUND_UP(num_components + comp_per_dword - 1, comp_per_dword);
-+
-+   nir_intrinsic_set_align(intr,
-+                           MAX2(nir_intrinsic_align_mul(intr), 4),
-+                           nir_intrinsic_align_offset(intr) & ~0x3);
-+
-+   if (align_mul == 4) {
-+      /* Unaligned loads with an aligned non-constant base offset (which is
-+       * X * align_mul) and a constant added offset (align_offset).
-+       *
-+       * The only difference compared to aligned loads is that we may
-+       * overfetch by up to 1 dword and then trim the vector from both sides
-+       * (if needed) instead of just the end.
-+       */
-+      assert(align_offset <= 3);
-+      assert(align_offset % component_size == 0);
-+      unsigned comp_offset = align_offset / component_size;
-+
-+      /* There is a good probability that the offset is "iadd" adding
-+       * align_offset. Subtracting align_offset should eliminate it.
-+       */
-+      b->cursor = nir_before_instr(instr);
-+      nir_instr_rewrite_src_ssa(instr, src_offset,
-+                                nir_iadd_imm(b, offset, -align_offset));
-+
-+      b->cursor = nir_after_instr(instr);
-+      result = nir_extract_bits(b, &result, 1, comp_offset * bit_size,
-+                                num_components, bit_size);
-+
-+      nir_ssa_def_rewrite_uses_after(&intr->dest.ssa, result,
-+                                     result->parent_instr);
-+      return true;
-+   }
-+
-+   /* Fully unaligned loads. We overfetch by up to 1 dword and then bitshift
-+    * the whole vector.
-+    */
-+   assert(align_mul <= 2 && align_offset <= 3);
-+
-+   /* Round down by masking out the bits. */
-+   b->cursor = nir_before_instr(instr);
-+   nir_instr_rewrite_src_ssa(instr, src_offset,
-+                             nir_iand_imm(b, offset, ~0x3));
-+
-+   /* We need to shift bits in the loaded vector by this number. */
-+   b->cursor = nir_after_instr(instr);
-+   nir_ssa_def *shift = nir_ishl_imm(b, nir_iand_imm(b, offset, 0x3), 3);
-+   nir_ssa_def *rev_shift32 = nir_isub_imm(b, 32, shift);
-+
-+   nir_ssa_def **elems =
-+      alloca(sizeof(*elems) * intr->num_components);
-+
-+   /* "shift" can be only be one of: 0, 8, 16, 24
-+    *
-+    * When we shift by (32 - shift) and shift is 0, resulting in a shift by 32,
-+    * which is the same as a shift by 0, we need to convert the shifted number
-+    * to u64 to get the shift by 32 that we want.
-+    *
-+    * The following algorithms are used to shift the vector.
-+    *
-+    * 64-bit variant (shr64 + shl64 + or32 per 2 elements):
-+    *    for (i = 0; i < num_components / 2 - 1; i++) {
-+    *       qword1 = pack(src[i * 2 + 0], src[i * 2 + 1]) >> shift;
-+    *       dword2 = u2u32(u2u64(src[i * 2 + 2]) << (32 - shift));
-+    *       dst[i * 2 + 0] = unpack_64_2x32_x(qword1);
-+    *       dst[i * 2 + 1] = unpack_64_2x32_y(qword1) | dword2;
-+    *    }
-+    *    i *= 2;
-+    *
-+    * 32-bit variant (shr32 + shl64 + or32 per element):
-+    *    for (; i < num_components - 1; i++)
-+    *       dst[i] = (src[i] >> shift) |
-+    *                u2u32(u2u64(src[i + 1]) << (32 - shift));
-+    */
-+   unsigned i = 0;
-+
-+   if (intr->num_components >= 2) {
-+      /* Use the 64-bit algorithm as described above. */
-+      for (i = 0; i < intr->num_components / 2 - 1; i++) {
-+         nir_ssa_def *qword1, *dword2;
-+
-+         qword1 = nir_pack_64_2x32_split(b,
-+                                         nir_channel(b, result, i * 2 + 0),
-+                                         nir_channel(b, result, i * 2 + 1));
-+         qword1 = nir_ushr(b, qword1, shift);
-+         dword2 = nir_ishl(b, nir_u2u64(b, nir_channel(b, result, i * 2 + 2)),
-+                           rev_shift32);
-+         dword2 = nir_u2u32(b, dword2);
-+
-+         elems[i * 2 + 0] = nir_unpack_64_2x32_split_x(b, qword1);
-+         elems[i * 2 + 1] =
-+            nir_ior(b, nir_unpack_64_2x32_split_y(b, qword1), dword2);
-+      }
-+      i *= 2;
-+
-+      /* Use the 32-bit algorithm for the remainder of the vector. */
-+      for (; i < intr->num_components - 1; i++) {
-+         elems[i] =
-+            nir_ior(b,
-+                    nir_ushr(b, nir_channel(b, result, i), shift),
-+                    nir_u2u32(b,
-+                        nir_ishl(b, nir_u2u64(b, nir_channel(b, result, i + 1)),
-+                                 rev_shift32)));
-+      }
-+   }
-+
-+   /* Shift the last element. */
-+   elems[i] = nir_ushr(b, nir_channel(b, result, i), shift);
-+
-+   result = nir_vec(b, elems, intr->num_components);
-+   result = nir_extract_bits(b, &result, 1, 0, num_components, bit_size);
-+
-+   nir_ssa_def_rewrite_uses_after(&intr->dest.ssa, result,
-+                                  result->parent_instr);
-+   return true;
-+}
-+
-+bool
-+nir_lower_subdword_loads(nir_shader *nir, nir_lower_subdword_options options)
-+{
-+   return nir_shader_instructions_pass(nir, lower_subdword_loads,
-+                                       nir_metadata_dominance |
-+                                       nir_metadata_block_index, &options);
-+}
-diff --git a/src/compiler/shader_info.h b/src/compiler/shader_info.h
-index 2e3caa01700..75a18f31250 100644
---- a/src/compiler/shader_info.h
-+++ b/src/compiler/shader_info.h
-@@ -511,6 +511,11 @@ typedef struct shader_info {
-           */
-          enum gl_derivative_group derivative_group:2;
- 
-+         /*
-+          * If the shader might run with shared mem on top of `shared_size`.
-+          */
-+         bool has_variable_shared_mem:1;
-+
-          /**
-           * pointer size is:
-           *   AddressingModelLogical:    0    (default)
-diff --git a/src/compiler/spirv/spirv_to_nir.c b/src/compiler/spirv/spirv_to_nir.c
-index 299f4208c91..295bd996e77 100644
---- a/src/compiler/spirv/spirv_to_nir.c
-+++ b/src/compiler/spirv/spirv_to_nir.c
-@@ -6495,6 +6495,9 @@ vtn_emit_kernel_entry_point_wrapper(struct vtn_builder *b,
-    for (unsigned i = 0; i < entry_point->num_params; ++i) {
-       struct vtn_type *param_type = b->entry_point->func->type->params[i];
- 
-+      b->shader->info.cs.has_variable_shared_mem |=
-+         param_type->storage_class == SpvStorageClassWorkgroup;
-+
-       /* consider all pointers to function memory to be parameters passed
-        * by value
-        */
-diff --git a/src/gallium/drivers/iris/iris_program.c b/src/gallium/drivers/iris/iris_program.c
-index e8997340fed..7d598ecdc88 100644
---- a/src/gallium/drivers/iris/iris_program.c
-+++ b/src/gallium/drivers/iris/iris_program.c
-@@ -2561,6 +2561,24 @@ iris_create_compute_state(struct pipe_context *ctx,
-    return ish;
- }
- 
-+static void
-+iris_get_compute_state_info(struct pipe_context *ctx, void *state,
-+                            struct pipe_compute_state_object_info *info)
-+{
-+   struct iris_screen *screen = (void *) ctx->screen;
-+   struct iris_uncompiled_shader *ish = state;
-+
-+   info->max_threads = MIN2(1024, 32 * screen->devinfo->max_cs_workgroup_threads);
-+   info->private_memory = 0;
-+   info->preferred_simd_size = 32;
-+
-+   list_for_each_entry_safe(struct iris_compiled_shader, shader,
-+                            &ish->variants, link) {
-+      info->private_memory = MAX2(info->private_memory,
-+                                  shader->prog_data->total_scratch);
-+   }
-+}
-+
- static void
- iris_compile_shader(void *_job, UNUSED void *_gdata, UNUSED int thread_index)
- {
-@@ -3019,4 +3037,6 @@ iris_init_program_functions(struct pipe_context *ctx)
-    ctx->bind_gs_state  = iris_bind_gs_state;
-    ctx->bind_fs_state  = iris_bind_fs_state;
-    ctx->bind_compute_state = iris_bind_cs_state;
-+
-+   ctx->get_compute_state_info = iris_get_compute_state_info;
- }
-diff --git a/src/gallium/drivers/llvmpipe/lp_state_cs.c b/src/gallium/drivers/llvmpipe/lp_state_cs.c
-index 527396d07d2..c14dd50aa53 100644
---- a/src/gallium/drivers/llvmpipe/lp_state_cs.c
-+++ b/src/gallium/drivers/llvmpipe/lp_state_cs.c
-@@ -548,6 +548,19 @@ llvmpipe_bind_compute_state(struct pipe_context *pipe,
-    llvmpipe->cs_dirty |= LP_CSNEW_CS;
- }
- 
-+static void
-+llvmpipe_get_compute_state_info(struct pipe_context *pipe, void *cs,
-+                                struct pipe_compute_state_object_info *info)
-+{
-+   struct lp_compute_shader* shader = cs;
-+   struct nir_shader* nir = shader->base.ir.nir;
-+
-+   info->max_threads = 1024;
-+   info->preferred_simd_size = 32;
-+   // TODO: this is a bad estimate, but not much we can do without actually compiling the shaders
-+   info->private_memory = nir->scratch_size;
-+}
-+
- 
- /**
-  * Remove shader variant from two lists: the shader's variant list
-@@ -1494,6 +1507,7 @@ llvmpipe_init_compute_funcs(struct llvmpipe_context *llvmpipe)
- {
-    llvmpipe->pipe.create_compute_state = llvmpipe_create_compute_state;
-    llvmpipe->pipe.bind_compute_state = llvmpipe_bind_compute_state;
-+   llvmpipe->pipe.get_compute_state_info = llvmpipe_get_compute_state_info;
-    llvmpipe->pipe.delete_compute_state = llvmpipe_delete_compute_state;
-    llvmpipe->pipe.set_compute_resources = llvmpipe_set_compute_resources;
-    llvmpipe->pipe.set_global_binding = llvmpipe_set_global_binding;
-diff --git a/src/gallium/drivers/nouveau/nv50/nv50_state.c b/src/gallium/drivers/nouveau/nv50/nv50_state.c
-index 3161549c815..6f63e184c2e 100644
---- a/src/gallium/drivers/nouveau/nv50/nv50_state.c
-+++ b/src/gallium/drivers/nouveau/nv50/nv50_state.c
-@@ -876,6 +876,22 @@ nv50_cp_state_bind(struct pipe_context *pipe, void *hwcso)
-    nv50->dirty_cp |= NV50_NEW_CP_PROGRAM;
- }
- 
-+static void
-+nv50_get_compute_state_info(struct pipe_context *pipe, void *hwcso,
-+                            struct pipe_compute_state_object_info *info)
-+{
-+   // TODO: better per chipset specific values for smregs and max_threads
-+   struct nv50_context *nv50 = nv50_context(pipe);
-+   struct nv50_program *prog = (struct nv50_program *)hwcso;
-+   uint16_t obj_class = nv50->screen->compute->oclass;
-+   uint32_t smregs = (obj_class >= NVA3_COMPUTE_CLASS) ? 16384 : 8192;
-+   uint32_t threads = smregs / prog->max_gpr;
-+
-+   info->max_threads = MIN2(threads & ~0x1f, 512);
-+   info->private_memory = prog->tls_space;
-+   info->preferred_simd_size = 32;
-+}
-+
- static void
- nv50_set_constant_buffer(struct pipe_context *pipe,
-                          enum pipe_shader_type shader, uint index,
-@@ -1496,6 +1512,8 @@ nv50_init_state_functions(struct nv50_context *nv50)
-    pipe->delete_gs_state = nv50_sp_state_delete;
-    pipe->delete_compute_state = nv50_sp_state_delete;
- 
-+   pipe->get_compute_state_info = nv50_get_compute_state_info;
-+
-    pipe->set_blend_color = nv50_set_blend_color;
-    pipe->set_stencil_ref = nv50_set_stencil_ref;
-    pipe->set_clip_state = nv50_set_clip_state;
-diff --git a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c b/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
-index 9eb442c3c10..a52041a69a1 100644
---- a/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
-+++ b/src/gallium/drivers/nouveau/nvc0/nvc0_state.c
-@@ -783,6 +783,22 @@ nvc0_cp_state_bind(struct pipe_context *pipe, void *hwcso)
-     nvc0->dirty_cp |= NVC0_NEW_CP_PROGRAM;
- }
- 
-+static void
-+nvc0_get_compute_state_info(struct pipe_context *pipe, void *hwcso,
-+                            struct pipe_compute_state_object_info *info)
-+{
-+   // TODO: better per chipset specific values for smregs and max_threads
-+   struct nvc0_context *nvc0 = nvc0_context(pipe);
-+   struct nvc0_program *prog = (struct nvc0_program *)hwcso;
-+   uint16_t obj_class = nvc0->screen->compute->oclass;
-+   uint32_t smregs = (obj_class >= NVE4_COMPUTE_CLASS) ? 65536 : 32768;
-+   uint32_t threads = smregs / prog->num_gprs;
-+
-+   info->max_threads = MIN2(threads & ~0x1f, 1024);
-+   info->private_memory = prog->hdr[1] & 0xfffff0;
-+   info->preferred_simd_size = 32;
-+}
-+
- static void
- nvc0_set_constant_buffer(struct pipe_context *pipe,
-                          enum pipe_shader_type shader, uint index,
-@@ -1494,6 +1510,7 @@ nvc0_init_state_functions(struct nvc0_context *nvc0)
- 
-    pipe->create_compute_state = nvc0_cp_state_create;
-    pipe->bind_compute_state = nvc0_cp_state_bind;
-+   pipe->get_compute_state_info = nvc0_get_compute_state_info;
-    pipe->delete_compute_state = nvc0_sp_state_delete;
- 
-    pipe->set_blend_color = nvc0_set_blend_color;
-diff --git a/src/gallium/drivers/panfrost/pan_shader.c b/src/gallium/drivers/panfrost/pan_shader.c
-index e3935651219..92b2d614a86 100644
---- a/src/gallium/drivers/panfrost/pan_shader.c
-+++ b/src/gallium/drivers/panfrost/pan_shader.c
-@@ -451,6 +451,21 @@ panfrost_bind_compute_state(struct pipe_context *pipe, void *cso)
-       uncompiled ? util_dynarray_begin(&uncompiled->variants) : NULL;
- }
- 
-+static void
-+panfrost_get_compute_state_info(struct pipe_context *pipe, void *cso,
-+                                struct pipe_compute_state_object_info *info)
-+{
-+   struct panfrost_device *dev = pan_device(pipe->screen);
-+   struct panfrost_uncompiled_shader *uncompiled = cso;
-+   struct panfrost_compiled_shader *cs =
-+      util_dynarray_begin(&uncompiled->variants);
-+
-+   info->max_threads =
-+      panfrost_max_thread_count(dev->arch, cs->info.work_reg_count);
-+   info->private_memory = cs->info.tls_size;
-+   info->preferred_simd_size = pan_subgroup_size(dev->arch);
-+}
-+
- void
- panfrost_shader_context_init(struct pipe_context *pctx)
- {
-@@ -464,5 +479,6 @@ panfrost_shader_context_init(struct pipe_context *pctx)
- 
-    pctx->create_compute_state = panfrost_create_compute_state;
-    pctx->bind_compute_state = panfrost_bind_compute_state;
-+   pctx->get_compute_state_info = panfrost_get_compute_state_info;
-    pctx->delete_compute_state = panfrost_delete_shader_state;
- }
 diff --git a/src/gallium/drivers/radeonsi/si_compute.c b/src/gallium/drivers/radeonsi/si_compute.c
-index d8491fb4c0d..884236c2714 100644
+index 4cf6ced1966..2ab3653054d 100644
 --- a/src/gallium/drivers/radeonsi/si_compute.c
 +++ b/src/gallium/drivers/radeonsi/si_compute.c
 @@ -29,6 +29,7 @@
@@ -562,7 +86,7 @@ index d8491fb4c0d..884236c2714 100644
  #include "util/u_async_debug.h"
  #include "util/u_memory.h"
  #include "util/u_upload_mgr.h"
-@@ -293,6 +294,34 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
+@@ -296,6 +297,53 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
     return program;
  }
  
@@ -577,27 +101,46 @@ index d8491fb4c0d..884236c2714 100644
 +      util_queue_fence_wait(&sel->ready);
 +
 +   uint8_t wave_size = program->shader.wave_size;
-+   uint8_t max_waves = program->shader.info.max_simd_waves;
-+   uint32_t max_threads = si_get_max_workgroup_size(&program->shader);
++   bool uses_nir = program->ir_type == PIPE_SHADER_IR_NIR;
 +
-+   if (wave_size == 32)
-+      max_waves *= 2;
-+   max_waves = MIN2(max_waves, 16);
++   /* HW limits */
++   unsigned simd_per_eu = sel->screen->info.num_simd_per_compute_unit;
++   unsigned lds_per_eu = sel->screen->info.lds_size_per_workgroup;
++   unsigned shared_size = sel->info.base.shared_size;
 +
-+   info->private_memory = DIV_ROUND_UP(program->shader.config.scratch_bytes_per_wave, wave_size);
-+   info->preferred_simd_size = wave_size;
++   if (sel->screen->info.gfx_level >= GFX10 && uses_nir) {
++      /* WGP_MODE */
++      simd_per_eu *= 2;
++      lds_per_eu *= 2;
++   }
 +
-+   if (sel->info.base.cs.has_variable_shared_mem)
-+      /* assume the worst case */
-+      info->max_threads = wave_size;
-+   else
-+      info->max_threads = MIN2(max_threads, wave_size * max_waves);
++   /* Compute max_threads. */
++   unsigned threads_per_wg = si_get_max_workgroup_size(&program->shader);
++   unsigned waves_per_wg = DIV_ROUND_UP(threads_per_wg, wave_size);
++
++   /* Max workgroups limited by VGPRs. */
++   unsigned max_waves_per_eu_for_vgprs = simd_per_eu * program->shader.info.max_simd_waves;
++   unsigned max_wg = max_waves_per_eu_for_vgprs / waves_per_wg;
++
++   /* Max workgroups limited by LDS (shared memory). */
++   if (shared_size) {
++      unsigned max_wg_per_eu_for_lds = lds_per_eu / align(shared_size, sel->screen->info.lds_alloc_granularity);
++      max_wg = MIN2(max_wg, max_wg_per_eu_for_lds);
++   }
++
++   info->private_memory = 0;
++   info->preferred_simd_size = 0;
++
++   info->max_threads = threads_per_wg;
++   /* if we know the shared_size used, we can launch a few more threads */
++   if (!sel->info.base.cs.has_variable_shared_mem)
++      info->max_threads *= max_wg;
 +}
 +
  static void si_bind_compute_state(struct pipe_context *ctx, void *state)
  {
     struct si_context *sctx = (struct si_context *)ctx;
-@@ -1136,6 +1165,7 @@ void si_init_compute_functions(struct si_context *sctx)
+@@ -1036,6 +1084,7 @@ void si_init_compute_functions(struct si_context *sctx)
     sctx->b.create_compute_state = si_create_compute_state;
     sctx->b.delete_compute_state = si_delete_compute_state;
     sctx->b.bind_compute_state = si_bind_compute_state;
@@ -606,10 +149,10 @@ index d8491fb4c0d..884236c2714 100644
     sctx->b.set_global_binding = si_set_global_binding;
     sctx->b.launch_grid = si_launch_grid;
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index 8c7c8a7db84..29b013314b1 100644
+index 26f36bbdfc1..655be7ddefa 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
 +++ b/src/gallium/drivers/radeonsi/si_get.c
-@@ -1216,7 +1216,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
+@@ -1226,7 +1226,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
        .lower_fisnormal = true,
        .lower_rotate = true,
        .lower_to_scalar = true,
@@ -619,10 +162,10 @@ index 8c7c8a7db84..29b013314b1 100644
        .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
        .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
 diff --git a/src/gallium/drivers/radeonsi/si_shader.c b/src/gallium/drivers/radeonsi/si_shader.c
-index 095ed12ded5..0cb7412738b 100644
+index 7b5779ea306..ecb2ead42f7 100644
 --- a/src/gallium/drivers/radeonsi/si_shader.c
 +++ b/src/gallium/drivers/radeonsi/si_shader.c
-@@ -2400,7 +2400,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
+@@ -2452,7 +2452,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
     }
  
     struct si_shader_context ctx;
@@ -632,10 +175,10 @@ index 095ed12ded5..0cb7412738b 100644
     ctx.shader = &shader;
     ctx.stage = stage;
 diff --git a/src/gallium/drivers/radeonsi/si_shader_internal.h b/src/gallium/drivers/radeonsi/si_shader_internal.h
-index 961a20ee73c..867e49ae249 100644
+index 7a7a1cb8d30..d6a9adf2ec3 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_internal.h
 +++ b/src/gallium/drivers/radeonsi/si_shader_internal.h
-@@ -175,7 +175,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
+@@ -173,7 +173,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
                       gl_shader_stage stage, const char *name, bool less_optimized);
  void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
                            struct ac_llvm_compiler *compiler, unsigned wave_size,
@@ -646,10 +189,10 @@ index 961a20ee73c..867e49ae249 100644
                           unsigned num_return_elems, unsigned max_workgroup_size);
  void si_llvm_create_main_func(struct si_shader_context *ctx);
 diff --git a/src/gallium/drivers/radeonsi/si_shader_llvm.c b/src/gallium/drivers/radeonsi/si_shader_llvm.c
-index 425cc281b21..e3e21b48d47 100644
+index 304d626ca0c..3d75fe960c8 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_llvm.c
 +++ b/src/gallium/drivers/radeonsi/si_shader_llvm.c
-@@ -128,14 +128,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
+@@ -126,14 +126,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
  
  void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
                            struct ac_llvm_compiler *compiler, unsigned wave_size,
@@ -717,24 +260,6 @@ index db2ac4c31dc..02556a8e8b9 100644
        NIR_PASS(progress, nir, nir_opt_algebraic);
        NIR_PASS(progress, nir, nir_opt_constant_folding);
  
-diff --git a/src/gallium/frontends/rusticl/api/kernel.rs b/src/gallium/frontends/rusticl/api/kernel.rs
-index 2e793a8cf36..023331c229b 100644
---- a/src/gallium/frontends/rusticl/api/kernel.rs
-+++ b/src/gallium/frontends/rusticl/api/kernel.rs
-@@ -89,11 +89,10 @@ impl CLInfoObj<cl_kernel_work_group_info, cl_device_id> for cl_kernel {
-             CL_KERNEL_COMPILE_WORK_GROUP_SIZE => cl_prop::<[usize; 3]>(kernel.work_group_size),
-             CL_KERNEL_LOCAL_MEM_SIZE => cl_prop::<cl_ulong>(kernel.local_mem_size(&dev)),
-             CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE => {
--                cl_prop::<usize>(dev.subgroups() as usize)
-+                cl_prop::<usize>(kernel.preferred_simd_size(&dev))
-             }
-             CL_KERNEL_PRIVATE_MEM_SIZE => cl_prop::<cl_ulong>(kernel.priv_mem_size(&dev)),
--            // TODO
--            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(dev.subgroups() as usize),
-+            CL_KERNEL_WORK_GROUP_SIZE => cl_prop::<usize>(kernel.max_threads_per_block(&dev)),
-             // CL_INVALID_VALUE if param_name is not one of the supported values
-             _ => return Err(CL_INVALID_VALUE),
-         })
 diff --git a/src/gallium/frontends/rusticl/api/program.rs b/src/gallium/frontends/rusticl/api/program.rs
 index daa2180b6c9..a4bbec2e85b 100644
 --- a/src/gallium/frontends/rusticl/api/program.rs
@@ -781,306 +306,6 @@ index daa2180b6c9..a4bbec2e85b 100644
          Err(CL_COMPILE_PROGRAM_FAILURE)
      }
  }
-diff --git a/src/gallium/frontends/rusticl/core/device.rs b/src/gallium/frontends/rusticl/core/device.rs
-index dfd6fc22a4b..3fa3c7ee1e2 100644
---- a/src/gallium/frontends/rusticl/core/device.rs
-+++ b/src/gallium/frontends/rusticl/core/device.rs
-@@ -75,6 +75,7 @@ pub trait HelperContextWrapper {
- 
-     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
-     fn delete_compute_state(&self, cso: *mut c_void);
-+    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info;
- 
-     fn unmap(&self, tx: PipeTransfer);
- }
-@@ -159,6 +160,10 @@ impl<'a> HelperContextWrapper for HelperContext<'a> {
-         self.lock.delete_compute_state(cso)
-     }
- 
-+    fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
-+        self.lock.compute_state_info(state)
-+    }
-+
-     fn unmap(&self, tx: PipeTransfer) {
-         tx.with_ctx(&self.lock);
-     }
-diff --git a/src/gallium/frontends/rusticl/core/kernel.rs b/src/gallium/frontends/rusticl/core/kernel.rs
-index a043407d77a..f606763df0a 100644
---- a/src/gallium/frontends/rusticl/core/kernel.rs
-+++ b/src/gallium/frontends/rusticl/core/kernel.rs
-@@ -258,6 +258,7 @@ struct KernelDevStateInner {
-     nir: NirShader,
-     constant_buffer: Option<Arc<PipeResource>>,
-     cso: *mut c_void,
-+    info: pipe_compute_state_object_info,
- }
- 
- struct KernelDevState {
-@@ -279,21 +280,25 @@ impl KernelDevState {
-         let states = nirs
-             .into_iter()
-             .map(|(dev, nir)| {
--                let cso = if dev.shareable_shaders() {
--                    dev.helper_ctx()
--                        .create_compute_state(&nir, nir.shared_size())
--                } else {
--                    ptr::null_mut()
--                };
--
-+                let mut cso = dev
-+                    .helper_ctx()
-+                    .create_compute_state(&nir, nir.shared_size());
-+                let info = dev.helper_ctx().compute_state_info(cso);
-                 let cb = Self::create_nir_constant_buffer(&dev, &nir);
- 
-+                // if we can't share the cso between threads, destroy it now.
-+                if !dev.shareable_shaders() {
-+                    dev.helper_ctx().delete_compute_state(cso);
-+                    cso = ptr::null_mut();
-+                };
-+
-                 (
-                     dev,
-                     KernelDevStateInner {
-                         nir: nir,
-                         constant_buffer: cb,
-                         cso: cso,
-+                        info: info,
-                     },
-                 )
-             })
-@@ -688,6 +693,12 @@ fn lower_and_optimize_nir_late(
-      * other things we depend on
-      */
-     KernelArg::assign_locations(args, &mut res, nir);
-+
-+    /* update the has_variable_shared_mem info as we might have DCEed all of them */
-+    nir.set_has_variable_shared_mem(
-+        args.iter()
-+            .any(|arg| arg.kind == KernelArgType::MemLocal && !arg.dead),
-+    );
-     dev.screen.finalize_nir(nir);
- 
-     nir.pass0(nir_opt_dce);
-@@ -823,44 +834,6 @@ fn extract<'a, const S: usize>(buf: &'a mut &[u8]) -> &'a [u8; S] {
-     val.try_into().unwrap()
- }
- 
--fn optimize_local_size(d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
--    let mut threads = d.max_threads_per_block() as u32;
--    let dim_threads = d.max_block_sizes();
--    let subgroups = d.subgroups();
--
--    if !block.contains(&0) {
--        for i in 0..3 {
--            // we already made sure everything is fine
--            grid[i] /= block[i];
--        }
--        return;
--    }
--
--    for i in 0..3 {
--        let t = cmp::min(threads, dim_threads[i] as u32);
--        let gcd = gcd(t, grid[i]);
--
--        block[i] = gcd;
--        grid[i] /= gcd;
--
--        // update limits
--        threads /= block[i];
--    }
--
--    // if we didn't fill the subgroup we can do a bit better if we have threads remaining
--    let total_threads = block[0] * block[1] * block[2];
--    if threads != 1 && total_threads < subgroups {
--        for i in 0..3 {
--            if grid[i] * total_threads < threads {
--                block[i] *= grid[i];
--                grid[i] = 1;
--                // can only do it once as nothing is cleanly divisible
--                break;
--            }
--        }
--    }
--}
--
- impl Kernel {
-     pub fn new(name: String, prog: Arc<Program>, args: Vec<spirv::SPIRVKernelArg>) -> Arc<Kernel> {
-         let (mut nirs, args, internal_args, attributes_string) =
-@@ -889,6 +862,44 @@ impl Kernel {
-         })
-     }
- 
-+    fn optimize_local_size(&self, d: &Device, grid: &mut [u32; 3], block: &mut [u32; 3]) {
-+        let mut threads = self.max_threads_per_block(d) as u32;
-+        let dim_threads = d.max_block_sizes();
-+        let subgroups = self.preferred_simd_size(d) as u32;
-+
-+        if !block.contains(&0) {
-+            for i in 0..3 {
-+                // we already made sure everything is fine
-+                grid[i] /= block[i];
-+            }
-+            return;
-+        }
-+
-+        for i in 0..3 {
-+            let t = cmp::min(threads, dim_threads[i] as u32);
-+            let gcd = gcd(t, grid[i]);
-+
-+            block[i] = gcd;
-+            grid[i] /= gcd;
-+
-+            // update limits
-+            threads /= block[i];
-+        }
-+
-+        // if we didn't fill the subgroup we can do a bit better if we have threads remaining
-+        let total_threads = block[0] * block[1] * block[2];
-+        if threads != 1 && total_threads < subgroups {
-+            for i in 0..3 {
-+                if grid[i] * total_threads < threads {
-+                    block[i] *= grid[i];
-+                    grid[i] = 1;
-+                    // can only do it once as nothing is cleanly divisible
-+                    break;
-+                }
-+            }
-+        }
-+    }
-+
-     // the painful part is, that host threads are allowed to modify the kernel object once it was
-     // enqueued, so return a closure with all req data included.
-     pub fn launch(
-@@ -922,7 +933,7 @@ impl Kernel {
-             &[0; 4]
-         };
- 
--        optimize_local_size(&q.device, &mut grid, &mut block);
-+        self.optimize_local_size(&q.device, &mut grid, &mut block);
- 
-         for (arg, val) in self.args.iter().zip(&self.values) {
-             if arg.dead {
-@@ -1207,7 +1218,15 @@ impl Kernel {
-     }
- 
-     pub fn priv_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
--        self.dev_state.get(dev).nir.scratch_size() as cl_ulong
-+        self.dev_state.get(dev).info.private_memory.into()
-+    }
-+
-+    pub fn max_threads_per_block(&self, dev: &Device) -> usize {
-+        self.dev_state.get(dev).info.max_threads as usize
-+    }
-+
-+    pub fn preferred_simd_size(&self, dev: &Device) -> usize {
-+        self.dev_state.get(dev).info.preferred_simd_size as usize
-     }
- 
-     pub fn local_mem_size(&self, dev: &Arc<Device>) -> cl_ulong {
-diff --git a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
-index 7063b67334c..a7cfb6c8beb 100644
---- a/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
-+++ b/src/gallium/frontends/rusticl/mesa/compiler/nir.rs
-@@ -186,6 +186,17 @@ impl NirShader {
-         }
-     }
- 
-+    pub fn set_has_variable_shared_mem(&mut self, val: bool) {
-+        unsafe {
-+            self.nir
-+                .as_mut()
-+                .info
-+                .anon_1
-+                .cs
-+                .set_has_variable_shared_mem(val)
-+        }
-+    }
-+
-     pub fn variables_with_mode(
-         &mut self,
-         mode: nir_variable_mode,
-diff --git a/src/gallium/frontends/rusticl/mesa/pipe/context.rs b/src/gallium/frontends/rusticl/mesa/pipe/context.rs
-index 06bbe3da027..a31a9c83ff6 100644
---- a/src/gallium/frontends/rusticl/mesa/pipe/context.rs
-+++ b/src/gallium/frontends/rusticl/mesa/pipe/context.rs
-@@ -284,6 +284,14 @@ impl PipeContext {
-         unsafe { self.pipe.as_ref().delete_compute_state.unwrap()(self.pipe.as_ptr(), state) }
-     }
- 
-+    pub fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info {
-+        let mut info = pipe_compute_state_object_info::default();
-+        unsafe {
-+            self.pipe.as_ref().get_compute_state_info.unwrap()(self.pipe.as_ptr(), state, &mut info)
-+        }
-+        info
-+    }
-+
-     pub fn create_sampler_state(&self, state: &pipe_sampler_state) -> *mut c_void {
-         unsafe { self.pipe.as_ref().create_sampler_state.unwrap()(self.pipe.as_ptr(), state) }
-     }
-@@ -491,6 +499,7 @@ fn has_required_cbs(context: &pipe_context) -> bool {
-         & has_required_feature!(context, delete_compute_state)
-         & has_required_feature!(context, delete_sampler_state)
-         & has_required_feature!(context, flush)
-+        & has_required_feature!(context, get_compute_state_info)
-         & has_required_feature!(context, launch_grid)
-         & has_required_feature!(context, memory_barrier)
-         & has_required_feature!(context, resource_copy_region)
-diff --git a/src/gallium/include/pipe/p_context.h b/src/gallium/include/pipe/p_context.h
-index c59dde608ca..dd4529f0251 100644
---- a/src/gallium/include/pipe/p_context.h
-+++ b/src/gallium/include/pipe/p_context.h
-@@ -46,6 +46,7 @@ struct pipe_blend_state;
- struct pipe_blit_info;
- struct pipe_box;
- struct pipe_clip_state;
-+struct pipe_compute_state_object_info;
- struct pipe_constant_buffer;
- struct pipe_depth_stencil_alpha_state;
- struct pipe_device_reset_callback;
-@@ -933,6 +934,9 @@ struct pipe_context {
-    void (*bind_compute_state)(struct pipe_context *, void *);
-    void (*delete_compute_state)(struct pipe_context *, void *);
- 
-+   void (*get_compute_state_info)(struct pipe_context *, void *,
-+                                  struct pipe_compute_state_object_info *);
-+
-    /**
-     * Bind an array of shader resources that will be used by the
-     * compute program.  Any resources that were previously bound to
-diff --git a/src/gallium/include/pipe/p_state.h b/src/gallium/include/pipe/p_state.h
-index 6ebc986aa94..ee9cc1d2772 100644
---- a/src/gallium/include/pipe/p_state.h
-+++ b/src/gallium/include/pipe/p_state.h
-@@ -1022,6 +1022,27 @@ struct pipe_compute_state
-    unsigned req_input_mem; /**< Required size of the INPUT resource. */
- };
- 
-+struct pipe_compute_state_object_info
-+{
-+    /**
-+     * Max amount of threads per block supported for the given cso.
-+     */
-+   unsigned max_threads;
-+
-+   /**
-+    * Which multiple should the block size be of for best performance.
-+    *
-+    * E.g. if the value of 8, then a block with 8/16/24/... threads would result in optimial
-+    * utilization of the hardware.
-+    */
-+   unsigned preferred_simd_size;
-+
-+   /**
-+    * How much private memory does this CSO require per thread (a.k.a. NIR scratch memory).
-+    */
-+   unsigned private_memory;
-+};
-+
- /**
-  * Structure that contains a callback for device reset messages from the driver
-  * back to the gallium frontend.
 diff --git a/src/gallium/targets/rusticl/meson.build b/src/gallium/targets/rusticl/meson.build
 index 279951a782c..4011c9a47e6 100644
 --- a/src/gallium/targets/rusticl/meson.build
@@ -1093,90 +318,3 @@ index 279951a782c..4011c9a47e6 100644
      driver_swrast,
      idep_nir,
    ],
-diff --git a/src/panfrost/lib/pan_props.c b/src/panfrost/lib/pan_props.c
-index 32644df7142..2a2dc106065 100644
---- a/src/panfrost/lib/pan_props.c
-+++ b/src/panfrost/lib/pan_props.c
-@@ -170,40 +170,13 @@ panfrost_query_core_count(int fd, unsigned *core_id_range)
-    return util_bitcount(mask);
- }
- 
--/* Architectural maximums, since this register may be not implemented
-- * by a given chip. G31 is actually 512 instead of 768 but it doesn't
-- * really matter. */
--
--static unsigned
--panfrost_max_thread_count(unsigned arch)
--{
--   switch (arch) {
--   /* Midgard */
--   case 4:
--   case 5:
--      return 256;
--
--   /* Bifrost, first generation */
--   case 6:
--      return 384;
--
--   /* Bifrost, second generation (G31 is 512 but it doesn't matter) */
--   case 7:
--      return 768;
--
--   /* Valhall (for completeness) */
--   default:
--      return 1024;
--   }
--}
--
- static unsigned
- panfrost_query_thread_tls_alloc(int fd, unsigned major)
- {
-    unsigned tls =
-       panfrost_query_raw(fd, DRM_PANFROST_PARAM_THREAD_TLS_ALLOC, false, 0);
- 
--   return (tls > 0) ? tls : panfrost_max_thread_count(major);
-+   return (tls > 0) ? tls : panfrost_max_thread_count(major, 0);
- }
- 
- static uint32_t
-diff --git a/src/panfrost/util/pan_ir.h b/src/panfrost/util/pan_ir.h
-index 3ddec343856..f4ed572e0e2 100644
---- a/src/panfrost/util/pan_ir.h
-+++ b/src/panfrost/util/pan_ir.h
-@@ -524,4 +524,36 @@ pan_subgroup_size(unsigned arch)
-       return 1;
- }
- 
-+/* Architectural maximums, since this register may be not implemented
-+ * by a given chip. G31 is actually 512 instead of 768 but it doesn't
-+ * really matter. */
-+
-+static inline unsigned
-+panfrost_max_thread_count(unsigned arch, unsigned work_reg_count)
-+{
-+   switch (arch) {
-+   /* Midgard */
-+   case 4:
-+   case 5:
-+      if (work_reg_count > 8)
-+         return 64;
-+      else if (work_reg_count > 4)
-+         return 128;
-+      else
-+         return 256;
-+
-+   /* Bifrost, first generation */
-+   case 6:
-+      return 384;
-+
-+   /* Bifrost, second generation (G31 is 512 but it doesn't matter) */
-+   case 7:
-+      return work_reg_count > 32 ? 384 : 768;
-+
-+   /* Valhall (for completeness) */
-+   default:
-+      return work_reg_count > 32 ? 512 : 1024;
-+   }
-+}
-+
- #endif

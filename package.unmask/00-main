@@ -10,3 +10,4 @@ x11-drivers/xf86-video-intel
 www-client/chromium
 net-misc/networkmanager
 www-plugins/chrome-binary-plugins
+dev-util/spirv-llvm-translator
