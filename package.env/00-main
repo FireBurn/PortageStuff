@@ -81,3 +81,4 @@ app-crypt/gpgme				clango3lto.conf
 net-misc/openssh			o3lto.conf
 net-libs/libssh2			clango3.conf
 dev-libs/modsecurity			debug.conf
+sys-apps/uutils-coreutils		clango3.conf
