@@ -10,6 +10,7 @@ llvm_targets_AVR
 llvm_targets_BPF
 llvm_targets_Hexagon
 llvm_targets_Lanai
+llvm_targets_LoongArch
 llvm_targets_MSP430
 llvm_targets_Mips
 llvm_targets_NVPTX
