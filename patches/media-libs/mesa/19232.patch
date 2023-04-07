@@ -1,81 +1,5 @@
-diff --git a/src/amd/llvm/ac_nir_to_llvm.c b/src/amd/llvm/ac_nir_to_llvm.c
-index 129ec5f9eab..5437ad0ce66 100644
---- a/src/amd/llvm/ac_nir_to_llvm.c
-+++ b/src/amd/llvm/ac_nir_to_llvm.c
-@@ -528,6 +528,26 @@ static LLVMValueRef exit_waterfall(struct ac_nir_context *ctx, struct waterfall_
-    return ret;
- }
- 
-+static LLVMValueRef
-+ac_build_const_int_vec(struct ac_llvm_context *ctx, LLVMTypeRef type, long long val, bool sign_extend)
-+{
-+   unsigned num_components = LLVMGetTypeKind(type) == LLVMVectorTypeKind ? LLVMGetVectorSize(type) : 1;
-+
-+   if (num_components == 1)
-+      return LLVMConstInt(type, val, sign_extend);
-+
-+   assert(num_components == 2);
-+   assert(ac_get_elem_bits(ctx, type) == 16);
-+
-+   LLVMTypeRef elem_type = LLVMGetElementType(type);
-+
-+   LLVMValueRef elems[2];
-+   for (unsigned i = 0; i < 2; ++i)
-+      elems[i] = LLVMConstInt(elem_type, val, sign_extend);
-+
-+   return LLVMConstVector(elems, 2);
-+}
-+
- static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
- {
-    LLVMValueRef src[16], result = NULL;
-@@ -671,6 +691,23 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
-    case nir_op_fmul:
-       src[0] = ac_to_float(&ctx->ac, src[0]);
-       src[1] = ac_to_float(&ctx->ac, src[1]);
-+      if (nir_src_is_const(instr->src[0].src) && nir_src_as_float(instr->src[0].src) == 1.0) {
-+         if (ac_get_type_size(def_type) == 8) {
-+            result = ac_build_intrinsic(&ctx->ac, "llvm.canonicalize.f64", ctx->ac.f64, &src[1], 1, AC_ATTR_INVARIANT_LOAD);
-+            break;
-+         } else if (ac_get_type_size(def_type) == 4) {
-+            result = ac_build_intrinsic(&ctx->ac, "llvm.canonicalize.f32", ctx->ac.f32, &src[1], 1, AC_ATTR_INVARIANT_LOAD);
-+            break;
-+         }
-+      } else if (nir_src_is_const(instr->src[1].src) && nir_src_as_float(instr->src[1].src) == 1.0) {
-+         if (ac_get_type_size(def_type) == 8) {
-+            result = ac_build_intrinsic(&ctx->ac, "llvm.canonicalize.f64", ctx->ac.f64, &src[0], 1, AC_ATTR_INVARIANT_LOAD);
-+            break;
-+         } else if (ac_get_type_size(def_type) == 4) {
-+            result = ac_build_intrinsic(&ctx->ac, "llvm.canonicalize.f32", ctx->ac.f32, &src[0], 1, AC_ATTR_INVARIANT_LOAD);
-+            break;
-+         }
-+      }
-       result = LLVMBuildFMul(ctx->ac.builder, src[0], src[1], "");
-       break;
-    case nir_op_fmulz:
-@@ -710,9 +747,9 @@ static bool visit_alu(struct ac_nir_context *ctx, const nir_alu_instr *instr)
-       else if (ac_get_elem_bits(&ctx->ac, LLVMTypeOf(src[1])) >
-                ac_get_elem_bits(&ctx->ac, LLVMTypeOf(src[0])))
-          src[1] = LLVMBuildTrunc(ctx->ac.builder, src[1], LLVMTypeOf(src[0]), "");
--      LLVMTypeRef type = LLVMTypeOf(src[0]);
-+      LLVMTypeRef type = LLVMTypeOf(src[1]);
-       src[1] = LLVMBuildAnd(ctx->ac.builder, src[1],
--                            LLVMConstInt(type, LLVMGetIntTypeWidth(type) - 1, false), "");
-+                            ac_build_const_int_vec(&ctx->ac, type, ac_get_elem_bits(&ctx->ac, type) - 1, false), "");
-       switch (instr->op) {
-       case nir_op_ishl:
-          result = LLVMBuildShl(ctx->ac.builder, src[0], src[1], "");
-@@ -3062,7 +3099,7 @@ static LLVMValueRef visit_var_atomic(struct ac_nir_context *ctx, const nir_intri
-    LLVMValueRef result;
-    LLVMValueRef src = get_src(ctx, instr->src[src_idx]);
- 
--   const char *sync_scope = "workgroup-one-as";
-+   const char *sync_scope = "workgroup";
- 
-    if (instr->intrinsic == nir_intrinsic_shared_atomic_comp_swap) {
-       LLVMValueRef src1 = get_src(ctx, instr->src[src_idx + 1]);
 diff --git a/src/gallium/drivers/radeonsi/si_compute.c b/src/gallium/drivers/radeonsi/si_compute.c
-index 4cf6ced1966..2ab3653054d 100644
+index cb1f1170b85..9ed4f90f3ea 100644
 --- a/src/gallium/drivers/radeonsi/si_compute.c
 +++ b/src/gallium/drivers/radeonsi/si_compute.c
 @@ -29,6 +29,7 @@
@@ -86,7 +10,7 @@ index 4cf6ced1966..2ab3653054d 100644
  #include "util/u_async_debug.h"
  #include "util/u_memory.h"
  #include "util/u_upload_mgr.h"
-@@ -296,6 +297,53 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
+@@ -296,6 +297,23 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
     return program;
  }
  
@@ -96,51 +20,21 @@ index 4cf6ced1966..2ab3653054d 100644
 +   struct si_compute *program = (struct si_compute *)state;
 +   struct si_shader_selector *sel = &program->sel;
 +
++   assert(program->ir_type != PIPE_SHADER_IR_NATIVE);
++
 +   /* Wait because we need the compilation to finish first */
-+   if (program->ir_type != PIPE_SHADER_IR_NATIVE)
-+      util_queue_fence_wait(&sel->ready);
++   util_queue_fence_wait(&sel->ready);
 +
 +   uint8_t wave_size = program->shader.wave_size;
-+   bool uses_nir = program->ir_type == PIPE_SHADER_IR_NIR;
-+
-+   /* HW limits */
-+   unsigned simd_per_eu = sel->screen->info.num_simd_per_compute_unit;
-+   unsigned lds_per_eu = sel->screen->info.lds_size_per_workgroup;
-+   unsigned shared_size = sel->info.base.shared_size;
-+
-+   if (sel->screen->info.gfx_level >= GFX10 && uses_nir) {
-+      /* WGP_MODE */
-+      simd_per_eu *= 2;
-+      lds_per_eu *= 2;
-+   }
-+
-+   /* Compute max_threads. */
-+   unsigned threads_per_wg = si_get_max_workgroup_size(&program->shader);
-+   unsigned waves_per_wg = DIV_ROUND_UP(threads_per_wg, wave_size);
-+
-+   /* Max workgroups limited by VGPRs. */
-+   unsigned max_waves_per_eu_for_vgprs = simd_per_eu * program->shader.info.max_simd_waves;
-+   unsigned max_wg = max_waves_per_eu_for_vgprs / waves_per_wg;
-+
-+   /* Max workgroups limited by LDS (shared memory). */
-+   if (shared_size) {
-+      unsigned max_wg_per_eu_for_lds = lds_per_eu / align(shared_size, sel->screen->info.lds_alloc_granularity);
-+      max_wg = MIN2(max_wg, max_wg_per_eu_for_lds);
-+   }
-+
-+   info->private_memory = 0;
-+   info->preferred_simd_size = 0;
-+
-+   info->max_threads = threads_per_wg;
-+   /* if we know the shared_size used, we can launch a few more threads */
-+   if (!sel->info.base.cs.has_variable_shared_mem)
-+      info->max_threads *= max_wg;
++   info->private_memory = DIV_ROUND_UP(program->shader.config.scratch_bytes_per_wave, wave_size);
++   info->preferred_simd_size = wave_size;
++   info->max_threads = si_get_max_workgroup_size(&program->shader);
 +}
 +
  static void si_bind_compute_state(struct pipe_context *ctx, void *state)
  {
     struct si_context *sctx = (struct si_context *)ctx;
-@@ -1036,6 +1084,7 @@ void si_init_compute_functions(struct si_context *sctx)
+@@ -1042,6 +1060,7 @@ void si_init_compute_functions(struct si_context *sctx)
     sctx->b.create_compute_state = si_create_compute_state;
     sctx->b.delete_compute_state = si_delete_compute_state;
     sctx->b.bind_compute_state = si_bind_compute_state;
@@ -148,59 +42,46 @@ index 4cf6ced1966..2ab3653054d 100644
     sctx->b.set_compute_resources = si_set_compute_resources;
     sctx->b.set_global_binding = si_set_global_binding;
     sctx->b.launch_grid = si_launch_grid;
-diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index 26f36bbdfc1..655be7ddefa 100644
---- a/src/gallium/drivers/radeonsi/si_get.c
-+++ b/src/gallium/drivers/radeonsi/si_get.c
-@@ -1226,7 +1226,7 @@ void si_init_screen_get_functions(struct si_screen *sscreen)
-       .lower_fisnormal = true,
-       .lower_rotate = true,
-       .lower_to_scalar = true,
--      .lower_int64_options = nir_lower_imul_2x32_64,
-+      .lower_int64_options = nir_lower_imul_2x32_64 | nir_lower_imul_high64,
-       .has_sdot_4x8 = sscreen->info.has_accelerated_dot_product,
-       .has_sudot_4x8 = sscreen->info.has_accelerated_dot_product && sscreen->info.gfx_level >= GFX11,
-       .has_udot_4x8 = sscreen->info.has_accelerated_dot_product,
 diff --git a/src/gallium/drivers/radeonsi/si_shader.c b/src/gallium/drivers/radeonsi/si_shader.c
-index 7b5779ea306..ecb2ead42f7 100644
+index c4f933d5b76..61de41fb42c 100644
 --- a/src/gallium/drivers/radeonsi/si_shader.c
 +++ b/src/gallium/drivers/radeonsi/si_shader.c
-@@ -2452,7 +2452,7 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
+@@ -2461,7 +2461,8 @@ si_get_shader_part(struct si_screen *sscreen, struct si_shader_part **list,
     }
  
     struct si_shader_context ctx;
 -   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz);
-+   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz, stage);
++   si_llvm_context_init(&ctx, sscreen, compiler, wave32 ? 32 : 64, exports_color_null, exports_mrtz,
++                        AC_FLOAT_MODE_DEFAULT_OPENGL);
  
     ctx.shader = &shader;
     ctx.stage = stage;
 diff --git a/src/gallium/drivers/radeonsi/si_shader_internal.h b/src/gallium/drivers/radeonsi/si_shader_internal.h
-index 7a7a1cb8d30..d6a9adf2ec3 100644
+index c03dad739e9..de1bc793dc2 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_internal.h
 +++ b/src/gallium/drivers/radeonsi/si_shader_internal.h
-@@ -173,7 +173,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
+@@ -182,7 +182,8 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
                       gl_shader_stage stage, const char *name, bool less_optimized);
  void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
                            struct ac_llvm_compiler *compiler, unsigned wave_size,
 -                          bool exports_color_null, bool exports_mrtz);
 +                          bool exports_color_null, bool exports_mrtz,
-+                          gl_shader_stage stage);
++                          enum ac_float_mode float_mode);
  void si_llvm_create_func(struct si_shader_context *ctx, const char *name, LLVMTypeRef *return_types,
                           unsigned num_return_elems, unsigned max_workgroup_size);
  void si_llvm_create_main_func(struct si_shader_context *ctx);
 diff --git a/src/gallium/drivers/radeonsi/si_shader_llvm.c b/src/gallium/drivers/radeonsi/si_shader_llvm.c
-index 304d626ca0c..3d75fe960c8 100644
+index a3c501ad4c5..68b3fd09edb 100644
 --- a/src/gallium/drivers/radeonsi/si_shader_llvm.c
 +++ b/src/gallium/drivers/radeonsi/si_shader_llvm.c
-@@ -126,14 +126,16 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
+@@ -126,14 +126,15 @@ bool si_compile_llvm(struct si_screen *sscreen, struct si_shader_binary *binary,
  
  void si_llvm_context_init(struct si_shader_context *ctx, struct si_screen *sscreen,
                            struct ac_llvm_compiler *compiler, unsigned wave_size,
 -                          bool exports_color_null, bool exports_mrtz)
 +                          bool exports_color_null, bool exports_mrtz,
-+                          gl_shader_stage stage)
++                          enum ac_float_mode float_mode)
  {
-+   enum ac_float_mode float_mode = stage == MESA_SHADER_KERNEL ? AC_FLOAT_MODE_DEFAULT : AC_FLOAT_MODE_DEFAULT_OPENGL;
     memset(ctx, 0, sizeof(*ctx));
     ctx->screen = sscreen;
     ctx->compiler = compiler;
@@ -211,101 +92,23 @@ index 304d626ca0c..3d75fe960c8 100644
                          wave_size, 64, exports_color_null, exports_mrtz);
  }
  
-@@ -1091,7 +1093,8 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
+@@ -1091,13 +1092,15 @@ bool si_llvm_compile_shader(struct si_screen *sscreen, struct ac_llvm_compiler *
+ {
+    struct si_shader_selector *sel = shader->selector;
+    struct si_shader_context ctx;
++   enum ac_float_mode float_mode = nir->info.stage == MESA_SHADER_KERNEL ? AC_FLOAT_MODE_DEFAULT : AC_FLOAT_MODE_DEFAULT_OPENGL;
+ 
+    bool exports_color_null = sel->info.colors_written;
+    bool exports_mrtz = sel->info.writes_z || sel->info.writes_stencil || sel->info.writes_samplemask;
     if (!exports_mrtz && !exports_color_null)
        exports_color_null = si_shader_uses_discard(shader) || sscreen->info.gfx_level < GFX10;
  
 -   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size, exports_color_null, exports_mrtz);
 +   si_llvm_context_init(&ctx, sscreen, compiler, shader->wave_size, exports_color_null, exports_mrtz,
-+                        nir->info.stage);
++                        float_mode);
     ctx.args = args;
  
     if (!si_llvm_translate_nir(&ctx, shader, nir, false)) {
-diff --git a/src/gallium/drivers/radeonsi/si_shader_nir.c b/src/gallium/drivers/radeonsi/si_shader_nir.c
-index db2ac4c31dc..02556a8e8b9 100644
---- a/src/gallium/drivers/radeonsi/si_shader_nir.c
-+++ b/src/gallium/drivers/radeonsi/si_shader_nir.c
-@@ -63,6 +63,26 @@ static uint8_t si_vectorize_callback(const nir_instr *instr, const void *data)
-    return 1;
- }
- 
-+static unsigned si_lower_bit_size_callback(const nir_instr *instr, void *data)
-+{
-+   if (instr->type != nir_instr_type_alu)
-+      return 0;
-+
-+   nir_alu_instr *alu = nir_instr_as_alu(instr);
-+
-+   switch (alu->op) {
-+   case nir_op_imul_high:
-+   case nir_op_umul_high:
-+      if (nir_dest_bit_size(alu->dest.dest) < 32)
-+         return 32;
-+      break;
-+   default:
-+      break;
-+   }
-+
-+   return 0;
-+}
-+
- void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
- {
-    bool progress;
-@@ -105,6 +125,7 @@ void si_nir_opts(struct si_screen *sscreen, struct nir_shader *nir, bool first)
-       NIR_PASS(progress, nir, nir_opt_peephole_select, 8, true, true);
- 
-       /* Needed for algebraic lowering */
-+      NIR_PASS(progress, nir, nir_lower_bit_size, si_lower_bit_size_callback, NULL);
-       NIR_PASS(progress, nir, nir_opt_algebraic);
-       NIR_PASS(progress, nir, nir_opt_constant_folding);
- 
-diff --git a/src/gallium/frontends/rusticl/api/program.rs b/src/gallium/frontends/rusticl/api/program.rs
-index daa2180b6c9..a4bbec2e85b 100644
---- a/src/gallium/frontends/rusticl/api/program.rs
-+++ b/src/gallium/frontends/rusticl/api/program.rs
-@@ -270,8 +270,8 @@ pub fn build_program(
- 
-     // CL_BUILD_PROGRAM_FAILURE if there is a failure to build the program executable. This error
-     // will be returned if clBuildProgram does not return until the build has completed.
--    for dev in devs {
--        res &= p.build(&dev, c_string_to_string(options));
-+    for dev in &devs {
-+        res &= p.build(dev, c_string_to_string(options));
-     }
- 
-     call_cb(pfn_notify, program, user_data);
-@@ -284,6 +284,9 @@ pub fn build_program(
-     if res {
-         Ok(())
-     } else {
-+        for dev in &devs {
-+            eprintln!("{}", p.log(dev));
-+        }
-         Err(CL_BUILD_PROGRAM_FAILURE)
-     }
- }
-@@ -337,8 +340,8 @@ pub fn compile_program(
- 
-     // CL_COMPILE_PROGRAM_FAILURE if there is a failure to compile the program source. This error
-     // will be returned if clCompileProgram does not return until the compile has completed.
--    for dev in devs {
--        res &= p.compile(&dev, c_string_to_string(options), &headers);
-+    for dev in &devs {
-+        res &= p.compile(dev, c_string_to_string(options), &headers);
-     }
- 
-     call_cb(pfn_notify, program, user_data);
-@@ -349,6 +352,9 @@ pub fn compile_program(
-     if res {
-         Ok(())
-     } else {
-+        for dev in &devs {
-+            eprintln!("{}", p.log(dev));
-+        }
-         Err(CL_COMPILE_PROGRAM_FAILURE)
-     }
- }
 diff --git a/src/gallium/targets/rusticl/meson.build b/src/gallium/targets/rusticl/meson.build
 index 279951a782c..4011c9a47e6 100644
 --- a/src/gallium/targets/rusticl/meson.build
