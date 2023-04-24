@@ -61,7 +61,7 @@ dev-libs/jansson			bfd.conf
 #kde-frameworks/kio			debug.conf
 #kde-apps/kio-extras			debug.conf
 #kde-apps/dolphin			debug.conf
-#media-video/mpv				debug.conf
+media-video/mpv				o3.conf
 dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 sys-devel/llvm-roc                      clango3.conf
