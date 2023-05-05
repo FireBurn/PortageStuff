@@ -33,12 +33,11 @@ Subject: [PATCH] GCC 13, libstdc++ fixes
  third_party/s2cellid/src/s2/util/math/vector.h                  | 1 +
  third_party/swiftshader/src/Device/RoutineCache.hpp             | 2 ++
  .../tflite/src/tensorflow/lite/kernels/internal/spectrogram.cc  | 1 +
- third_party/vulkan_memory_allocator/include/vk_mem_alloc.h      | 1 +
  third_party/webrtc/rtc_base/third_party/base64/base64.h         | 1 +
  ui/events/types/scroll_types.h                                  | 2 ++
  ui/gfx/geometry/linear_gradient.h                               | 1 +
  ui/gfx/geometry/vector3d_f.h                                    | 1 +
- 34 files changed, 40 insertions(+)
+ 33 files changed, 39 insertions(+)
 
 diff --git a/base/debug/profiler.h b/base/debug/profiler.h
 index 5f0dead..1543d61 100644
@@ -394,18 +393,6 @@ index a832962..3870071 100644
  #include <math.h>
  
  #include "third_party/fft2d/fft.h"
-diff --git a/third_party/vulkan_memory_allocator/include/vk_mem_alloc.h b/third_party/vulkan_memory_allocator/include/vk_mem_alloc.h
-index b7c586b..e74b70f 100644
---- a/third_party/vulkan_memory_allocator/include/vk_mem_alloc.h
-+++ b/third_party/vulkan_memory_allocator/include/vk_mem_alloc.h
-@@ -2389,6 +2389,7 @@ VMA_CALL_PRE void VMA_CALL_POST vmaFreeVirtualBlockStatsString(VmaVirtualBlock V
- #undef VMA_IMPLEMENTATION
- 
- #include <cstdint>
-+#include <cstdio>
- #include <cstdlib>
- #include <cstring>
- #include <utility>
 diff --git a/third_party/webrtc/rtc_base/third_party/base64/base64.h b/third_party/webrtc/rtc_base/third_party/base64/base64.h
 index 4190a79..5a9285f 100644
 --- a/third_party/webrtc/rtc_base/third_party/base64/base64.h
