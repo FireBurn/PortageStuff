@@ -1,0 +1,10 @@
+--- a/third_party/vulkan-deps/vulkan-validation-layers/src/layers/external/vma/vk_mem_alloc.h	2023-05-06 00:11:17.969423662 +0100
++++ b/third_party/vulkan-deps/vulkan-validation-layers/src/layers/external/vma/vk_mem_alloc.h	2023-05-06 00:12:34.517531705 +0100
+@@ -2579,6 +2579,7 @@
+ #undef VMA_IMPLEMENTATION
+ 
+ #include <cstdint>
++#include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+ #include <utility>
