@@ -368,3 +368,10 @@ dev-libs/modsecurity			fuzzyhash geoip2 json lmdb lua pcre2
 app-misc/mime-types			nginx
 www-apache/mod_security			fuzzyhash geoip jit json -lua mlogc
 sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
+# required by games-emulation/yuzu-9999::FireBurn
+# required by yuzu (argument)
+>=net-libs/mbedtls-2.28.1 cmac
+# required by games-emulation/yuzu-9999::FireBurn
+# required by yuzu (argument)
+>=dev-libs/boost-1.82.0 context
+games-emulation/yuzu			sdl
