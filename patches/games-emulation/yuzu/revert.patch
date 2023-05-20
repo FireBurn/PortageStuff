@@ -1,0 +1,24 @@
+diff --git a/src/video_core/vulkan_common/vulkan_device.cpp b/src/video_core/vulkan_common/vulkan_device.cpp
+index f6e6f2736..64cd15190 100644
+--- a/src/video_core/vulkan_common/vulkan_device.cpp
++++ b/src/video_core/vulkan_common/vulkan_device.cpp
+@@ -415,19 +415,6 @@ Device::Device(VkInstance instance_, vk::PhysicalDevice physical_, VkSurfaceKHR
+             dynamic_state3_enables = false;
+         }
+     }
+-    if (extensions.vertex_input_dynamic_state && is_radv) {
+-        // TODO(ameerj): Blacklist only offending driver versions
+-        // TODO(ameerj): Confirm if RDNA1 is affected
+-        const bool is_rdna2 =
+-            supported_extensions.contains(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+-        if (is_rdna2) {
+-            LOG_WARNING(Render_Vulkan,
+-                        "RADV has broken VK_EXT_vertex_input_dynamic_state on RDNA2 hardware");
+-            features.vertex_input_dynamic_state.vertexInputDynamicState = false;
+-            extensions.vertex_input_dynamic_state = false;
+-            loaded_extensions.erase(VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME);
+-        }
+-    }
+ 
+     sets_per_pool = 64;
+     if (is_amd_driver) {
