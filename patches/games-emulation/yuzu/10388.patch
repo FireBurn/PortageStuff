@@ -1,0 +1,135 @@
+From 4e491ab59ba8b9c08253ca9cce5bb9fe909ac2ff Mon Sep 17 00:00:00 2001
+From: GPUCode <geoster3d@gmail.com>
+Date: Sat, 20 May 2023 14:08:05 +0300
+Subject: [PATCH] vk_master_semaphore: Move fence wait on separate thread
+
+---
+ .../renderer_vulkan/vk_master_semaphore.cpp   | 46 ++++++++++++++++++-
+ .../renderer_vulkan/vk_master_semaphore.h     | 15 +++++-
+ 2 files changed, 58 insertions(+), 3 deletions(-)
+
+diff --git a/src/video_core/renderer_vulkan/vk_master_semaphore.cpp b/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
+index 47c74e4d878..8b65aeaebc1 100644
+--- a/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
++++ b/src/video_core/renderer_vulkan/vk_master_semaphore.cpp
+@@ -10,11 +10,16 @@
+ 
+ namespace Vulkan {
+ 
++constexpr u64 FENCE_RESERVE_SIZE = 8;
++
+ MasterSemaphore::MasterSemaphore(const Device& device_) : device(device_) {
+     if (!device.HasTimelineSemaphore()) {
+         static constexpr VkFenceCreateInfo fence_ci{
+             .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0};
+-        fence = device.GetLogical().CreateFence(fence_ci);
++        free_queue.resize(FENCE_RESERVE_SIZE);
++        std::ranges::generate(free_queue,
++                              [&] { return device.GetLogical().CreateFence(fence_ci); });
++        wait_thread = std::jthread([this](std::stop_token token) { WaitThread(token); });
+         return;
+     }
+ 
+@@ -167,16 +172,53 @@ VkResult MasterSemaphore::SubmitQueueFence(vk::CommandBuffer& cmdbuf, VkSemaphor
+         .pSignalSemaphores = &signal_semaphore,
+     };
+ 
++    auto fence = GetFreeFence();
+     auto result = device.GetGraphicsQueue().Submit(submit_info, *fence);
+ 
+     if (result == VK_SUCCESS) {
++        std::scoped_lock lock{wait_mutex};
++        wait_queue.emplace(host_tick, std::move(fence));
++        wait_cv.notify_one();
++    }
++
++    return result;
++}
++
++void MasterSemaphore::WaitThread(std::stop_token token) {
++    while (!token.stop_requested()) {
++        u64 host_tick;
++        vk::Fence fence;
++        {
++            std::unique_lock lock{wait_mutex};
++            Common::CondvarWait(wait_cv, lock, token, [this] { return !wait_queue.empty(); });
++            if (token.stop_requested()) {
++                return;
++            }
++            std::tie(host_tick, fence) = std::move(wait_queue.front());
++            wait_queue.pop();
++        }
++
+         fence.Wait();
+         fence.Reset();
+         gpu_tick.store(host_tick);
+         gpu_tick.notify_all();
++
++        std::scoped_lock lock{free_mutex};
++        free_queue.push_front(std::move(fence));
+     }
++}
+ 
+-    return result;
++vk::Fence MasterSemaphore::GetFreeFence() {
++    std::scoped_lock lock{free_mutex};
++    if (free_queue.empty()) {
++        static constexpr VkFenceCreateInfo fence_ci{
++            .sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, .pNext = nullptr, .flags = 0};
++        return device.GetLogical().CreateFence(fence_ci);
++    }
++
++    auto fence = std::move(free_queue.back());
++    free_queue.pop_back();
++    return fence;
+ }
+ 
+ } // namespace Vulkan
+diff --git a/src/video_core/renderer_vulkan/vk_master_semaphore.h b/src/video_core/renderer_vulkan/vk_master_semaphore.h
+index f2f61f781be..1e7c9021574 100644
+--- a/src/video_core/renderer_vulkan/vk_master_semaphore.h
++++ b/src/video_core/renderer_vulkan/vk_master_semaphore.h
+@@ -5,8 +5,10 @@
+ 
+ #include <atomic>
+ #include <condition_variable>
++#include <deque>
+ #include <mutex>
+ #include <thread>
++#include <queue>
+ 
+ #include "common/common_types.h"
+ #include "common/polyfill_thread.h"
+@@ -17,6 +19,8 @@ namespace Vulkan {
+ class Device;
+ 
+ class MasterSemaphore {
++    using Waitable = std::pair<u64, vk::Fence>;
++
+ public:
+     explicit MasterSemaphore(const Device& device);
+     ~MasterSemaphore();
+@@ -57,13 +61,22 @@ class MasterSemaphore {
+     VkResult SubmitQueueFence(vk::CommandBuffer& cmdbuf, VkSemaphore signal_semaphore,
+                               VkSemaphore wait_semaphore, u64 host_tick);
+ 
++    void WaitThread(std::stop_token token);
++
++    vk::Fence GetFreeFence();
++
+ private:
+     const Device& device;             ///< Device.
+-    vk::Fence fence;                  ///< Fence.
+     vk::Semaphore semaphore;          ///< Timeline semaphore.
+     std::atomic<u64> gpu_tick{0};     ///< Current known GPU tick.
+     std::atomic<u64> current_tick{1}; ///< Current logical tick.
++    std::mutex wait_mutex;
++    std::mutex free_mutex;
++    std::condition_variable_any wait_cv;
++    std::queue<Waitable> wait_queue;  ///< Queue for the fences to be waited on by the wait thread.
++    std::deque<vk::Fence> free_queue; ///< Holds available fences for submission.
+     std::jthread debug_thread;        ///< Debug thread to workaround validation layer bugs.
++    std::jthread wait_thread;         ///< Helper thread that waits for submitted fences.
+ };
+ 
+ } // namespace Vulkan
