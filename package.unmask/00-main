@@ -11,3 +11,5 @@ www-client/chromium
 net-misc/networkmanager
 www-plugins/chrome-binary-plugins
 dev-util/spirv-llvm-translator
+=dev-lang/rust-1.70.0
+=virtual/rust-1.70.0
