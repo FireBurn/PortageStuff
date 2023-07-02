@@ -1,7 +1,7 @@
 From 8e703e08dfcf735a08df2ceff6a05221b7cc981f Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Mon, 19 Jun 2023 18:17:43 -0700
-Subject: [PATCH 01/10] Implement SSL service
+Subject: [PATCH 01/13] Implement SSL service
 
 This implements some missing network APIs including a large chunk of the SSL
 service, enough for Mario Maker (with an appropriate mod applied) to connect to
@@ -3478,7 +3478,7 @@ index 11e479e5090..46a53ef7953 100644
 From 7cc428ddf67a9b9c4f703bcc294a72ffdfe36e08 Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 13:10:15 -0700
-Subject: [PATCH 02/10] socket_types: Improve comment
+Subject: [PATCH 02/13] socket_types: Improve comment
 
 ---
  src/common/socket_types.h | 6 +++---
@@ -3517,7 +3517,7 @@ index 18ad6ac95ea..b2191c2e88c 100644
 From 8905142f4362e06bd8f0a35cf9887d5110c1f308 Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 13:07:40 -0700
-Subject: [PATCH 03/10] ssl: rename argument to avoid false positive codespell
+Subject: [PATCH 03/13] ssl: rename argument to avoid false positive codespell
  warning
 
 The original name `larg` was copied from the OpenSSL documentation and
@@ -3553,7 +3553,7 @@ index cf9b904ac14..edbf0ad3e2d 100644
 From 4a355699219710d0a9ad620722393b3d9a16d84d Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 14:57:34 -0700
-Subject: [PATCH 04/10] Fixes:
+Subject: [PATCH 04/13] Fixes:
 
 - Add missing virtual destructor on `SSLBackend`.
 
@@ -3648,7 +3648,7 @@ index 39381e06e64..0164d12ebf6 100644
 From 42015de49b578108a1a82b8df947397d2d123ad4 Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 16:09:16 -0700
-Subject: [PATCH 05/10] ssl: fix compatibility with OpenSSL 1.1.1
+Subject: [PATCH 05/13] ssl: fix compatibility with OpenSSL 1.1.1
 
 Turns out changes were needed after all.
 ---
@@ -3690,7 +3690,7 @@ index edbf0ad3e2d..bc797b76bf2 100644
 From ac939f08a4c116b6a38978358b667b1fa0c51ef9 Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 17:00:05 -0700
-Subject: [PATCH 06/10] Fix more Windows build errors
+Subject: [PATCH 06/13] Fix more Windows build errors
 
 I did test this beforehand, but not on MinGW, and the error that showed
 up on the msvc builder didn't happen for me...
@@ -3878,7 +3878,7 @@ index 96319bfc8df..badcb836987 100644
 From cd4b8f037ca59efbc9fc45f1954de2284017c4c4 Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 17:09:54 -0700
-Subject: [PATCH 07/10] re-format
+Subject: [PATCH 07/13] re-format
 
 ---
  src/core/hle/service/ssl/ssl_backend_schannel.cpp | 9 +++++----
@@ -3916,7 +3916,7 @@ index 92b2dddaa17..d293adcf703 100644
 From 8b9c077826dbbbdc0188936d1d83f7f5e0ded8dd Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 17:36:51 -0700
-Subject: [PATCH 08/10] Disable OpenSSL on Android.
+Subject: [PATCH 08/13] Disable OpenSSL on Android.
 
 Apparently Android uses BoringSSL, but doesn't actually expose headers
 for it in the NDK.
@@ -3950,7 +3950,7 @@ index bd380851589..51b35d31ad7 100644
 From b9f9d0a64215f8107ea82d1c541444f6ff138e7a Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 18:51:39 -0700
-Subject: [PATCH 09/10] network.cpp: include expected.h
+Subject: [PATCH 09/13] network.cpp: include expected.h
 
 ---
  src/core/internal_network/network.cpp | 1 +
@@ -3972,7 +3972,7 @@ index 40e451526ea..36cf0090232 100644
 From d885dd5b642807d0587acad43668cfccfdf06d1e Mon Sep 17 00:00:00 2001
 From: comex <comexk@gmail.com>
 Date: Sun, 25 Jun 2023 19:23:23 -0700
-Subject: [PATCH 10/10] PR feedback + constification
+Subject: [PATCH 10/13] PR feedback + constification
 
 ---
  src/core/hle/service/sockets/bsd.cpp          |  8 ++--
@@ -4416,3 +4416,1439 @@ index d293adcf703..775d5cc0723 100644
      if (res.IsFailure()) {
          return res;
      }
+
+From 0e191c271125321589dfdbb09731413550710c9a Mon Sep 17 00:00:00 2001
+From: comex <comexk@gmail.com>
+Date: Sat, 1 Jul 2023 15:02:25 -0700
+Subject: [PATCH 11/13] Updates:
+
+- Address PR feedback.
+- Add SecureTransport backend for macOS.
+---
+ CMakeLists.txt                                |   3 +-
+ src/core/CMakeLists.txt                       |   4 +
+ src/core/hle/service/sockets/bsd.cpp          |  23 +-
+ src/core/hle/service/sockets/sfdnsres.cpp     |  73 ++++--
+ src/core/hle/service/ssl/ssl.cpp              | 106 ++++-----
+ .../hle/service/ssl/ssl_backend_openssl.cpp   |  66 +++---
+ .../hle/service/ssl/ssl_backend_schannel.cpp  | 207 +++++++++---------
+ src/core/internal_network/network.cpp         |   8 +-
+ 8 files changed, 278 insertions(+), 212 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7e74733d64d..14a9d85e338 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -64,8 +64,9 @@ option(YUZU_DOWNLOAD_TIME_ZONE_DATA "Always download time zone binaries" OFF)
+ CMAKE_DEPENDENT_OPTION(YUZU_USE_FASTER_LD "Check if a faster linker is available" ON "NOT WIN32" OFF)
+ 
+ set(DEFAULT_ENABLE_OPENSSL ON)
+-if (ANDROID OR WIN32)
++if (ANDROID OR WIN32 OR APPLE)
+     # - Windows defaults to the Schannel backend.
++    # - macOS defaults to the SecureTransport backend.
+     # - Android currently has no SSL backend as the NDK doesn't include any SSL
+     #   library; a proper 'native' backend would have to go through Java.
+     # But you can force builds for those platforms to use OpenSSL if you have
+diff --git a/src/core/CMakeLists.txt b/src/core/CMakeLists.txt
+index dd2c053d0ca..8a66aa8ea63 100644
+--- a/src/core/CMakeLists.txt
++++ b/src/core/CMakeLists.txt
+@@ -868,6 +868,10 @@ if(ENABLE_OPENSSL)
+     target_sources(core PRIVATE
+         hle/service/ssl/ssl_backend_openssl.cpp)
+     target_link_libraries(core PRIVATE OpenSSL::SSL)
++elseif (APPLE)
++    target_sources(core PRIVATE
++        hle/service/ssl/ssl_backend_securetransport.cpp)
++    target_link_libraries(core PRIVATE "-framework Security")
+ elseif (WIN32)
+     target_sources(core PRIVATE
+         hle/service/ssl/ssl_backend_schannel.cpp)
+diff --git a/src/core/hle/service/sockets/bsd.cpp b/src/core/hle/service/sockets/bsd.cpp
+index 6034cc0b52d..e63b0a357b9 100644
+--- a/src/core/hle/service/sockets/bsd.cpp
++++ b/src/core/hle/service/sockets/bsd.cpp
+@@ -443,15 +443,28 @@ void BSD::Close(HLERequestContext& ctx) {
+ }
+ 
+ void BSD::DuplicateSocket(HLERequestContext& ctx) {
++    struct InputParameters {
++        s32 fd;
++        u64 reserved;
++    };
++    static_assert(sizeof(InputParameters) == 0x10);
++
++    struct OutputParameters {
++        s32 ret;
++        Errno bsd_errno;
++    };
++    static_assert(sizeof(OutputParameters) == 0x8);
++
+     IPC::RequestParser rp{ctx};
+-    const s32 fd = rp.Pop<s32>();
+-    [[maybe_unused]] const u64 unused = rp.Pop<u64>();
++    auto input = rp.PopRaw<InputParameters>();
+ 
+-    Expected<s32, Errno> res = DuplicateSocketImpl(fd);
++    Expected<s32, Errno> res = DuplicateSocketImpl(input.fd);
+     IPC::ResponseBuilder rb{ctx, 4};
+     rb.Push(ResultSuccess);
+-    rb.Push(res.value_or(0));                         // ret
+-    rb.Push(res ? 0 : static_cast<s32>(res.error())); // bsd errno
++    rb.PushRaw(OutputParameters{
++        .ret = res.value_or(0),
++        .bsd_errno = res ? Errno::SUCCESS : res.error(),
++    });
+ }
+ 
+ void BSD::EventFd(HLERequestContext& ctx) {
+diff --git a/src/core/hle/service/sockets/sfdnsres.cpp b/src/core/hle/service/sockets/sfdnsres.cpp
+index 45f0f526ab0..84cc79de867 100644
+--- a/src/core/hle/service/sockets/sfdnsres.cpp
++++ b/src/core/hle/service/sockets/sfdnsres.cpp
+@@ -131,14 +131,15 @@ static std::vector<u8> SerializeAddrInfoAsHostEnt(const std::vector<Network::Add
+ }
+ 
+ static std::pair<u32, GetAddrInfoError> GetHostByNameRequestImpl(HLERequestContext& ctx) {
+-    struct Parameters {
++    struct InputParameters {
+         u8 use_nsd_resolve;
+         u32 cancel_handle;
+         u64 process_id;
+     };
++    static_assert(sizeof(InputParameters) == 0x10);
+ 
+     IPC::RequestParser rp{ctx};
+-    const auto parameters = rp.PopRaw<Parameters>();
++    const auto parameters = rp.PopRaw<InputParameters>();
+ 
+     LOG_WARNING(
+         Service,
+@@ -164,21 +165,39 @@ static std::pair<u32, GetAddrInfoError> GetHostByNameRequestImpl(HLERequestConte
+ void SFDNSRES::GetHostByNameRequest(HLERequestContext& ctx) {
+     auto [data_size, emu_gai_err] = GetHostByNameRequestImpl(ctx);
+ 
++    struct OutputParameters {
++        NetDbError netdb_error;
++        Errno bsd_errno;
++        u32 data_size;
++    };
++    static_assert(sizeof(OutputParameters) == 0xc);
++
+     IPC::ResponseBuilder rb{ctx, 5};
+     rb.Push(ResultSuccess);
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToNetDbError(emu_gai_err))); // netdb error code
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToErrno(emu_gai_err)));      // errno
+-    rb.Push(data_size);                                                   // serialized size
++    rb.PushRaw(OutputParameters{
++        .netdb_error = GetAddrInfoErrorToNetDbError(emu_gai_err),
++        .bsd_errno = GetAddrInfoErrorToErrno(emu_gai_err),
++        .data_size = data_size,
++    });
+ }
+ 
+ void SFDNSRES::GetHostByNameRequestWithOptions(HLERequestContext& ctx) {
+     auto [data_size, emu_gai_err] = GetHostByNameRequestImpl(ctx);
+ 
++    struct OutputParameters {
++        u32 data_size;
++        NetDbError netdb_error;
++        Errno bsd_errno;
++    };
++    static_assert(sizeof(OutputParameters) == 0xc);
++
+     IPC::ResponseBuilder rb{ctx, 5};
+     rb.Push(ResultSuccess);
+-    rb.Push(data_size);                                                   // serialized size
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToNetDbError(emu_gai_err))); // netdb error code
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToErrno(emu_gai_err)));      // errno
++    rb.PushRaw(OutputParameters{
++        .data_size = data_size,
++        .netdb_error = GetAddrInfoErrorToNetDbError(emu_gai_err),
++        .bsd_errno = GetAddrInfoErrorToErrno(emu_gai_err),
++    });
+ }
+ 
+ static std::vector<u8> SerializeAddrInfo(const std::vector<Network::AddrInfo>& vec,
+@@ -221,14 +240,15 @@ static std::vector<u8> SerializeAddrInfo(const std::vector<Network::AddrInfo>& v
+ }
+ 
+ static std::pair<u32, GetAddrInfoError> GetAddrInfoRequestImpl(HLERequestContext& ctx) {
+-    struct Parameters {
++    struct InputParameters {
+         u8 use_nsd_resolve;
+         u32 cancel_handle;
+         u64 process_id;
+     };
++    static_assert(sizeof(InputParameters) == 0x10);
+ 
+     IPC::RequestParser rp{ctx};
+-    const auto parameters = rp.PopRaw<Parameters>();
++    const auto parameters = rp.PopRaw<InputParameters>();
+ 
+     LOG_WARNING(
+         Service,
+@@ -264,23 +284,42 @@ static std::pair<u32, GetAddrInfoError> GetAddrInfoRequestImpl(HLERequestContext
+ void SFDNSRES::GetAddrInfoRequest(HLERequestContext& ctx) {
+     auto [data_size, emu_gai_err] = GetAddrInfoRequestImpl(ctx);
+ 
++    struct OutputParameters {
++        Errno bsd_errno;
++        GetAddrInfoError gai_error;
++        u32 data_size;
++    };
++    static_assert(sizeof(OutputParameters) == 0xc);
++
+     IPC::ResponseBuilder rb{ctx, 5};
+     rb.Push(ResultSuccess);
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToErrno(emu_gai_err))); // errno
+-    rb.Push(static_cast<s32>(emu_gai_err));                          // getaddrinfo error code
+-    rb.Push(data_size);                                              // serialized size
++    rb.PushRaw(OutputParameters{
++        .bsd_errno = GetAddrInfoErrorToErrno(emu_gai_err),
++        .gai_error = emu_gai_err,
++        .data_size = data_size,
++    });
+ }
+ 
+ void SFDNSRES::GetAddrInfoRequestWithOptions(HLERequestContext& ctx) {
+     // Additional options are ignored
+     auto [data_size, emu_gai_err] = GetAddrInfoRequestImpl(ctx);
+ 
++    struct OutputParameters {
++        u32 data_size;
++        GetAddrInfoError gai_error;
++        NetDbError netdb_error;
++        Errno bsd_errno;
++    };
++    static_assert(sizeof(OutputParameters) == 0x10);
++
+     IPC::ResponseBuilder rb{ctx, 6};
+     rb.Push(ResultSuccess);
+-    rb.Push(data_size);                                                   // serialized size
+-    rb.Push(static_cast<s32>(emu_gai_err));                               // getaddrinfo error code
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToNetDbError(emu_gai_err))); // netdb error code
+-    rb.Push(static_cast<s32>(GetAddrInfoErrorToErrno(emu_gai_err)));      // errno
++    rb.PushRaw(OutputParameters{
++        .data_size = data_size,
++        .gai_error = emu_gai_err,
++        .netdb_error = GetAddrInfoErrorToNetDbError(emu_gai_err),
++        .bsd_errno = GetAddrInfoErrorToErrno(emu_gai_err),
++    });
+ }
+ 
+ void SFDNSRES::ResolverSetOptionRequest(HLERequestContext& ctx) {
+diff --git a/src/core/hle/service/ssl/ssl.cpp b/src/core/hle/service/ssl/ssl.cpp
+index 5638dd69323..0919be55fff 100644
+--- a/src/core/hle/service/ssl/ssl.cpp
++++ b/src/core/hle/service/ssl/ssl.cpp
+@@ -64,7 +64,7 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+                             std::shared_ptr<SslContextSharedData>& shared_data,
+                             std::unique_ptr<SSLConnectionBackend>&& backend)
+         : ServiceFramework{system_, "ISslConnection"}, ssl_version{version},
+-          shared_data_{shared_data}, backend_{std::move(backend)} {
++          shared_data{shared_data}, backend{std::move(backend)} {
+         // clang-format off
+         static const FunctionInfo functions[] = {
+             {0, &ISslConnection::SetSocketDescriptor, "SetSocketDescriptor"},
+@@ -112,10 +112,10 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     }
+ 
+     ~ISslConnection() {
+-        shared_data_->connection_count--;
+-        if (fd_to_close_.has_value()) {
+-            const s32 fd = *fd_to_close_;
+-            if (!do_not_close_socket_) {
++        shared_data->connection_count--;
++        if (fd_to_close.has_value()) {
++            const s32 fd = *fd_to_close;
++            if (!do_not_close_socket) {
+                 LOG_ERROR(Service_SSL,
+                           "do_not_close_socket was changed after setting socket; is this right?");
+             } else {
+@@ -132,30 +132,30 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+ 
+ private:
+     SslVersion ssl_version;
+-    std::shared_ptr<SslContextSharedData> shared_data_;
+-    std::unique_ptr<SSLConnectionBackend> backend_;
+-    std::optional<int> fd_to_close_;
+-    bool do_not_close_socket_ = false;
+-    bool get_server_cert_chain_ = false;
+-    std::shared_ptr<Network::SocketBase> socket_;
+-    bool did_set_host_name_ = false;
+-    bool did_handshake_ = false;
++    std::shared_ptr<SslContextSharedData> shared_data;
++    std::unique_ptr<SSLConnectionBackend> backend;
++    std::optional<int> fd_to_close;
++    bool do_not_close_socket = false;
++    bool get_server_cert_chain = false;
++    std::shared_ptr<Network::SocketBase> socket;
++    bool did_set_host_name = false;
++    bool did_handshake = false;
+ 
+     ResultVal<s32> SetSocketDescriptorImpl(s32 fd) {
+         LOG_DEBUG(Service_SSL, "called, fd={}", fd);
+-        ASSERT(!did_handshake_);
++        ASSERT(!did_handshake);
+         auto bsd = system.ServiceManager().GetService<Service::Sockets::BSD>("bsd:u");
+         ASSERT_OR_EXECUTE(bsd, { return ResultInternalError; });
+         s32 ret_fd;
+         // Based on https://switchbrew.org/wiki/SSL_services#SetSocketDescriptor
+-        if (do_not_close_socket_) {
++        if (do_not_close_socket) {
+             auto res = bsd->DuplicateSocketImpl(fd);
+             if (!res.has_value()) {
+                 LOG_ERROR(Service_SSL, "Failed to duplicate socket with fd {}", fd);
+                 return ResultInvalidSocket;
+             }
+             fd = *res;
+-            fd_to_close_ = fd;
++            fd_to_close = fd;
+             ret_fd = fd;
+         } else {
+             ret_fd = -1;
+@@ -165,34 +165,34 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+             LOG_ERROR(Service_SSL, "invalid socket fd {}", fd);
+             return ResultInvalidSocket;
+         }
+-        socket_ = std::move(*sock);
+-        backend_->SetSocket(socket_);
++        socket = std::move(*sock);
++        backend->SetSocket(socket);
+         return ret_fd;
+     }
+ 
+     Result SetHostNameImpl(const std::string& hostname) {
+         LOG_DEBUG(Service_SSL, "called. hostname={}", hostname);
+-        ASSERT(!did_handshake_);
+-        Result res = backend_->SetHostName(hostname);
++        ASSERT(!did_handshake);
++        Result res = backend->SetHostName(hostname);
+         if (res == ResultSuccess) {
+-            did_set_host_name_ = true;
++            did_set_host_name = true;
+         }
+         return res;
+     }
+ 
+     Result SetVerifyOptionImpl(u32 option) {
+-        ASSERT(!did_handshake_);
++        ASSERT(!did_handshake);
+         LOG_WARNING(Service_SSL, "(STUBBED) called. option={}", option);
+         return ResultSuccess;
+     }
+ 
+-    Result SetIOModeImpl(u32 _mode) {
+-        auto mode = static_cast<IoMode>(_mode);
++    Result SetIoModeImpl(u32 input_mode) {
++        auto mode = static_cast<IoMode>(input_mode);
+         ASSERT(mode == IoMode::Blocking || mode == IoMode::NonBlocking);
+-        ASSERT_OR_EXECUTE(socket_, { return ResultNoSocket; });
++        ASSERT_OR_EXECUTE(socket, { return ResultNoSocket; });
+ 
+         const bool non_block = mode == IoMode::NonBlocking;
+-        const Network::Errno error = socket_->SetNonBlock(non_block);
++        const Network::Errno error = socket->SetNonBlock(non_block);
+         if (error != Network::Errno::SUCCESS) {
+             LOG_ERROR(Service_SSL, "Failed to set native socket non-block flag to {}", non_block);
+         }
+@@ -200,18 +200,18 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     }
+ 
+     Result SetSessionCacheModeImpl(u32 mode) {
+-        ASSERT(!did_handshake_);
++        ASSERT(!did_handshake);
+         LOG_WARNING(Service_SSL, "(STUBBED) called. value={}", mode);
+         return ResultSuccess;
+     }
+ 
+     Result DoHandshakeImpl() {
+-        ASSERT_OR_EXECUTE(!did_handshake_ && socket_, { return ResultNoSocket; });
++        ASSERT_OR_EXECUTE(!did_handshake && socket, { return ResultNoSocket; });
+         ASSERT_OR_EXECUTE_MSG(
+-            did_set_host_name_, { return ResultInternalError; },
++            did_set_host_name, { return ResultInternalError; },
+             "Expected SetHostName before DoHandshake");
+-        Result res = backend_->DoHandshake();
+-        did_handshake_ = res.IsSuccess();
++        Result res = backend->DoHandshake();
++        did_handshake = res.IsSuccess();
+         return res;
+     }
+ 
+@@ -225,7 +225,7 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+             u32 size;
+             u32 offset;
+         };
+-        if (!get_server_cert_chain_) {
++        if (!get_server_cert_chain) {
+             // Just return the first one, unencoded.
+             ASSERT_OR_EXECUTE_MSG(
+                 !certs.empty(), { return {}; }, "Should be at least one server cert");
+@@ -248,9 +248,9 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     }
+ 
+     ResultVal<std::vector<u8>> ReadImpl(size_t size) {
+-        ASSERT_OR_EXECUTE(did_handshake_, { return ResultInternalError; });
++        ASSERT_OR_EXECUTE(did_handshake, { return ResultInternalError; });
+         std::vector<u8> res(size);
+-        ResultVal<size_t> actual = backend_->Read(res);
++        ResultVal<size_t> actual = backend->Read(res);
+         if (actual.Failed()) {
+             return actual.Code();
+         }
+@@ -259,8 +259,8 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     }
+ 
+     ResultVal<size_t> WriteImpl(std::span<const u8> data) {
+-        ASSERT_OR_EXECUTE(did_handshake_, { return ResultInternalError; });
+-        return backend_->Write(data);
++        ASSERT_OR_EXECUTE(did_handshake, { return ResultInternalError; });
++        return backend->Write(data);
+     }
+ 
+     ResultVal<s32> PendingImpl() {
+@@ -295,7 +295,7 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     void SetIoMode(HLERequestContext& ctx) {
+         IPC::RequestParser rp{ctx};
+         const u32 mode = rp.Pop<u32>();
+-        const Result res = SetIOModeImpl(mode);
++        const Result res = SetIoModeImpl(mode);
+         IPC::ResponseBuilder rb{ctx, 2};
+         rb.Push(res);
+     }
+@@ -307,22 +307,26 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+     }
+ 
+     void DoHandshakeGetServerCert(HLERequestContext& ctx) {
++        struct OutputParameters {
++            u32 certs_size;
++            u32 certs_count;
++        };
++        static_assert(sizeof(OutputParameters) == 0x8);
++
+         const Result res = DoHandshakeImpl();
+-        u32 certs_count = 0;
+-        u32 certs_size = 0;
++        OutputParameters out{};
+         if (res == ResultSuccess) {
+-            auto certs = backend_->GetServerCerts();
++            auto certs = backend->GetServerCerts();
+             if (certs.Succeeded()) {
+                 const std::vector<u8> certs_buf = SerializeServerCerts(*certs);
+                 ctx.WriteBuffer(certs_buf);
+-                certs_count = static_cast<u32>(certs->size());
+-                certs_size = static_cast<u32>(certs_buf.size());
++                out.certs_count = static_cast<u32>(certs->size());
++                out.certs_size = static_cast<u32>(certs_buf.size());
+             }
+         }
+         IPC::ResponseBuilder rb{ctx, 4};
+         rb.Push(res);
+-        rb.Push(certs_size);
+-        rb.Push(certs_count);
++        rb.PushRaw(out);
+     }
+ 
+     void Read(HLERequestContext& ctx) {
+@@ -371,10 +375,10 @@ class ISslConnection final : public ServiceFramework<ISslConnection> {
+ 
+         switch (parameters.option) {
+         case OptionType::DoNotCloseSocket:
+-            do_not_close_socket_ = static_cast<bool>(parameters.value);
++            do_not_close_socket = static_cast<bool>(parameters.value);
+             break;
+         case OptionType::GetServerCertChain:
+-            get_server_cert_chain_ = static_cast<bool>(parameters.value);
++            get_server_cert_chain = static_cast<bool>(parameters.value);
+             break;
+         default:
+             LOG_WARNING(Service_SSL, "Unknown option={}, value={}", parameters.option,
+@@ -390,7 +394,7 @@ class ISslContext final : public ServiceFramework<ISslContext> {
+ public:
+     explicit ISslContext(Core::System& system_, SslVersion version)
+         : ServiceFramework{system_, "ISslContext"}, ssl_version{version},
+-          shared_data_{std::make_shared<SslContextSharedData>()} {
++          shared_data{std::make_shared<SslContextSharedData>()} {
+         static const FunctionInfo functions[] = {
+             {0, &ISslContext::SetOption, "SetOption"},
+             {1, nullptr, "GetOption"},
+@@ -412,7 +416,7 @@ class ISslContext final : public ServiceFramework<ISslContext> {
+ 
+ private:
+     SslVersion ssl_version;
+-    std::shared_ptr<SslContextSharedData> shared_data_;
++    std::shared_ptr<SslContextSharedData> shared_data;
+ 
+     void SetOption(HLERequestContext& ctx) {
+         struct Parameters {
+@@ -439,17 +443,17 @@ class ISslContext final : public ServiceFramework<ISslContext> {
+         IPC::ResponseBuilder rb{ctx, 2, 0, 1};
+         rb.Push(backend_res.Code());
+         if (backend_res.Succeeded()) {
+-            rb.PushIpcInterface<ISslConnection>(system, ssl_version, shared_data_,
++            rb.PushIpcInterface<ISslConnection>(system, ssl_version, shared_data,
+                                                 std::move(*backend_res));
+         }
+     }
+ 
+     void GetConnectionCount(HLERequestContext& ctx) {
+-        LOG_WARNING(Service_SSL, "connection_count={}", shared_data_->connection_count);
++        LOG_DEBUG(Service_SSL, "connection_count={}", shared_data->connection_count);
+ 
+         IPC::ResponseBuilder rb{ctx, 3};
+         rb.Push(ResultSuccess);
+-        rb.Push(shared_data_->connection_count);
++        rb.Push(shared_data->connection_count);
+     }
+ 
+     void ImportServerPki(HLERequestContext& ctx) {
+diff --git a/src/core/hle/service/ssl/ssl_backend_openssl.cpp b/src/core/hle/service/ssl/ssl_backend_openssl.cpp
+index e7d5801fdf0..f69674f77e9 100644
+--- a/src/core/hle/service/ssl/ssl_backend_openssl.cpp
++++ b/src/core/hle/service/ssl/ssl_backend_openssl.cpp
+@@ -51,37 +51,37 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+             return ResultInternalError;
+         }
+ 
+-        ssl_ = SSL_new(ssl_ctx);
+-        if (!ssl_) {
++        ssl = SSL_new(ssl_ctx);
++        if (!ssl) {
+             LOG_ERROR(Service_SSL, "SSL_new failed");
+             return CheckOpenSSLErrors();
+         }
+ 
+-        SSL_set_connect_state(ssl_);
++        SSL_set_connect_state(ssl);
+ 
+-        bio_ = BIO_new(bio_meth);
+-        if (!bio_) {
++        bio = BIO_new(bio_meth);
++        if (!bio) {
+             LOG_ERROR(Service_SSL, "BIO_new failed");
+             return CheckOpenSSLErrors();
+         }
+ 
+-        BIO_set_data(bio_, this);
+-        BIO_set_init(bio_, 1);
+-        SSL_set_bio(ssl_, bio_, bio_);
++        BIO_set_data(bio, this);
++        BIO_set_init(bio, 1);
++        SSL_set_bio(ssl, bio, bio);
+ 
+         return ResultSuccess;
+     }
+ 
+-    void SetSocket(std::shared_ptr<Network::SocketBase> socket) override {
+-        socket_ = socket;
++    void SetSocket(std::shared_ptr<Network::SocketBase> socket_in) override {
++        socket = std::move(socket_in);
+     }
+ 
+     Result SetHostName(const std::string& hostname) override {
+-        if (!SSL_set1_host(ssl_, hostname.c_str())) { // hostname for verification
++        if (!SSL_set1_host(ssl, hostname.c_str())) { // hostname for verification
+             LOG_ERROR(Service_SSL, "SSL_set1_host({}) failed", hostname);
+             return CheckOpenSSLErrors();
+         }
+-        if (!SSL_set_tlsext_host_name(ssl_, hostname.c_str())) { // hostname for SNI
++        if (!SSL_set_tlsext_host_name(ssl, hostname.c_str())) { // hostname for SNI
+             LOG_ERROR(Service_SSL, "SSL_set_tlsext_host_name({}) failed", hostname);
+             return CheckOpenSSLErrors();
+         }
+@@ -89,18 +89,18 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+     }
+ 
+     Result DoHandshake() override {
+-        SSL_set_verify_result(ssl_, X509_V_OK);
+-        const int ret = SSL_do_handshake(ssl_);
+-        const long verify_result = SSL_get_verify_result(ssl_);
++        SSL_set_verify_result(ssl, X509_V_OK);
++        const int ret = SSL_do_handshake(ssl);
++        const long verify_result = SSL_get_verify_result(ssl);
+         if (verify_result != X509_V_OK) {
+             LOG_ERROR(Service_SSL, "SSL cert verification failed because: {}",
+                       X509_verify_cert_error_string(verify_result));
+             return CheckOpenSSLErrors();
+         }
+         if (ret <= 0) {
+-            const int ssl_err = SSL_get_error(ssl_, ret);
++            const int ssl_err = SSL_get_error(ssl, ret);
+             if (ssl_err == SSL_ERROR_ZERO_RETURN ||
+-                (ssl_err == SSL_ERROR_SYSCALL && got_read_eof_)) {
++                (ssl_err == SSL_ERROR_SYSCALL && got_read_eof)) {
+                 LOG_ERROR(Service_SSL, "SSL handshake failed because server hung up");
+                 return ResultInternalError;
+             }
+@@ -110,18 +110,18 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+ 
+     ResultVal<size_t> Read(std::span<u8> data) override {
+         size_t actual;
+-        const int ret = SSL_read_ex(ssl_, data.data(), data.size(), &actual);
++        const int ret = SSL_read_ex(ssl, data.data(), data.size(), &actual);
+         return HandleReturn("SSL_read_ex", actual, ret);
+     }
+ 
+     ResultVal<size_t> Write(std::span<const u8> data) override {
+         size_t actual;
+-        const int ret = SSL_write_ex(ssl_, data.data(), data.size(), &actual);
++        const int ret = SSL_write_ex(ssl, data.data(), data.size(), &actual);
+         return HandleReturn("SSL_write_ex", actual, ret);
+     }
+ 
+     ResultVal<size_t> HandleReturn(const char* what, size_t actual, int ret) {
+-        const int ssl_err = SSL_get_error(ssl_, ret);
++        const int ssl_err = SSL_get_error(ssl, ret);
+         CheckOpenSSLErrors();
+         switch (ssl_err) {
+         case SSL_ERROR_NONE:
+@@ -137,7 +137,7 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+             LOG_DEBUG(Service_SSL, "{} => SSL_ERROR_WANT_WRITE", what);
+             return ResultWouldBlock;
+         default:
+-            if (ssl_err == SSL_ERROR_SYSCALL && got_read_eof_) {
++            if (ssl_err == SSL_ERROR_SYSCALL && got_read_eof) {
+                 LOG_DEBUG(Service_SSL, "{} => SSL_ERROR_SYSCALL because server hung up", what);
+                 return size_t(0);
+             }
+@@ -147,7 +147,7 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+     }
+ 
+     ResultVal<std::vector<std::vector<u8>>> GetServerCerts() override {
+-        STACK_OF(X509)* chain = SSL_get_peer_cert_chain(ssl_);
++        STACK_OF(X509)* chain = SSL_get_peer_cert_chain(ssl);
+         if (!chain) {
+             LOG_ERROR(Service_SSL, "SSL_get_peer_cert_chain returned nullptr");
+             return ResultInternalError;
+@@ -169,8 +169,8 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+ 
+     ~SSLConnectionBackendOpenSSL() {
+         // these are null-tolerant:
+-        SSL_free(ssl_);
+-        BIO_free(bio_);
++        SSL_free(ssl);
++        BIO_free(bio);
+     }
+ 
+     static void KeyLogCallback(const SSL* ssl, const char* line) {
+@@ -188,9 +188,9 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+     static int WriteCallback(BIO* bio, const char* buf, size_t len, size_t* actual_p) {
+         auto self = static_cast<SSLConnectionBackendOpenSSL*>(BIO_get_data(bio));
+         ASSERT_OR_EXECUTE_MSG(
+-            self->socket_, { return 0; }, "OpenSSL asked to send but we have no socket");
++            self->socket, { return 0; }, "OpenSSL asked to send but we have no socket");
+         BIO_clear_retry_flags(bio);
+-        auto [actual, err] = self->socket_->Send({reinterpret_cast<const u8*>(buf), len}, 0);
++        auto [actual, err] = self->socket->Send({reinterpret_cast<const u8*>(buf), len}, 0);
+         switch (err) {
+         case Network::Errno::SUCCESS:
+             *actual_p = actual;
+@@ -207,14 +207,14 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+     static int ReadCallback(BIO* bio, char* buf, size_t len, size_t* actual_p) {
+         auto self = static_cast<SSLConnectionBackendOpenSSL*>(BIO_get_data(bio));
+         ASSERT_OR_EXECUTE_MSG(
+-            self->socket_, { return 0; }, "OpenSSL asked to recv but we have no socket");
++            self->socket, { return 0; }, "OpenSSL asked to recv but we have no socket");
+         BIO_clear_retry_flags(bio);
+-        auto [actual, err] = self->socket_->Recv(0, {reinterpret_cast<u8*>(buf), len});
++        auto [actual, err] = self->socket->Recv(0, {reinterpret_cast<u8*>(buf), len});
+         switch (err) {
+         case Network::Errno::SUCCESS:
+             *actual_p = actual;
+             if (actual == 0) {
+-                self->got_read_eof_ = true;
++                self->got_read_eof = true;
+             }
+             return actual ? 1 : 0;
+         case Network::Errno::AGAIN:
+@@ -246,11 +246,11 @@ class SSLConnectionBackendOpenSSL final : public SSLConnectionBackend {
+         }
+     }
+ 
+-    SSL* ssl_ = nullptr;
+-    BIO* bio_ = nullptr;
+-    bool got_read_eof_ = false;
++    SSL* ssl = nullptr;
++    BIO* bio = nullptr;
++    bool got_read_eof = false;
+ 
+-    std::shared_ptr<Network::SocketBase> socket_;
++    std::shared_ptr<Network::SocketBase> socket;
+ };
+ 
+ ResultVal<std::unique_ptr<SSLConnectionBackend>> CreateSSLConnectionBackend() {
+diff --git a/src/core/hle/service/ssl/ssl_backend_schannel.cpp b/src/core/hle/service/ssl/ssl_backend_schannel.cpp
+index 775d5cc0723..a1d6a186ef7 100644
+--- a/src/core/hle/service/ssl/ssl_backend_schannel.cpp
++++ b/src/core/hle/service/ssl/ssl_backend_schannel.cpp
+@@ -48,6 +48,12 @@ static void OneTimeInit() {
+         return;
+     }
+ 
++    if (getenv("SSLKEYLOGFILE")) {
++        LOG_CRITICAL(Service_SSL, "SSLKEYLOGFILE was set but Schannel does not support exporting "
++                                  "keys; not logging keys!");
++        // Not fatal.
++    }
++
+     one_time_init_success = true;
+ }
+ 
+@@ -70,25 +76,25 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+         return ResultSuccess;
+     }
+ 
+-    void SetSocket(std::shared_ptr<Network::SocketBase> socket) override {
+-        socket_ = socket;
++    void SetSocket(std::shared_ptr<Network::SocketBase> socket_in) override {
++        socket = std::move(socket_in);
+     }
+ 
+-    Result SetHostName(const std::string& hostname) override {
+-        hostname_ = hostname;
++    Result SetHostName(const std::string& hostname_in) override {
++        hostname = hostname_in;
+         return ResultSuccess;
+     }
+ 
+     Result DoHandshake() override {
+         while (1) {
+             Result r;
+-            switch (handshake_state_) {
++            switch (handshake_state) {
+             case HandshakeState::Initial:
+                 if ((r = FlushCiphertextWriteBuf()) != ResultSuccess ||
+                     (r = CallInitializeSecurityContext()) != ResultSuccess) {
+                     return r;
+                 }
+-                // CallInitializeSecurityContext updated `handshake_state_`.
++                // CallInitializeSecurityContext updated `handshake_state`.
+                 continue;
+             case HandshakeState::ContinueNeeded:
+             case HandshakeState::IncompleteMessage:
+@@ -96,20 +102,20 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+                     (r = FillCiphertextReadBuf()) != ResultSuccess) {
+                     return r;
+                 }
+-                if (ciphertext_read_buf_.empty()) {
++                if (ciphertext_read_buf.empty()) {
+                     LOG_ERROR(Service_SSL, "SSL handshake failed because server hung up");
+                     return ResultInternalError;
+                 }
+                 if ((r = CallInitializeSecurityContext()) != ResultSuccess) {
+                     return r;
+                 }
+-                // CallInitializeSecurityContext updated `handshake_state_`.
++                // CallInitializeSecurityContext updated `handshake_state`.
+                 continue;
+             case HandshakeState::DoneAfterFlush:
+                 if ((r = FlushCiphertextWriteBuf()) != ResultSuccess) {
+                     return r;
+                 }
+-                handshake_state_ = HandshakeState::Connected;
++                handshake_state = HandshakeState::Connected;
+                 return ResultSuccess;
+             case HandshakeState::Connected:
+                 LOG_ERROR(Service_SSL, "Called DoHandshake but we already handshook");
+@@ -121,24 +127,24 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+     }
+ 
+     Result FillCiphertextReadBuf() {
+-        const size_t fill_size = read_buf_fill_size_ ? read_buf_fill_size_ : 4096;
+-        read_buf_fill_size_ = 0;
++        const size_t fill_size = read_buf_fill_size ? read_buf_fill_size : 4096;
++        read_buf_fill_size = 0;
+         // This unnecessarily zeroes the buffer; oh well.
+-        const size_t offset = ciphertext_read_buf_.size();
++        const size_t offset = ciphertext_read_buf.size();
+         ASSERT_OR_EXECUTE(offset + fill_size >= offset, { return ResultInternalError; });
+-        ciphertext_read_buf_.resize(offset + fill_size, 0);
+-        const auto read_span = std::span(ciphertext_read_buf_).subspan(offset, fill_size);
+-        const auto [actual, err] = socket_->Recv(0, read_span);
++        ciphertext_read_buf.resize(offset + fill_size, 0);
++        const auto read_span = std::span(ciphertext_read_buf).subspan(offset, fill_size);
++        const auto [actual, err] = socket->Recv(0, read_span);
+         switch (err) {
+         case Network::Errno::SUCCESS:
+             ASSERT(static_cast<size_t>(actual) <= fill_size);
+-            ciphertext_read_buf_.resize(offset + actual);
++            ciphertext_read_buf.resize(offset + actual);
+             return ResultSuccess;
+         case Network::Errno::AGAIN:
+-            ciphertext_read_buf_.resize(offset);
++            ciphertext_read_buf.resize(offset);
+             return ResultWouldBlock;
+         default:
+-            ciphertext_read_buf_.resize(offset);
++            ciphertext_read_buf.resize(offset);
+             LOG_ERROR(Service_SSL, "Socket recv returned Network::Errno {}", err);
+             return ResultInternalError;
+         }
+@@ -146,13 +152,13 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+ 
+     // Returns success if the write buffer has been completely emptied.
+     Result FlushCiphertextWriteBuf() {
+-        while (!ciphertext_write_buf_.empty()) {
+-            const auto [actual, err] = socket_->Send(ciphertext_write_buf_, 0);
++        while (!ciphertext_write_buf.empty()) {
++            const auto [actual, err] = socket->Send(ciphertext_write_buf, 0);
+             switch (err) {
+             case Network::Errno::SUCCESS:
+-                ASSERT(static_cast<size_t>(actual) <= ciphertext_write_buf_.size());
+-                ciphertext_write_buf_.erase(ciphertext_write_buf_.begin(),
+-                                            ciphertext_write_buf_.begin() + actual);
++                ASSERT(static_cast<size_t>(actual) <= ciphertext_write_buf.size());
++                ciphertext_write_buf.erase(ciphertext_write_buf.begin(),
++                                           ciphertext_write_buf.begin() + actual);
+                 break;
+             case Network::Errno::AGAIN:
+                 return ResultWouldBlock;
+@@ -175,9 +181,9 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             // only used if `initial_call_done`
+             {
+                 // [0]
+-                .cbBuffer = static_cast<unsigned long>(ciphertext_read_buf_.size()),
++                .cbBuffer = static_cast<unsigned long>(ciphertext_read_buf.size()),
+                 .BufferType = SECBUFFER_TOKEN,
+-                .pvBuffer = ciphertext_read_buf_.data(),
++                .pvBuffer = ciphertext_read_buf.data(),
+             },
+             {
+                 // [1] (will be replaced by SECBUFFER_MISSING when SEC_E_INCOMPLETE_MESSAGE is
+@@ -211,30 +217,30 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             .pBuffers = output_buffers.data(),
+         };
+         ASSERT_OR_EXECUTE_MSG(
+-            input_buffers[0].cbBuffer == ciphertext_read_buf_.size(),
++            input_buffers[0].cbBuffer == ciphertext_read_buf.size(),
+             { return ResultInternalError; }, "read buffer too large");
+ 
+-        bool initial_call_done = handshake_state_ != HandshakeState::Initial;
++        bool initial_call_done = handshake_state != HandshakeState::Initial;
+         if (initial_call_done) {
+             LOG_DEBUG(Service_SSL, "Passing {} bytes into InitializeSecurityContext",
+-                      ciphertext_read_buf_.size());
++                      ciphertext_read_buf.size());
+         }
+ 
+         const SECURITY_STATUS ret =
+-            InitializeSecurityContextA(&cred_handle, initial_call_done ? &ctxt_ : nullptr,
++            InitializeSecurityContextA(&cred_handle, initial_call_done ? &ctxt : nullptr,
+                                        // Caller ensured we have set a hostname:
+-                                       const_cast<char*>(hostname_.value().c_str()), req,
++                                       const_cast<char*>(hostname.value().c_str()), req,
+                                        0, // Reserved1
+                                        0, // TargetDataRep not used with Schannel
+                                        initial_call_done ? &input_desc : nullptr,
+                                        0, // Reserved2
+-                                       initial_call_done ? nullptr : &ctxt_, &output_desc, &attr,
++                                       initial_call_done ? nullptr : &ctxt, &output_desc, &attr,
+                                        nullptr); // ptsExpiry
+ 
+         if (output_buffers[0].pvBuffer) {
+             const std::span span(static_cast<u8*>(output_buffers[0].pvBuffer),
+                                  output_buffers[0].cbBuffer);
+-            ciphertext_write_buf_.insert(ciphertext_write_buf_.end(), span.begin(), span.end());
++            ciphertext_write_buf.insert(ciphertext_write_buf.end(), span.begin(), span.end());
+             FreeContextBuffer(output_buffers[0].pvBuffer);
+         }
+ 
+@@ -251,64 +257,64 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             LOG_DEBUG(Service_SSL, "InitializeSecurityContext => SEC_I_CONTINUE_NEEDED");
+             if (input_buffers[1].BufferType == SECBUFFER_EXTRA) {
+                 LOG_DEBUG(Service_SSL, "EXTRA of size {}", input_buffers[1].cbBuffer);
+-                ASSERT(input_buffers[1].cbBuffer <= ciphertext_read_buf_.size());
+-                ciphertext_read_buf_.erase(ciphertext_read_buf_.begin(),
+-                                           ciphertext_read_buf_.end() - input_buffers[1].cbBuffer);
++                ASSERT(input_buffers[1].cbBuffer <= ciphertext_read_buf.size());
++                ciphertext_read_buf.erase(ciphertext_read_buf.begin(),
++                                          ciphertext_read_buf.end() - input_buffers[1].cbBuffer);
+             } else {
+                 ASSERT(input_buffers[1].BufferType == SECBUFFER_EMPTY);
+-                ciphertext_read_buf_.clear();
++                ciphertext_read_buf.clear();
+             }
+-            handshake_state_ = HandshakeState::ContinueNeeded;
++            handshake_state = HandshakeState::ContinueNeeded;
+             return ResultSuccess;
+         case SEC_E_INCOMPLETE_MESSAGE:
+             LOG_DEBUG(Service_SSL, "InitializeSecurityContext => SEC_E_INCOMPLETE_MESSAGE");
+             ASSERT(input_buffers[1].BufferType == SECBUFFER_MISSING);
+-            read_buf_fill_size_ = input_buffers[1].cbBuffer;
+-            handshake_state_ = HandshakeState::IncompleteMessage;
++            read_buf_fill_size = input_buffers[1].cbBuffer;
++            handshake_state = HandshakeState::IncompleteMessage;
+             return ResultSuccess;
+         case SEC_E_OK:
+             LOG_DEBUG(Service_SSL, "InitializeSecurityContext => SEC_E_OK");
+-            ciphertext_read_buf_.clear();
+-            handshake_state_ = HandshakeState::DoneAfterFlush;
++            ciphertext_read_buf.clear();
++            handshake_state = HandshakeState::DoneAfterFlush;
+             return GrabStreamSizes();
+         default:
+             LOG_ERROR(Service_SSL,
+                       "InitializeSecurityContext failed (probably certificate/protocol issue): {}",
+                       Common::NativeErrorToString(ret));
+-            handshake_state_ = HandshakeState::Error;
++            handshake_state = HandshakeState::Error;
+             return ResultInternalError;
+         }
+     }
+ 
+     Result GrabStreamSizes() {
+         const SECURITY_STATUS ret =
+-            QueryContextAttributes(&ctxt_, SECPKG_ATTR_STREAM_SIZES, &stream_sizes_);
++            QueryContextAttributes(&ctxt, SECPKG_ATTR_STREAM_SIZES, &stream_sizes);
+         if (ret != SEC_E_OK) {
+             LOG_ERROR(Service_SSL, "QueryContextAttributes(SECPKG_ATTR_STREAM_SIZES) failed: {}",
+                       Common::NativeErrorToString(ret));
+-            handshake_state_ = HandshakeState::Error;
++            handshake_state = HandshakeState::Error;
+             return ResultInternalError;
+         }
+         return ResultSuccess;
+     }
+ 
+     ResultVal<size_t> Read(std::span<u8> data) override {
+-        if (handshake_state_ != HandshakeState::Connected) {
++        if (handshake_state != HandshakeState::Connected) {
+             LOG_ERROR(Service_SSL, "Called Read but we did not successfully handshake");
+             return ResultInternalError;
+         }
+-        if (data.size() == 0 || got_read_eof_) {
++        if (data.size() == 0 || got_read_eof) {
+             return size_t(0);
+         }
+         while (1) {
+-            if (!cleartext_read_buf_.empty()) {
+-                const size_t read_size = std::min(cleartext_read_buf_.size(), data.size());
+-                std::memcpy(data.data(), cleartext_read_buf_.data(), read_size);
+-                cleartext_read_buf_.erase(cleartext_read_buf_.begin(),
+-                                          cleartext_read_buf_.begin() + read_size);
++            if (!cleartext_read_buf.empty()) {
++                const size_t read_size = std::min(cleartext_read_buf.size(), data.size());
++                std::memcpy(data.data(), cleartext_read_buf.data(), read_size);
++                cleartext_read_buf.erase(cleartext_read_buf.begin(),
++                                         cleartext_read_buf.begin() + read_size);
+                 return read_size;
+             }
+-            if (!ciphertext_read_buf_.empty()) {
++            if (!ciphertext_read_buf.empty()) {
+                 SecBuffer empty{
+                     .cbBuffer = 0,
+                     .BufferType = SECBUFFER_EMPTY,
+@@ -316,16 +322,16 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+                 };
+                 std::array<SecBuffer, 5> buffers{{
+                     {
+-                        .cbBuffer = static_cast<unsigned long>(ciphertext_read_buf_.size()),
++                        .cbBuffer = static_cast<unsigned long>(ciphertext_read_buf.size()),
+                         .BufferType = SECBUFFER_DATA,
+-                        .pvBuffer = ciphertext_read_buf_.data(),
++                        .pvBuffer = ciphertext_read_buf.data(),
+                     },
+                     empty,
+                     empty,
+                     empty,
+                 }};
+                 ASSERT_OR_EXECUTE_MSG(
+-                    buffers[0].cbBuffer == ciphertext_read_buf_.size(),
++                    buffers[0].cbBuffer == ciphertext_read_buf.size(),
+                     { return ResultInternalError; }, "read buffer too large");
+                 SecBufferDesc desc{
+                     .ulVersion = SECBUFFER_VERSION,
+@@ -333,7 +339,7 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+                     .pBuffers = buffers.data(),
+                 };
+                 SECURITY_STATUS ret =
+-                    DecryptMessage(&ctxt_, &desc, /*MessageSeqNo*/ 0, /*pfQOP*/ nullptr);
++                    DecryptMessage(&ctxt, &desc, /*MessageSeqNo*/ 0, /*pfQOP*/ nullptr);
+                 switch (ret) {
+                 case SEC_E_OK:
+                     ASSERT_OR_EXECUTE(buffers[0].BufferType == SECBUFFER_STREAM_HEADER,
+@@ -342,24 +348,23 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+                                       { return ResultInternalError; });
+                     ASSERT_OR_EXECUTE(buffers[2].BufferType == SECBUFFER_STREAM_TRAILER,
+                                       { return ResultInternalError; });
+-                    cleartext_read_buf_.assign(static_cast<u8*>(buffers[1].pvBuffer),
+-                                               static_cast<u8*>(buffers[1].pvBuffer) +
+-                                                   buffers[1].cbBuffer);
++                    cleartext_read_buf.assign(static_cast<u8*>(buffers[1].pvBuffer),
++                                              static_cast<u8*>(buffers[1].pvBuffer) +
++                                                  buffers[1].cbBuffer);
+                     if (buffers[3].BufferType == SECBUFFER_EXTRA) {
+-                        ASSERT(buffers[3].cbBuffer <= ciphertext_read_buf_.size());
+-                        ciphertext_read_buf_.erase(ciphertext_read_buf_.begin(),
+-                                                   ciphertext_read_buf_.end() -
+-                                                       buffers[3].cbBuffer);
++                        ASSERT(buffers[3].cbBuffer <= ciphertext_read_buf.size());
++                        ciphertext_read_buf.erase(ciphertext_read_buf.begin(),
++                                                  ciphertext_read_buf.end() - buffers[3].cbBuffer);
+                     } else {
+                         ASSERT(buffers[3].BufferType == SECBUFFER_EMPTY);
+-                        ciphertext_read_buf_.clear();
++                        ciphertext_read_buf.clear();
+                     }
+                     continue;
+                 case SEC_E_INCOMPLETE_MESSAGE:
+                     break;
+                 case SEC_I_CONTEXT_EXPIRED:
+                     // Server hung up by sending close_notify.
+-                    got_read_eof_ = true;
++                    got_read_eof = true;
+                     return size_t(0);
+                 default:
+                     LOG_ERROR(Service_SSL, "DecryptMessage failed: {}",
+@@ -371,43 +376,43 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             if (r != ResultSuccess) {
+                 return r;
+             }
+-            if (ciphertext_read_buf_.empty()) {
+-                got_read_eof_ = true;
++            if (ciphertext_read_buf.empty()) {
++                got_read_eof = true;
+                 return size_t(0);
+             }
+         }
+     }
+ 
+     ResultVal<size_t> Write(std::span<const u8> data) override {
+-        if (handshake_state_ != HandshakeState::Connected) {
++        if (handshake_state != HandshakeState::Connected) {
+             LOG_ERROR(Service_SSL, "Called Write but we did not successfully handshake");
+             return ResultInternalError;
+         }
+         if (data.size() == 0) {
+             return size_t(0);
+         }
+-        data = data.subspan(0, std::min<size_t>(data.size(), stream_sizes_.cbMaximumMessage));
+-        if (!cleartext_write_buf_.empty()) {
++        data = data.subspan(0, std::min<size_t>(data.size(), stream_sizes.cbMaximumMessage));
++        if (!cleartext_write_buf.empty()) {
+             // Already in the middle of a write.  It wouldn't make sense to not
+             // finish sending the entire buffer since TLS has
+             // header/MAC/padding/etc.
+-            if (data.size() != cleartext_write_buf_.size() ||
+-                std::memcmp(data.data(), cleartext_write_buf_.data(), data.size())) {
++            if (data.size() != cleartext_write_buf.size() ||
++                std::memcmp(data.data(), cleartext_write_buf.data(), data.size())) {
+                 LOG_ERROR(Service_SSL, "Called Write but buffer does not match previous buffer");
+                 return ResultInternalError;
+             }
+             return WriteAlreadyEncryptedData();
+         } else {
+-            cleartext_write_buf_.assign(data.begin(), data.end());
++            cleartext_write_buf.assign(data.begin(), data.end());
+         }
+ 
+-        std::vector<u8> header_buf(stream_sizes_.cbHeader, 0);
+-        std::vector<u8> tmp_data_buf = cleartext_write_buf_;
+-        std::vector<u8> trailer_buf(stream_sizes_.cbTrailer, 0);
++        std::vector<u8> header_buf(stream_sizes.cbHeader, 0);
++        std::vector<u8> tmp_data_buf = cleartext_write_buf;
++        std::vector<u8> trailer_buf(stream_sizes.cbTrailer, 0);
+ 
+         std::array<SecBuffer, 3> buffers{{
+             {
+-                .cbBuffer = stream_sizes_.cbHeader,
++                .cbBuffer = stream_sizes.cbHeader,
+                 .BufferType = SECBUFFER_STREAM_HEADER,
+                 .pvBuffer = header_buf.data(),
+             },
+@@ -417,7 +422,7 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+                 .pvBuffer = tmp_data_buf.data(),
+             },
+             {
+-                .cbBuffer = stream_sizes_.cbTrailer,
++                .cbBuffer = stream_sizes.cbTrailer,
+                 .BufferType = SECBUFFER_STREAM_TRAILER,
+                 .pvBuffer = trailer_buf.data(),
+             },
+@@ -431,17 +436,17 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             .pBuffers = buffers.data(),
+         };
+ 
+-        const SECURITY_STATUS ret = EncryptMessage(&ctxt_, /*fQOP*/ 0, &desc, /*MessageSeqNo*/ 0);
++        const SECURITY_STATUS ret = EncryptMessage(&ctxt, /*fQOP*/ 0, &desc, /*MessageSeqNo*/ 0);
+         if (ret != SEC_E_OK) {
+             LOG_ERROR(Service_SSL, "EncryptMessage failed: {}", Common::NativeErrorToString(ret));
+             return ResultInternalError;
+         }
+-        ciphertext_write_buf_.insert(ciphertext_write_buf_.end(), header_buf.begin(),
+-                                     header_buf.end());
+-        ciphertext_write_buf_.insert(ciphertext_write_buf_.end(), tmp_data_buf.begin(),
+-                                     tmp_data_buf.end());
+-        ciphertext_write_buf_.insert(ciphertext_write_buf_.end(), trailer_buf.begin(),
+-                                     trailer_buf.end());
++        ciphertext_write_buf.insert(ciphertext_write_buf.end(), header_buf.begin(),
++                                    header_buf.end());
++        ciphertext_write_buf.insert(ciphertext_write_buf.end(), tmp_data_buf.begin(),
++                                    tmp_data_buf.end());
++        ciphertext_write_buf.insert(ciphertext_write_buf.end(), trailer_buf.begin(),
++                                    trailer_buf.end());
+         return WriteAlreadyEncryptedData();
+     }
+ 
+@@ -451,15 +456,15 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+             return r;
+         }
+         // write buf is empty
+-        const size_t cleartext_bytes_written = cleartext_write_buf_.size();
+-        cleartext_write_buf_.clear();
++        const size_t cleartext_bytes_written = cleartext_write_buf.size();
++        cleartext_write_buf.clear();
+         return cleartext_bytes_written;
+     }
+ 
+     ResultVal<std::vector<std::vector<u8>>> GetServerCerts() override {
+         PCCERT_CONTEXT returned_cert = nullptr;
+         const SECURITY_STATUS ret =
+-            QueryContextAttributes(&ctxt_, SECPKG_ATTR_REMOTE_CERT_CONTEXT, &returned_cert);
++            QueryContextAttributes(&ctxt, SECPKG_ATTR_REMOTE_CERT_CONTEXT, &returned_cert);
+         if (ret != SEC_E_OK) {
+             LOG_ERROR(Service_SSL,
+                       "QueryContextAttributes(SECPKG_ATTR_REMOTE_CERT_CONTEXT) failed: {}",
+@@ -480,8 +485,8 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+     }
+ 
+     ~SSLConnectionBackendSchannel() {
+-        if (handshake_state_ != HandshakeState::Initial) {
+-            DeleteSecurityContext(&ctxt_);
++        if (handshake_state != HandshakeState::Initial) {
++            DeleteSecurityContext(&ctxt);
+         }
+     }
+ 
+@@ -509,21 +514,21 @@ class SSLConnectionBackendSchannel final : public SSLConnectionBackend {
+         // Another error was returned and we shouldn't allow initialization
+         // to continue.
+         Error,
+-    } handshake_state_ = HandshakeState::Initial;
++    } handshake_state = HandshakeState::Initial;
+ 
+-    CtxtHandle ctxt_;
+-    SecPkgContext_StreamSizes stream_sizes_;
++    CtxtHandle ctxt;
++    SecPkgContext_StreamSizes stream_sizes;
+ 
+-    std::shared_ptr<Network::SocketBase> socket_;
+-    std::optional<std::string> hostname_;
++    std::shared_ptr<Network::SocketBase> socket;
++    std::optional<std::string> hostname;
+ 
+-    std::vector<u8> ciphertext_read_buf_;
+-    std::vector<u8> ciphertext_write_buf_;
+-    std::vector<u8> cleartext_read_buf_;
+-    std::vector<u8> cleartext_write_buf_;
++    std::vector<u8> ciphertext_read_buf;
++    std::vector<u8> ciphertext_write_buf;
++    std::vector<u8> cleartext_read_buf;
++    std::vector<u8> cleartext_write_buf;
+ 
+-    bool got_read_eof_ = false;
+-    size_t read_buf_fill_size_ = 0;
++    bool got_read_eof = false;
++    size_t read_buf_fill_size = 0;
+ };
+ 
+ ResultVal<std::unique_ptr<SSLConnectionBackend>> CreateSSLConnectionBackend() {
+diff --git a/src/core/internal_network/network.cpp b/src/core/internal_network/network.cpp
+index 36cf0090232..28f89c599f7 100644
+--- a/src/core/internal_network/network.cpp
++++ b/src/core/internal_network/network.cpp
+@@ -570,10 +570,10 @@ Socket::Socket(Socket&& rhs) noexcept {
+ }
+ 
+ template <typename T>
+-std::pair<T, Errno> Socket::GetSockOpt(SOCKET fd_, int option) {
++std::pair<T, Errno> Socket::GetSockOpt(SOCKET fd_so, int option) {
+     T value{};
+     socklen_t len = sizeof(value);
+-    const int result = getsockopt(fd_, SOL_SOCKET, option, reinterpret_cast<char*>(&value), &len);
++    const int result = getsockopt(fd_so, SOL_SOCKET, option, reinterpret_cast<char*>(&value), &len);
+     if (result != SOCKET_ERROR) {
+         ASSERT(len == sizeof(value));
+         return {value, Errno::SUCCESS};
+@@ -582,9 +582,9 @@ std::pair<T, Errno> Socket::GetSockOpt(SOCKET fd_, int option) {
+ }
+ 
+ template <typename T>
+-Errno Socket::SetSockOpt(SOCKET fd_, int option, T value) {
++Errno Socket::SetSockOpt(SOCKET fd_so, int option, T value) {
+     const int result =
+-        setsockopt(fd_, SOL_SOCKET, option, reinterpret_cast<const char*>(&value), sizeof(value));
++        setsockopt(fd_so, SOL_SOCKET, option, reinterpret_cast<const char*>(&value), sizeof(value));
+     if (result != SOCKET_ERROR) {
+         return Errno::SUCCESS;
+     }
+
+From 0ed1cb7266e35c4b1161fa01f172d27befdc64a4 Mon Sep 17 00:00:00 2001
+From: comex <comexk@gmail.com>
+Date: Sat, 1 Jul 2023 17:48:19 -0700
+Subject: [PATCH 12/13] ...actually add the SecureTransport backend to Git.
+
+---
+ .../ssl/ssl_backend_securetransport.cpp       | 219 ++++++++++++++++++
+ 1 file changed, 219 insertions(+)
+ create mode 100644 src/core/hle/service/ssl/ssl_backend_securetransport.cpp
+
+diff --git a/src/core/hle/service/ssl/ssl_backend_securetransport.cpp b/src/core/hle/service/ssl/ssl_backend_securetransport.cpp
+new file mode 100644
+index 00000000000..be40a5aeb34
+--- /dev/null
++++ b/src/core/hle/service/ssl/ssl_backend_securetransport.cpp
+@@ -0,0 +1,219 @@
++// SPDX-FileCopyrightText: Copyright 2023 yuzu Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "core/hle/service/ssl/ssl_backend.h"
++#include "core/internal_network/network.h"
++#include "core/internal_network/sockets.h"
++
++#include <mutex>
++
++#include <Security/SecureTransport.h>
++
++// SecureTransport has been deprecated in its entirety in favor of
++// Network.framework, but that does not allow layering TLS on top of an
++// arbitrary socket.
++#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
++
++namespace {
++
++template <typename T>
++struct CFReleaser {
++    T ptr;
++
++    YUZU_NON_COPYABLE(CFReleaser);
++    constexpr CFReleaser() : ptr(nullptr) {}
++    constexpr CFReleaser(T ptr) : ptr(ptr) {}
++    constexpr operator T() {
++        return ptr;
++    }
++    ~CFReleaser() {
++        if (ptr) {
++            CFRelease(ptr);
++        }
++    }
++};
++
++std::string CFStringToString(CFStringRef cfstr) {
++    CFReleaser<CFDataRef> cfdata(
++        CFStringCreateExternalRepresentation(nullptr, cfstr, kCFStringEncodingUTF8, 0));
++    ASSERT_OR_EXECUTE(cfdata, { return "???"; });
++    return std::string(reinterpret_cast<const char*>(CFDataGetBytePtr(cfdata)),
++                       CFDataGetLength(cfdata));
++}
++
++std::string OSStatusToString(OSStatus status) {
++    CFReleaser<CFStringRef> cfstr(SecCopyErrorMessageString(status, nullptr));
++    if (!cfstr) {
++        return "[unknown error]";
++    }
++    return CFStringToString(cfstr);
++}
++
++} // namespace
++
++namespace Service::SSL {
++
++class SSLConnectionBackendSecureTransport final : public SSLConnectionBackend {
++public:
++    Result Init() {
++        static std::once_flag once_flag;
++        std::call_once(once_flag, []() {
++            if (getenv("SSLKEYLOGFILE")) {
++                LOG_CRITICAL(Service_SSL, "SSLKEYLOGFILE was set but SecureTransport does not "
++                                          "support exporting keys; not logging keys!");
++                // Not fatal.
++            }
++        });
++
++        context.ptr = SSLCreateContext(nullptr, kSSLClientSide, kSSLStreamType);
++        if (!context) {
++            LOG_ERROR(Service_SSL, "SSLCreateContext failed");
++            return ResultInternalError;
++        }
++
++        OSStatus status;
++        if ((status = SSLSetIOFuncs(context, ReadCallback, WriteCallback)) ||
++            (status = SSLSetConnection(context, this))) {
++            LOG_ERROR(Service_SSL, "SSLContext initialization failed: {}",
++                      OSStatusToString(status));
++            return ResultInternalError;
++        }
++
++        return ResultSuccess;
++    }
++
++    void SetSocket(std::shared_ptr<Network::SocketBase> in_socket) override {
++        socket = std::move(in_socket);
++    }
++
++    Result SetHostName(const std::string& hostname) override {
++        OSStatus status = SSLSetPeerDomainName(context, hostname.c_str(), hostname.size());
++        if (status) {
++            LOG_ERROR(Service_SSL, "SSLSetPeerDomainName failed: {}", OSStatusToString(status));
++            return ResultInternalError;
++        }
++        return ResultSuccess;
++    }
++
++    Result DoHandshake() override {
++        OSStatus status = SSLHandshake(context);
++        return HandleReturn("SSLHandshake", 0, status).Code();
++    }
++
++    ResultVal<size_t> Read(std::span<u8> data) override {
++        size_t actual;
++        OSStatus status = SSLRead(context, data.data(), data.size(), &actual);
++        ;
++        return HandleReturn("SSLRead", actual, status);
++    }
++
++    ResultVal<size_t> Write(std::span<const u8> data) override {
++        size_t actual;
++        OSStatus status = SSLWrite(context, data.data(), data.size(), &actual);
++        ;
++        return HandleReturn("SSLWrite", actual, status);
++    }
++
++    ResultVal<size_t> HandleReturn(const char* what, size_t actual, OSStatus status) {
++        switch (status) {
++        case 0:
++            return actual;
++        case errSSLWouldBlock:
++            return ResultWouldBlock;
++        default: {
++            std::string reason;
++            if (got_read_eof) {
++                reason = "server hung up";
++            } else {
++                reason = OSStatusToString(status);
++            }
++            LOG_ERROR(Service_SSL, "{} failed: {}", what, reason);
++            return ResultInternalError;
++        }
++        }
++    }
++
++    ResultVal<std::vector<std::vector<u8>>> GetServerCerts() override {
++        CFReleaser<SecTrustRef> trust;
++        OSStatus status = SSLCopyPeerTrust(context, &trust.ptr);
++        if (status) {
++            LOG_ERROR(Service_SSL, "SSLCopyPeerTrust failed: {}", OSStatusToString(status));
++            return ResultInternalError;
++        }
++        std::vector<std::vector<u8>> ret;
++        for (CFIndex i = 0, count = SecTrustGetCertificateCount(trust); i < count; i++) {
++            SecCertificateRef cert = SecTrustGetCertificateAtIndex(trust, i);
++            CFReleaser<CFDataRef> data(SecCertificateCopyData(cert));
++            ASSERT_OR_EXECUTE(data, { return ResultInternalError; });
++            const u8* ptr = CFDataGetBytePtr(data);
++            ret.emplace_back(ptr, ptr + CFDataGetLength(data));
++        }
++        return ret;
++    }
++
++    static OSStatus ReadCallback(SSLConnectionRef connection, void* data, size_t* dataLength) {
++        return ReadOrWriteCallback(connection, data, dataLength, true);
++    }
++
++    static OSStatus WriteCallback(SSLConnectionRef connection, const void* data,
++                                  size_t* dataLength) {
++        return ReadOrWriteCallback(connection, const_cast<void*>(data), dataLength, false);
++    }
++
++    static OSStatus ReadOrWriteCallback(SSLConnectionRef connection, void* data, size_t* dataLength,
++                                        bool is_read) {
++        auto self =
++            static_cast<SSLConnectionBackendSecureTransport*>(const_cast<void*>(connection));
++        ASSERT_OR_EXECUTE_MSG(
++            self->socket, { return 0; }, "SecureTransport asked to {} but we have no socket",
++            is_read ? "read" : "write");
++
++        // SecureTransport callbacks (unlike OpenSSL BIO callbacks) are
++        // expected to read/write the full requested dataLength or return an
++        // error, so we have to add a loop ourselves.
++        size_t requested_len = *dataLength;
++        size_t offset = 0;
++        while (offset < requested_len) {
++            std::span cur(reinterpret_cast<u8*>(data) + offset, requested_len - offset);
++            auto [actual, err] = is_read ? self->socket->Recv(0, cur) : self->socket->Send(cur, 0);
++            LOG_CRITICAL(Service_SSL, "op={}, offset={} actual={}/{} err={}", is_read, offset,
++                         actual, cur.size(), static_cast<s32>(err));
++            switch (err) {
++            case Network::Errno::SUCCESS:
++                offset += actual;
++                if (actual == 0) {
++                    ASSERT(is_read);
++                    self->got_read_eof = true;
++                    return errSecEndOfData;
++                }
++                break;
++            case Network::Errno::AGAIN:
++                *dataLength = offset;
++                return errSSLWouldBlock;
++            default:
++                LOG_ERROR(Service_SSL, "Socket {} returned Network::Errno {}",
++                          is_read ? "recv" : "send", err);
++                return errSecIO;
++            }
++        }
++        ASSERT(offset == requested_len);
++        return 0;
++    }
++
++private:
++    CFReleaser<SSLContextRef> context = nullptr;
++    bool got_read_eof = false;
++
++    std::shared_ptr<Network::SocketBase> socket;
++};
++
++ResultVal<std::unique_ptr<SSLConnectionBackend>> CreateSSLConnectionBackend() {
++    auto conn = std::make_unique<SSLConnectionBackendSecureTransport>();
++    const Result res = conn->Init();
++    if (res.IsFailure()) {
++        return res;
++    }
++    return conn;
++}
++
++} // namespace Service::SSL
+
+From 644c3ce609c7a327866ae0107bd7772e34e8ecb9 Mon Sep 17 00:00:00 2001
+From: comex <comexk@gmail.com>
+Date: Sat, 1 Jul 2023 22:03:21 -0700
+Subject: [PATCH 13/13] Rename variables to avoid -Wshadow warnings under GCC
+
+---
+ src/core/hle/service/ssl/ssl.cpp | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/core/hle/service/ssl/ssl.cpp b/src/core/hle/service/ssl/ssl.cpp
+index 0919be55fff..9c96f9763e4 100644
+--- a/src/core/hle/service/ssl/ssl.cpp
++++ b/src/core/hle/service/ssl/ssl.cpp
+@@ -60,11 +60,11 @@ struct SslContextSharedData {
+ 
+ class ISslConnection final : public ServiceFramework<ISslConnection> {
+ public:
+-    explicit ISslConnection(Core::System& system_, SslVersion version,
+-                            std::shared_ptr<SslContextSharedData>& shared_data,
+-                            std::unique_ptr<SSLConnectionBackend>&& backend)
+-        : ServiceFramework{system_, "ISslConnection"}, ssl_version{version},
+-          shared_data{shared_data}, backend{std::move(backend)} {
++    explicit ISslConnection(Core::System& system_in, SslVersion ssl_version_in,
++                            std::shared_ptr<SslContextSharedData>& shared_data_in,
++                            std::unique_ptr<SSLConnectionBackend>&& backend_in)
++        : ServiceFramework{system_in, "ISslConnection"}, ssl_version{ssl_version_in},
++          shared_data{shared_data_in}, backend{std::move(backend_in)} {
+         // clang-format off
+         static const FunctionInfo functions[] = {
+             {0, &ISslConnection::SetSocketDescriptor, "SetSocketDescriptor"},
