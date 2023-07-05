@@ -375,3 +375,5 @@ sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
 # required by yuzu (argument)
 >=dev-libs/boost-1.82.0 context
 games-emulation/yuzu			sdl
+dev-libs/libpcre2			pcre32
+games-emulation/cemu			sdl
