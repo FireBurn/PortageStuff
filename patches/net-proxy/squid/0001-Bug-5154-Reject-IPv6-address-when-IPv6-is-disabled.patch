@@ -1,0 +1,28 @@
+From a3b22cced0339be9348d70dd8c6b502399d06bcb Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 13 Jul 2023 17:06:18 +0100
+Subject: [PATCH] Bug 5154: Reject IPv6 address when IPv6 is disabled
+
+This is a continuaton of the work by Jeffrey Kintscher
+---
+ src/ip/Address.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/ip/Address.cc b/src/ip/Address.cc
+index 5c90b30b4..e5bc34c48 100644
+--- a/src/ip/Address.cc
++++ b/src/ip/Address.cc
+@@ -405,6 +405,10 @@ Ip::Address::lookupHostIP(const char *s, bool nodns)
+         if (maybeIpv4 != nullptr)
+             res = maybeIpv4;
+         // else IPv6-only host, let the caller deal with first-IP anyway.
++        else {
++            freeaddrinfo(resHead);
++            return false;
++        }
+     }
+ 
+     /*
+-- 
+2.41.0
+
