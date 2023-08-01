@@ -378,3 +378,4 @@ games-emulation/yuzu			sdl
 dev-libs/libpcre2			pcre32
 games-emulation/cemu			sdl
 net-misc/networkmanager			abi_x86_32
+net-libs/libndp				abi_x86_32
