@@ -2,7 +2,6 @@ app-accessibility/speech-dispatcher	python
 app-admin/gamemode			abi_x86_32
 app-admin/logstash-bin			all-plugins
 app-arch/bzip2				abi_x86_32
-app-arch/lz4				abi_x86_32
 app-arch/p7zip 				-kde -wxwidgets
 app-arch/xz-utils			abi_x86_32
 app-arch/zstd				abi_x86_32
@@ -17,7 +16,7 @@ app-emulation/wine-gecko		abi_x86_32
 app-emulation/wine-staging		mingw wow64 -abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-misc/mime-types			nginx
-app-office/libreoffice			clang gtk gtk3 java
+app-office/libreoffice			clang gtk gtk3 java kde
 cross-i686-w64-mingw32/binutils		-default-gold
 cross-i686-w64-mingw32/gcc		libssp zstd -fortran -hardened -pie -sanitize -vtv
 cross-i686-w64-mingw32/mingw64-runtime	libraries tools
@@ -109,26 +108,22 @@ net-wireless/wpa_supplicant		-gnutls
 sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
 sys-apps/lm-sensors			abi_x86_32
 sys-apps/pciutils			-zlib
-sys-apps/systemd			abi_x86_32 elfutils sysv-utils -gcrypt
-sys-apps/util-linux			abi_x86_32
+sys-apps/systemd			elfutils sysv-utils -gcrypt
 sys-devel/clang				abi_x86_32
 sys-devel/gcc				zstd
 sys-devel/llvm				abi_x86_32 -ncurses
 sys-fs/cryptsetup			-gcrypt
 sys-fs/ntfs3g				-crypt
 sys-libs/binutils-libs			abi_x86_32
-sys-libs/libcap				abi_x86_32
 sys-libs/libxcrypt			abi_x86_32
 sys-libs/ncurses			tinfo
 sys-libs/ntdb                           python
-sys-libs/pam				abi_x86_32
 sys-libs/talloc 			python
 sys-libs/tdb				python
 sys-libs/tevent				python
 sys-libs/zlib				abi_x86_32
 virtual/libelf				abi_x86_32
 virtual/libintl				abi_x86_32
-virtual/libudev				abi_x86_32
 virtual/mysql				embedded
 virtual/notification-daemon		kde
 virtual/opengl				abi_x86_32
