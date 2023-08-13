@@ -1,0 +1,1341 @@
+From dafb7c9760444ee05f51c0ae3d4746cdd3c34325 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 15:49:13 +0200
+Subject: [PATCH 01/10] radv: Add rt.monolithic to radv_pipeline_key
+
+---
+ src/amd/vulkan/radv_shader.h | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/amd/vulkan/radv_shader.h b/src/amd/vulkan/radv_shader.h
+index b1d2cd60f2b4..106ca2b8e62f 100644
+--- a/src/amd/vulkan/radv_shader.h
++++ b/src/amd/vulkan/radv_shader.h
+@@ -135,6 +135,10 @@ struct radv_pipeline_key {
+ 
+       bool line_smooth_enabled;
+    } ps;
++
++   struct {
++      bool monolithic;
++   } rt;
+ };
+ 
+ struct radv_nir_compiler_options {
+-- 
+GitLab
+
+
+From 9603f56b12352c895a3e1f971ddb8473191c2936 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 15:46:51 +0200
+Subject: [PATCH 02/10] radv/rt: Store NIR shaders separately
+
+In order to compile monolithic shaders with pipeline libraries, we need
+to keep the NIR around for inlining recursive stages.
+---
+ src/amd/vulkan/radv_pipeline_cache.c |  9 ++--
+ src/amd/vulkan/radv_pipeline_rt.c    | 81 ++++++++++++++++++++--------
+ src/amd/vulkan/radv_private.h        |  1 +
+ src/amd/vulkan/radv_rt_shader.c      |  7 ++-
+ 4 files changed, 67 insertions(+), 31 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_pipeline_cache.c b/src/amd/vulkan/radv_pipeline_cache.c
+index 5bbbc755ae11..7e4c6f889813 100644
+--- a/src/amd/vulkan/radv_pipeline_cache.c
++++ b/src/amd/vulkan/radv_pipeline_cache.c
+@@ -481,11 +481,12 @@ radv_ray_tracing_pipeline_cache_search(struct radv_device *device, struct vk_pip
+       pipeline->base.base.shaders[MESA_SHADER_INTERSECTION] = radv_shader_ref(pipeline_obj->shaders[idx++]);
+ 
+    for (unsigned i = 0; i < pCreateInfo->stageCount; i++) {
+-      if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i])) {
++      if (radv_ray_tracing_stage_is_compiled(&pipeline->stages[i]))
+          pipeline->stages[i].shader = &radv_shader_ref(pipeline_obj->shaders[idx++])->base;
+-      } else if (is_library) {
+-         pipeline->stages[i].shader = radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
+-         complete &= pipeline->stages[i].shader != NULL;
++
++      if (is_library) {
++         pipeline->stages[i].nir = radv_pipeline_cache_search_nir(device, cache, pipeline->stages[i].sha1);
++         complete &= pipeline->stages[i].nir != NULL;
+       }
+    }
+ 
+diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
+index e03e87a4cc23..85d7504ceeec 100644
+--- a/src/amd/vulkan/radv_pipeline_rt.c
++++ b/src/amd/vulkan/radv_pipeline_rt.c
+@@ -270,7 +270,10 @@ radv_rt_fill_stage_info(struct radv_device *device, const VkRayTracingPipelineCr
+          RADV_FROM_HANDLE(radv_pipeline, pipeline, pCreateInfo->pLibraryInfo->pLibraries[i]);
+          struct radv_ray_tracing_pipeline *library_pipeline = radv_pipeline_to_ray_tracing(pipeline);
+          for (unsigned j = 0; j < library_pipeline->stage_count; ++j) {
+-            stages[idx].shader = vk_pipeline_cache_object_ref(library_pipeline->stages[j].shader);
++            stages[idx].nir = vk_pipeline_cache_object_ref(library_pipeline->stages[j].nir);
++            if (library_pipeline->stages[j].shader)
++               stages[idx].shader = vk_pipeline_cache_object_ref(library_pipeline->stages[j].shader);
++
+             stages[idx].stage = library_pipeline->stages[j].stage;
+             stages[idx].stack_size = library_pipeline->stages[j].stack_size;
+             memcpy(stages[idx].sha1, library_pipeline->stages[j].sha1, SHA1_DIGEST_LENGTH);
+@@ -447,45 +450,71 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
+       return VK_PIPELINE_COMPILE_REQUIRED;
+    VkResult result = VK_SUCCESS;
+ 
+-   struct radv_ray_tracing_stage *stages = pipeline->stages;
++   struct radv_ray_tracing_stage *rt_stages = pipeline->stages;
++
++   struct radv_shader_stage *stages = calloc(pCreateInfo->stageCount, sizeof(struct radv_shader_stage));
++   if (!stages)
++      return VK_ERROR_OUT_OF_HOST_MEMORY;
+ 
+    for (uint32_t idx = 0; idx < pCreateInfo->stageCount; idx++) {
++      if (rt_stages[idx].shader || rt_stages[idx].nir)
++         continue;
++
+       int64_t stage_start = os_time_get_nano();
+-      struct radv_shader_stage stage;
+-      radv_pipeline_stage_init(&pCreateInfo->pStages[idx], pipeline_layout, &stage);
+ 
+-      if (stages[idx].shader)
+-         goto feedback;
++      struct radv_shader_stage *stage = &stages[idx];
++      radv_pipeline_stage_init(&pCreateInfo->pStages[idx], pipeline_layout, stage);
+ 
+       /* precompile the shader */
+-      stage.nir = radv_parse_rt_stage(device, &pCreateInfo->pStages[idx], key, pipeline_layout);
++      stage->nir = radv_parse_rt_stage(device, &pCreateInfo->pStages[idx], key, pipeline_layout);
++
++      /* Cases in which we need to keep around the NIR:
++       *    - pipeline library: The final pipeline might be monolithic in which case it will need every NIR shader.
++       *    - non-recursive:    Non-recursive shaders are inlined into the traversal shader.
++       *    - monolithic:       Callable shaders (chit/miss) are inlined into the raygen shader.
++       */
++      bool compiled = radv_ray_tracing_stage_is_compiled(&rt_stages[idx]);
++      bool library = pCreateInfo->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR;
++      bool nir_needed = library || !compiled || (key->rt.monolithic && rt_stages[idx].stage != MESA_SHADER_RAYGEN);
++      nir_needed &= !rt_stages[idx].nir;
++      if (nir_needed) {
++         rt_stages[idx].stack_size = stage->nir->scratch_size;
++         rt_stages[idx].nir = radv_pipeline_cache_nir_to_handle(device, cache, stage->nir, rt_stages[idx].sha1,
++                                                                !key->optimisations_disabled);
++      }
+ 
+-      if (radv_ray_tracing_stage_is_compiled(&stages[idx])) {
+-         uint32_t stack_size = 0;
++      stage->feedback.duration = os_time_get_nano() - stage_start;
++   }
+ 
++   for (uint32_t idx = 0; idx < pCreateInfo->stageCount; idx++) {
++      int64_t stage_start = os_time_get_nano();
++      struct radv_shader_stage *stage = &stages[idx];
++
++      /* Cases in which we need to compile the shader (raygen/callable/chit/miss):
++       *    TODO: - monolithic: Force compilation if there already is a compiled shader
++       *                        since pipeline library shaders use separate compilation.
++       *    - separate:   Compile any recursive stage if wasn't compiled yet.
++       */
++      bool shader_needed = radv_ray_tracing_stage_is_compiled(&rt_stages[idx]) && !rt_stages[idx].shader;
++      if (shader_needed) {
++         uint32_t stack_size = 0;
+          struct radv_serialized_shader_arena_block *replay_block =
+             capture_replay_handles[idx].arena_va ? &capture_replay_handles[idx] : NULL;
+ 
+          struct radv_shader *shader;
+          result =
+-            radv_rt_nir_to_asm(device, cache, pCreateInfo, key, pipeline, &stage, &stack_size, replay_block, &shader);
+-         stages[idx].stack_size = stack_size;
+-         stages[idx].shader = shader ? &shader->base : NULL;
+-      } else {
+-         stages[idx].stack_size = stage.nir->scratch_size;
+-         stages[idx].shader =
+-            radv_pipeline_cache_nir_to_handle(device, cache, stage.nir, stages[idx].sha1, !key->optimisations_disabled);
+-      }
+-      ralloc_free(stage.nir);
++            radv_rt_nir_to_asm(device, cache, pCreateInfo, key, pipeline, stage, &stack_size, replay_block, &shader);
++         if (result != VK_SUCCESS)
++            goto cleanup;
+ 
+-      if (result != VK_SUCCESS)
+-         return result;
++         rt_stages[idx].stack_size = stack_size;
++         rt_stages[idx].shader = shader ? &shader->base : NULL;
++      }
+ 
+-   feedback:
+       if (creation_feedback && creation_feedback->pipelineStageCreationFeedbackCount) {
+          assert(idx < creation_feedback->pipelineStageCreationFeedbackCount);
+-         stage.feedback.duration = os_time_get_nano() - stage_start;
+-         creation_feedback->pPipelineStageCreationFeedbacks[idx] = stage.feedback;
++         stage->feedback.duration = os_time_get_nano() - stage_start;
++         creation_feedback->pPipelineStageCreationFeedbacks[idx] = stage->feedback;
+       }
+    }
+ 
+@@ -512,6 +541,10 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
+    result = radv_rt_nir_to_asm(device, cache, pCreateInfo, key, pipeline, &traversal_stage, NULL, NULL,
+                                &pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
+ 
++cleanup:
++   for (uint32_t i = 0; i < pCreateInfo->stageCount; i++)
++      ralloc_free(stages[i].nir);
++   free(stages);
+    return result;
+ }
+ 
+@@ -715,6 +748,8 @@ void
+ radv_destroy_ray_tracing_pipeline(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline)
+ {
+    for (unsigned i = 0; i < pipeline->stage_count; i++) {
++      if (pipeline->stages[i].nir)
++         vk_pipeline_cache_object_unref(&device->vk, pipeline->stages[i].nir);
+       if (pipeline->stages[i].shader)
+          vk_pipeline_cache_object_unref(&device->vk, pipeline->stages[i].shader);
+    }
+diff --git a/src/amd/vulkan/radv_private.h b/src/amd/vulkan/radv_private.h
+index 1ea606c2ca11..6040e3d2cf16 100644
+--- a/src/amd/vulkan/radv_private.h
++++ b/src/amd/vulkan/radv_private.h
+@@ -2365,6 +2365,7 @@ struct radv_ray_tracing_group {
+ };
+ 
+ struct radv_ray_tracing_stage {
++   struct vk_pipeline_cache_object *nir;
+    struct vk_pipeline_cache_object *shader;
+    gl_shader_stage stage;
+    uint32_t stack_size;
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index 7542e3290f16..a0c4e69eca91 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -1152,7 +1152,7 @@ visit_any_hit_shaders(struct radv_device *device, nir_builder *b, struct travers
+       if (is_dup)
+          continue;
+ 
+-      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(device, data->pipeline->stages[shader_id].shader);
++      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(device, data->pipeline->stages[shader_id].nir);
+       assert(nir_stage);
+ 
+       insert_rt_case(b, nir_stage, vars, sbt_idx, 0, data->pipeline->groups[i].handle.any_hit_index, shader_id,
+@@ -1283,13 +1283,12 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
+       if (is_dup)
+          continue;
+ 
+-      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[shader_id].shader);
++      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[shader_id].nir);
+       assert(nir_stage);
+ 
+       nir_shader *any_hit_stage = NULL;
+       if (any_hit_shader_id != VK_SHADER_UNUSED_KHR) {
+-         any_hit_stage =
+-            radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[any_hit_shader_id].shader);
++         any_hit_stage = radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[any_hit_shader_id].nir);
+          assert(any_hit_stage);
+ 
+          /* reserve stack size for any_hit before it is inlined */
+-- 
+GitLab
+
+
+From 1f40ba5323259de27c49d2118e04045a978a2b74 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 15:55:33 +0200
+Subject: [PATCH 03/10] radv/rt: Remove some dead code
+
+- call_idx_base was used for resume shaders in the shader call loop
+- hit attribs are lowered elsewhere
+- stack_size is set in radv_pipeline_rt.c
+---
+ src/amd/vulkan/radv_rt_shader.c | 27 +++++++--------------------
+ 1 file changed, 7 insertions(+), 20 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index a0c4e69eca91..e46666c6546e 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -272,7 +272,7 @@ load_sbt_entry(nir_builder *b, const struct rt_variables *vars, nir_def *idx, en
+ /* This lowers all the RT instructions that we do not want to pass on to the combined shader and
+  * that we can implement using the variables from the shader we are going to inline into. */
+ static void
+-lower_rt_instructions(nir_shader *shader, struct rt_variables *vars, unsigned call_idx_base)
++lower_rt_instructions(nir_shader *shader, struct rt_variables *vars)
+ {
+    nir_builder b_shader = nir_builder_create(nir_shader_get_entrypoint(shader));
+ 
+@@ -772,12 +772,8 @@ inline_constants(nir_shader *dst, nir_shader *src)
+ }
+ 
+ static void
+-insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, nir_def *idx, uint32_t call_idx_base,
+-               uint32_t call_idx, unsigned stage_idx, struct radv_ray_tracing_stage *stages)
++insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, nir_def *idx, uint32_t call_idx)
+ {
+-   uint32_t workgroup_size =
+-      b->shader->info.workgroup_size[0] * b->shader->info.workgroup_size[1] * b->shader->info.workgroup_size[2];
+-
+    struct hash_table *var_remap = _mesa_pointer_hash_table_create(NULL);
+ 
+    nir_opt_dead_cf(shader);
+@@ -785,15 +781,11 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
+    struct rt_variables src_vars = create_rt_variables(shader, vars->flags);
+    map_rt_variables(var_remap, &src_vars, vars);
+ 
+-   NIR_PASS_V(shader, lower_rt_instructions, &src_vars, call_idx_base);
++   NIR_PASS_V(shader, lower_rt_instructions, &src_vars);
+ 
+    NIR_PASS(_, shader, nir_lower_returns);
+    NIR_PASS(_, shader, nir_opt_dce);
+ 
+-   /* The traversal shader has a call_idx of 1 */
+-   if (shader->info.stage == MESA_SHADER_CLOSEST_HIT || call_idx == 1)
+-      NIR_PASS_V(shader, lower_hit_attribs, NULL, workgroup_size);
+-
+    src_vars.stack_size = MAX2(src_vars.stack_size, shader->scratch_size);
+ 
+    inline_constants(b->shader, shader);
+@@ -803,10 +795,6 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
+    nir_pop_if(b, NULL);
+ 
+    ralloc_free(var_remap);
+-
+-   /* reserve stack size */
+-   if (stages)
+-      stages[stage_idx].stack_size = MAX2(stages[stage_idx].stack_size, src_vars.stack_size);
+ }
+ 
+ nir_shader *
+@@ -1155,8 +1143,7 @@ visit_any_hit_shaders(struct radv_device *device, nir_builder *b, struct travers
+       nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(device, data->pipeline->stages[shader_id].nir);
+       assert(nir_stage);
+ 
+-      insert_rt_case(b, nir_stage, vars, sbt_idx, 0, data->pipeline->groups[i].handle.any_hit_index, shader_id,
+-                     data->pipeline->stages);
++      insert_rt_case(b, nir_stage, vars, sbt_idx, data->pipeline->groups[i].handle.any_hit_index);
+       ralloc_free(nir_stage);
+    }
+ 
+@@ -1298,8 +1285,8 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
+          ralloc_free(any_hit_stage);
+       }
+ 
+-      insert_rt_case(b, nir_stage, &inner_vars, nir_load_var(b, inner_vars.idx), 0,
+-                     data->pipeline->groups[i].handle.intersection_index, shader_id, data->pipeline->stages);
++      insert_rt_case(b, nir_stage, &inner_vars, nir_load_var(b, inner_vars.idx),
++                     data->pipeline->groups[i].handle.intersection_index);
+       ralloc_free(nir_stage);
+    }
+ 
+@@ -1535,7 +1522,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
+    const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+ 
+    struct rt_variables vars = create_rt_variables(shader, create_flags);
+-   lower_rt_instructions(shader, &vars, 0);
++   lower_rt_instructions(shader, &vars);
+ 
+    if (stack_size) {
+       vars.stack_size = MAX2(vars.stack_size, shader->scratch_size);
+-- 
+GitLab
+
+
+From e479684e91cda323b37b33057e347c67a8dbe426 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 16:00:55 +0200
+Subject: [PATCH 04/10] radv/rt: Do not apply stack_ptr for non-recursive
+ stages
+
+stack_ptr is set to 0.
+---
+ src/amd/vulkan/radv_rt_shader.c | 20 +++++++++++---------
+ 1 file changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index e46666c6546e..3c3709e8a8e8 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -272,7 +272,7 @@ load_sbt_entry(nir_builder *b, const struct rt_variables *vars, nir_def *idx, en
+ /* This lowers all the RT instructions that we do not want to pass on to the combined shader and
+  * that we can implement using the variables from the shader we are going to inline into. */
+ static void
+-lower_rt_instructions(nir_shader *shader, struct rt_variables *vars)
++lower_rt_instructions(nir_shader *shader, struct rt_variables *vars, bool apply_stack_ptr)
+ {
+    nir_builder b_shader = nir_builder_create(nir_shader_get_entrypoint(shader));
+ 
+@@ -349,15 +349,17 @@ lower_rt_instructions(nir_shader *shader, struct rt_variables *vars)
+                break;
+             }
+             case nir_intrinsic_load_scratch: {
+-               nir_instr_rewrite_src_ssa(
+-                  instr, &intr->src[0],
+-                  nir_iadd_nuw(&b_shader, nir_load_var(&b_shader, vars->stack_ptr), intr->src[0].ssa));
++               if (apply_stack_ptr)
++                  nir_instr_rewrite_src_ssa(
++                     instr, &intr->src[0],
++                     nir_iadd_nuw(&b_shader, nir_load_var(&b_shader, vars->stack_ptr), intr->src[0].ssa));
+                continue;
+             }
+             case nir_intrinsic_store_scratch: {
+-               nir_instr_rewrite_src_ssa(
+-                  instr, &intr->src[1],
+-                  nir_iadd_nuw(&b_shader, nir_load_var(&b_shader, vars->stack_ptr), intr->src[1].ssa));
++               if (apply_stack_ptr)
++                  nir_instr_rewrite_src_ssa(
++                     instr, &intr->src[1],
++                     nir_iadd_nuw(&b_shader, nir_load_var(&b_shader, vars->stack_ptr), intr->src[1].ssa));
+                continue;
+             }
+             case nir_intrinsic_load_rt_arg_scratch_offset_amd: {
+@@ -781,7 +783,7 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
+    struct rt_variables src_vars = create_rt_variables(shader, vars->flags);
+    map_rt_variables(var_remap, &src_vars, vars);
+ 
+-   NIR_PASS_V(shader, lower_rt_instructions, &src_vars);
++   NIR_PASS_V(shader, lower_rt_instructions, &src_vars, false);
+ 
+    NIR_PASS(_, shader, nir_lower_returns);
+    NIR_PASS(_, shader, nir_opt_dce);
+@@ -1522,7 +1524,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
+    const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+ 
+    struct rt_variables vars = create_rt_variables(shader, create_flags);
+-   lower_rt_instructions(shader, &vars);
++   lower_rt_instructions(shader, &vars, true);
+ 
+    if (stack_size) {
+       vars.stack_size = MAX2(vars.stack_size, shader->scratch_size);
+-- 
+GitLab
+
+
+From bb19556aca34ddae238c216e1904825e1679429f Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 16:04:52 +0200
+Subject: [PATCH 05/10] radv/rt: Add and use radv_build_traversal
+
+Moves most of the build code to a helper which will be useful for adding
+inline traversal.
+---
+ src/amd/vulkan/radv_rt_shader.c | 176 +++++++++++++++++---------------
+ 1 file changed, 93 insertions(+), 83 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index 3c3709e8a8e8..9927ce69eaa0 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -1328,106 +1328,79 @@ load_stack_entry(nir_builder *b, nir_def *index, const struct radv_ray_traversal
+    return nir_load_shared(b, 1, 32, index, .base = 0, .align_mul = 4);
+ }
+ 
+-nir_shader *
+-radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
+-                            const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, const struct radv_pipeline_key *key)
++static void
++radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
++                     const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, const struct radv_pipeline_key *key,
++                     nir_builder *b, struct rt_variables *vars)
+ {
+-   const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+-
+-   /* Create the traversal shader as an intersection shader to prevent validation failures due to
+-    * invalid variable modes.*/
+-   nir_builder b = radv_meta_init_shader(device, MESA_SHADER_INTERSECTION, "rt_traversal");
+-   b.shader->info.internal = false;
+-   b.shader->info.workgroup_size[0] = 8;
+-   b.shader->info.workgroup_size[1] = device->physical_device->rt_wave_size == 64 ? 8 : 4;
+-   b.shader->info.shared_size = device->physical_device->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t);
+-   struct rt_variables vars = create_rt_variables(b.shader, create_flags);
+-
+-   /* Register storage for hit attributes */
+-   nir_variable *hit_attribs[RADV_MAX_HIT_ATTRIB_SIZE / sizeof(uint32_t)];
+-
+-   for (uint32_t i = 0; i < ARRAY_SIZE(hit_attribs); i++)
+-      hit_attribs[i] = nir_local_variable_create(nir_shader_get_entrypoint(b.shader), glsl_uint_type(), "ahit_attrib");
+-
+    nir_variable *barycentrics =
+-      nir_variable_create(b.shader, nir_var_ray_hit_attrib, glsl_vector_type(GLSL_TYPE_FLOAT, 2), "barycentrics");
++      nir_variable_create(b->shader, nir_var_ray_hit_attrib, glsl_vector_type(GLSL_TYPE_FLOAT, 2), "barycentrics");
+    barycentrics->data.driver_location = 0;
+ 
+-   /* initialize trace_ray arguments */
+-   nir_def *accel_struct = nir_load_accel_struct_amd(&b);
+-   nir_def *cull_mask_and_flags = nir_load_cull_mask_and_flags_amd(&b);
+-   nir_store_var(&b, vars.cull_mask_and_flags, cull_mask_and_flags, 0x1);
+-   nir_store_var(&b, vars.sbt_offset, nir_load_sbt_offset_amd(&b), 0x1);
+-   nir_store_var(&b, vars.sbt_stride, nir_load_sbt_stride_amd(&b), 0x1);
+-   nir_store_var(&b, vars.origin, nir_load_ray_world_origin(&b), 0x7);
+-   nir_store_var(&b, vars.tmin, nir_load_ray_t_min(&b), 0x1);
+-   nir_store_var(&b, vars.direction, nir_load_ray_world_direction(&b), 0x7);
+-   nir_store_var(&b, vars.tmax, nir_load_ray_t_max(&b), 0x1);
+-   nir_store_var(&b, vars.arg, nir_load_rt_arg_scratch_offset_amd(&b), 0x1);
+-   nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
+-
+-   struct rt_traversal_vars trav_vars = init_traversal_vars(&b);
++   struct rt_traversal_vars trav_vars = init_traversal_vars(b);
+ 
+-   nir_store_var(&b, trav_vars.hit, nir_imm_false(&b), 1);
++   nir_store_var(b, trav_vars.hit, nir_imm_false(b), 1);
+ 
++   nir_def *accel_struct = nir_load_var(b, vars->accel_struct);
+    nir_def *bvh_offset = nir_build_load_global(
+-      &b, 1, 32, nir_iadd_imm(&b, accel_struct, offsetof(struct radv_accel_struct_header, bvh_offset)),
++      b, 1, 32, nir_iadd_imm(b, accel_struct, offsetof(struct radv_accel_struct_header, bvh_offset)),
+       .access = ACCESS_NON_WRITEABLE);
+-   nir_def *root_bvh_base = nir_iadd(&b, accel_struct, nir_u2u64(&b, bvh_offset));
+-   root_bvh_base = build_addr_to_node(&b, root_bvh_base);
++   nir_def *root_bvh_base = nir_iadd(b, accel_struct, nir_u2u64(b, bvh_offset));
++   root_bvh_base = build_addr_to_node(b, root_bvh_base);
+ 
+-   nir_store_var(&b, trav_vars.bvh_base, root_bvh_base, 1);
++   nir_store_var(b, trav_vars.bvh_base, root_bvh_base, 1);
+ 
+-   nir_def *vec3ones = nir_imm_vec3(&b, 1.0, 1.0, 1.0);
++   nir_def *vec3ones = nir_imm_vec3(b, 1.0, 1.0, 1.0);
+ 
+-   nir_store_var(&b, trav_vars.origin, nir_load_var(&b, vars.origin), 7);
+-   nir_store_var(&b, trav_vars.dir, nir_load_var(&b, vars.direction), 7);
+-   nir_store_var(&b, trav_vars.inv_dir, nir_fdiv(&b, vec3ones, nir_load_var(&b, trav_vars.dir)), 7);
+-   nir_store_var(&b, trav_vars.sbt_offset_and_flags, nir_imm_int(&b, 0), 1);
+-   nir_store_var(&b, trav_vars.instance_addr, nir_imm_int64(&b, 0), 1);
++   nir_store_var(b, trav_vars.origin, nir_load_var(b, vars->origin), 7);
++   nir_store_var(b, trav_vars.dir, nir_load_var(b, vars->direction), 7);
++   nir_store_var(b, trav_vars.inv_dir, nir_fdiv(b, vec3ones, nir_load_var(b, trav_vars.dir)), 7);
++   nir_store_var(b, trav_vars.sbt_offset_and_flags, nir_imm_int(b, 0), 1);
++   nir_store_var(b, trav_vars.instance_addr, nir_imm_int64(b, 0), 1);
+ 
+-   nir_store_var(&b, trav_vars.stack, nir_imul_imm(&b, nir_load_local_invocation_index(&b), sizeof(uint32_t)), 1);
+-   nir_store_var(&b, trav_vars.stack_low_watermark, nir_load_var(&b, trav_vars.stack), 1);
+-   nir_store_var(&b, trav_vars.current_node, nir_imm_int(&b, RADV_BVH_ROOT_NODE), 0x1);
+-   nir_store_var(&b, trav_vars.previous_node, nir_imm_int(&b, RADV_BVH_INVALID_NODE), 0x1);
+-   nir_store_var(&b, trav_vars.instance_top_node, nir_imm_int(&b, RADV_BVH_INVALID_NODE), 0x1);
+-   nir_store_var(&b, trav_vars.instance_bottom_node, nir_imm_int(&b, RADV_BVH_NO_INSTANCE_ROOT), 0x1);
++   nir_store_var(b, trav_vars.stack, nir_imul_imm(b, nir_load_local_invocation_index(b), sizeof(uint32_t)), 1);
++   nir_store_var(b, trav_vars.stack_low_watermark, nir_load_var(b, trav_vars.stack), 1);
++   nir_store_var(b, trav_vars.current_node, nir_imm_int(b, RADV_BVH_ROOT_NODE), 0x1);
++   nir_store_var(b, trav_vars.previous_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);
++   nir_store_var(b, trav_vars.instance_top_node, nir_imm_int(b, RADV_BVH_INVALID_NODE), 0x1);
++   nir_store_var(b, trav_vars.instance_bottom_node, nir_imm_int(b, RADV_BVH_NO_INSTANCE_ROOT), 0x1);
+ 
+-   nir_store_var(&b, trav_vars.top_stack, nir_imm_int(&b, -1), 1);
++   nir_store_var(b, trav_vars.top_stack, nir_imm_int(b, -1), 1);
+ 
+    struct radv_ray_traversal_vars trav_vars_args = {
+-      .tmax = nir_build_deref_var(&b, vars.tmax),
+-      .origin = nir_build_deref_var(&b, trav_vars.origin),
+-      .dir = nir_build_deref_var(&b, trav_vars.dir),
+-      .inv_dir = nir_build_deref_var(&b, trav_vars.inv_dir),
+-      .bvh_base = nir_build_deref_var(&b, trav_vars.bvh_base),
+-      .stack = nir_build_deref_var(&b, trav_vars.stack),
+-      .top_stack = nir_build_deref_var(&b, trav_vars.top_stack),
+-      .stack_low_watermark = nir_build_deref_var(&b, trav_vars.stack_low_watermark),
+-      .current_node = nir_build_deref_var(&b, trav_vars.current_node),
+-      .previous_node = nir_build_deref_var(&b, trav_vars.previous_node),
+-      .instance_top_node = nir_build_deref_var(&b, trav_vars.instance_top_node),
+-      .instance_bottom_node = nir_build_deref_var(&b, trav_vars.instance_bottom_node),
+-      .instance_addr = nir_build_deref_var(&b, trav_vars.instance_addr),
+-      .sbt_offset_and_flags = nir_build_deref_var(&b, trav_vars.sbt_offset_and_flags),
++      .tmax = nir_build_deref_var(b, vars->tmax),
++      .origin = nir_build_deref_var(b, trav_vars.origin),
++      .dir = nir_build_deref_var(b, trav_vars.dir),
++      .inv_dir = nir_build_deref_var(b, trav_vars.inv_dir),
++      .bvh_base = nir_build_deref_var(b, trav_vars.bvh_base),
++      .stack = nir_build_deref_var(b, trav_vars.stack),
++      .top_stack = nir_build_deref_var(b, trav_vars.top_stack),
++      .stack_low_watermark = nir_build_deref_var(b, trav_vars.stack_low_watermark),
++      .current_node = nir_build_deref_var(b, trav_vars.current_node),
++      .previous_node = nir_build_deref_var(b, trav_vars.previous_node),
++      .instance_top_node = nir_build_deref_var(b, trav_vars.instance_top_node),
++      .instance_bottom_node = nir_build_deref_var(b, trav_vars.instance_bottom_node),
++      .instance_addr = nir_build_deref_var(b, trav_vars.instance_addr),
++      .sbt_offset_and_flags = nir_build_deref_var(b, trav_vars.sbt_offset_and_flags),
+    };
+ 
+    struct traversal_data data = {
+       .device = device,
+-      .vars = &vars,
++      .vars = vars,
+       .trav_vars = &trav_vars,
+       .barycentrics = barycentrics,
+       .pipeline = pipeline,
+       .key = key,
+    };
+ 
++   nir_def *cull_mask_and_flags = nir_load_var(b, vars->cull_mask_and_flags);
+    struct radv_ray_traversal_args args = {
+       .root_bvh_base = root_bvh_base,
+       .flags = cull_mask_and_flags,
+       .cull_mask = cull_mask_and_flags,
+-      .origin = nir_load_var(&b, vars.origin),
+-      .tmin = nir_load_var(&b, vars.tmin),
+-      .dir = nir_load_var(&b, vars.direction),
++      .origin = nir_load_var(b, vars->origin),
++      .tmin = nir_load_var(b, vars->tmin),
++      .dir = nir_load_var(b, vars->direction),
+       .vars = trav_vars_args,
+       .stack_stride = device->physical_device->rt_wave_size * sizeof(uint32_t),
+       .stack_entries = MAX_STACK_ENTRY_COUNT,
+@@ -1443,28 +1416,65 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
+       .data = &data,
+    };
+ 
+-   radv_build_ray_traversal(device, &b, &args);
++   radv_build_ray_traversal(device, b, &args);
+ 
+-   nir_metadata_preserve(nir_shader_get_entrypoint(b.shader), nir_metadata_none);
+-   lower_hit_attrib_derefs(b.shader);
+-   lower_hit_attribs(b.shader, hit_attribs, device->physical_device->rt_wave_size);
++   nir_metadata_preserve(nir_shader_get_entrypoint(b->shader), nir_metadata_none);
++   lower_hit_attrib_derefs(b->shader);
++
++   /* Register storage for hit attributes */
++   nir_variable *hit_attribs[RADV_MAX_HIT_ATTRIB_SIZE / sizeof(uint32_t)];
++
++   for (uint32_t i = 0; i < ARRAY_SIZE(hit_attribs); i++)
++      hit_attribs[i] = nir_local_variable_create(nir_shader_get_entrypoint(b->shader), glsl_uint_type(), "ahit_attrib");
++
++   lower_hit_attribs(b->shader, hit_attribs, device->physical_device->rt_wave_size);
+ 
+    /* Initialize follow-up shader. */
+-   nir_push_if(&b, nir_load_var(&b, trav_vars.hit));
++   nir_push_if(b, nir_load_var(b, trav_vars.hit));
+    {
+       for (int i = 0; i < ARRAY_SIZE(hit_attribs); ++i)
+-         nir_store_hit_attrib_amd(&b, nir_load_var(&b, hit_attribs[i]), .base = i);
+-      nir_execute_closest_hit_amd(&b, nir_load_var(&b, vars.idx), nir_load_var(&b, vars.tmax),
+-                                  nir_load_var(&b, vars.primitive_id), nir_load_var(&b, vars.instance_addr),
+-                                  nir_load_var(&b, vars.geometry_id_and_flags), nir_load_var(&b, vars.hit_kind));
++         nir_store_hit_attrib_amd(b, nir_load_var(b, hit_attribs[i]), .base = i);
++      nir_execute_closest_hit_amd(b, nir_load_var(b, vars->idx), nir_load_var(b, vars->tmax),
++                                  nir_load_var(b, vars->primitive_id), nir_load_var(b, vars->instance_addr),
++                                  nir_load_var(b, vars->geometry_id_and_flags), nir_load_var(b, vars->hit_kind));
+    }
+-   nir_push_else(&b, NULL);
++   nir_push_else(b, NULL);
+    {
+       /* Only load the miss shader if we actually miss. It is valid to not specify an SBT pointer
+        * for miss shaders if none of the rays miss. */
+-      nir_execute_miss_amd(&b, nir_load_var(&b, vars.tmax));
++      nir_execute_miss_amd(b, nir_load_var(b, vars->tmax));
+    }
+-   nir_pop_if(&b, NULL);
++   nir_pop_if(b, NULL);
++}
++
++nir_shader *
++radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
++                            const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, const struct radv_pipeline_key *key)
++{
++   const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(pCreateInfo);
++
++   /* Create the traversal shader as an intersection shader to prevent validation failures due to
++    * invalid variable modes.*/
++   nir_builder b = radv_meta_init_shader(device, MESA_SHADER_INTERSECTION, "rt_traversal");
++   b.shader->info.internal = false;
++   b.shader->info.workgroup_size[0] = 8;
++   b.shader->info.workgroup_size[1] = device->physical_device->rt_wave_size == 64 ? 8 : 4;
++   b.shader->info.shared_size = device->physical_device->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t);
++   struct rt_variables vars = create_rt_variables(b.shader, create_flags);
++
++   /* initialize trace_ray arguments */
++   nir_store_var(&b, vars.accel_struct, nir_load_accel_struct_amd(&b), 1);
++   nir_store_var(&b, vars.cull_mask_and_flags, nir_load_cull_mask_and_flags_amd(&b), 0x1);
++   nir_store_var(&b, vars.sbt_offset, nir_load_sbt_offset_amd(&b), 0x1);
++   nir_store_var(&b, vars.sbt_stride, nir_load_sbt_stride_amd(&b), 0x1);
++   nir_store_var(&b, vars.origin, nir_load_ray_world_origin(&b), 0x7);
++   nir_store_var(&b, vars.tmin, nir_load_ray_t_min(&b), 0x1);
++   nir_store_var(&b, vars.direction, nir_load_ray_world_direction(&b), 0x7);
++   nir_store_var(&b, vars.tmax, nir_load_ray_t_max(&b), 0x1);
++   nir_store_var(&b, vars.arg, nir_load_rt_arg_scratch_offset_amd(&b), 0x1);
++   nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
++
++   radv_build_traversal(device, pipeline, pCreateInfo, key, &b, &vars);
+ 
+    /* Deal with all the inline functions. */
+    nir_index_ssa_defs(nir_shader_get_entrypoint(b.shader));
+-- 
+GitLab
+
+
+From 407bcc1c2208d7e21c98c4d4cfe925c8bf3b2941 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 16:07:51 +0200
+Subject: [PATCH 06/10] radv/rt: Add monolithic raygen lowering
+
+Ray traversal is inlined to allow for constant folding and avoid
+spilling.
+---
+ src/amd/vulkan/radv_pipeline_rt.c |  31 ++--
+ src/amd/vulkan/radv_rt_shader.c   | 284 +++++++++++++++++++++++++-----
+ src/amd/vulkan/radv_shader.h      |   3 +-
+ 3 files changed, 263 insertions(+), 55 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
+index 85d7504ceeec..05dfe44a467b 100644
+--- a/src/amd/vulkan/radv_pipeline_rt.c
++++ b/src/amd/vulkan/radv_pipeline_rt.c
+@@ -22,6 +22,7 @@
+  */
+ 
+ #include "nir/nir.h"
++#include "nir/nir_builder.h"
+ 
+ #include "radv_debug.h"
+ #include "radv_private.h"
+@@ -349,9 +350,8 @@ move_rt_instructions(nir_shader *shader)
+ static VkResult
+ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
+                    const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, const struct radv_pipeline_key *pipeline_key,
+-                   const struct radv_ray_tracing_pipeline *pipeline, struct radv_shader_stage *stage,
+-                   uint32_t *stack_size, struct radv_serialized_shader_arena_block *replay_block,
+-                   struct radv_shader **out_shader)
++                   struct radv_ray_tracing_pipeline *pipeline, struct radv_shader_stage *stage, uint32_t *stack_size,
++                   struct radv_serialized_shader_arena_block *replay_block, struct radv_shader **out_shader)
+ {
+    struct radv_shader_binary *binary;
+    bool keep_executable_info = radv_pipeline_capture_shaders(device, pipeline->base.base.create_flags);
+@@ -374,15 +374,23 @@ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
+     */
+    NIR_PASS_V(stage->nir, move_rt_instructions);
+ 
+-   const nir_lower_shader_calls_options opts = {
+-      .address_format = nir_address_format_32bit_offset,
+-      .stack_alignment = 16,
+-      .localized_loads = true,
+-      .vectorizer_callback = radv_mem_vectorize_callback,
+-   };
+    uint32_t num_resume_shaders = 0;
+    nir_shader **resume_shaders = NULL;
+-   nir_lower_shader_calls(stage->nir, &opts, &resume_shaders, &num_resume_shaders, stage->nir);
++
++   bool monolithic_raygen = pipeline_key->rt.monolithic && stage->stage == MESA_SHADER_RAYGEN;
++   if (!monolithic_raygen && stage->stage != MESA_SHADER_INTERSECTION) {
++      nir_builder b = nir_builder_at(nir_after_cf_list(&nir_shader_get_entrypoint(stage->nir)->body));
++      nir_rt_return_amd(&b);
++
++      const nir_lower_shader_calls_options opts = {
++         .address_format = nir_address_format_32bit_offset,
++         .stack_alignment = 16,
++         .localized_loads = true,
++         .vectorizer_callback = radv_mem_vectorize_callback,
++      };
++      nir_lower_shader_calls(stage->nir, &opts, &resume_shaders, &num_resume_shaders, stage->nir);
++   }
++
+    unsigned num_shaders = num_resume_shaders + 1;
+    nir_shader **shaders = ralloc_array(stage->nir, nir_shader *, num_shaders);
+    if (!shaders)
+@@ -396,7 +404,8 @@ radv_rt_nir_to_asm(struct radv_device *device, struct vk_pipeline_cache *cache,
+    for (uint32_t i = 0; i < num_shaders; i++) {
+       struct radv_shader_stage temp_stage = *stage;
+       temp_stage.nir = shaders[i];
+-      radv_nir_lower_rt_abi(temp_stage.nir, pCreateInfo, &temp_stage.args, &stage->info, stack_size, i > 0);
++      radv_nir_lower_rt_abi(temp_stage.nir, pCreateInfo, &temp_stage.args, &stage->info, stack_size, i > 0, device,
++                            pipeline, pipeline_key);
+       radv_optimize_nir(temp_stage.nir, pipeline_key->optimisations_disabled);
+       radv_postprocess_nir(device, pipeline_key, &temp_stage);
+ 
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index 9927ce69eaa0..4cab6a42af95 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -809,13 +809,6 @@ radv_parse_rt_stage(struct radv_device *device, const VkPipelineShaderStageCreat
+ 
+    nir_shader *shader = radv_shader_spirv_to_nir(device, &rt_stage, key, false);
+ 
+-   if (shader->info.stage == MESA_SHADER_RAYGEN || shader->info.stage == MESA_SHADER_CLOSEST_HIT ||
+-       shader->info.stage == MESA_SHADER_CALLABLE || shader->info.stage == MESA_SHADER_MISS) {
+-      nir_block *last_block = nir_impl_last_block(nir_shader_get_entrypoint(shader));
+-      nir_builder b_inner = nir_builder_at(nir_after_block(last_block));
+-      nir_rt_return_amd(&b_inner);
+-   }
+-
+    NIR_PASS(_, shader, nir_split_struct_vars, nir_var_ray_hit_attrib);
+    NIR_PASS(_, shader, nir_lower_indirect_derefs, nir_var_ray_hit_attrib, UINT32_MAX);
+    NIR_PASS(_, shader, nir_split_array_vars, nir_var_ray_hit_attrib);
+@@ -1316,6 +1309,87 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
+    nir_pop_if(b, NULL);
+ }
+ 
++static void
++visit_closest_hit_shaders(struct radv_device *device, nir_builder *b, struct radv_ray_tracing_pipeline *pipeline,
++                          struct rt_variables *vars)
++{
++   nir_def *sbt_idx = nir_load_var(b, vars->idx);
++
++   if (!(vars->flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR))
++      nir_push_if(b, nir_ine_imm(b, sbt_idx, 0));
++
++   for (unsigned i = 0; i < pipeline->group_count; ++i) {
++      struct radv_ray_tracing_group *group = &pipeline->groups[i];
++
++      unsigned shader_id = VK_SHADER_UNUSED_KHR;
++      if (group->type != VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR)
++         shader_id = group->recursive_shader;
++
++      if (shader_id == VK_SHADER_UNUSED_KHR)
++         continue;
++
++      /* Avoid emitting stages with the same shaders/handles multiple times. */
++      bool is_dup = false;
++      for (unsigned j = 0; j < i; ++j)
++         if (pipeline->groups[j].handle.closest_hit_index == pipeline->groups[i].handle.closest_hit_index)
++            is_dup = true;
++
++      if (is_dup)
++         continue;
++
++      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(device, pipeline->stages[shader_id].nir);
++      assert(nir_stage);
++
++      insert_rt_case(b, nir_stage, vars, sbt_idx, pipeline->groups[i].handle.closest_hit_index);
++      ralloc_free(nir_stage);
++   }
++
++   if (!(vars->flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_CLOSEST_HIT_SHADERS_BIT_KHR))
++      nir_pop_if(b, NULL);
++}
++
++static void
++visit_miss_shaders(struct radv_device *device, nir_builder *b, struct radv_ray_tracing_pipeline *pipeline,
++                   struct rt_variables *vars)
++{
++   nir_def *sbt_idx = nir_load_var(b, vars->idx);
++
++   if (!(vars->flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR))
++      nir_push_if(b, nir_ine_imm(b, sbt_idx, 0));
++
++   for (unsigned i = 0; i < pipeline->group_count; ++i) {
++      struct radv_ray_tracing_group *group = &pipeline->groups[i];
++
++      unsigned shader_id = VK_SHADER_UNUSED_KHR;
++      if (group->type == VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR)
++         shader_id = group->recursive_shader;
++
++      if (shader_id == VK_SHADER_UNUSED_KHR)
++         continue;
++
++      if (pipeline->stages[shader_id].stage != MESA_SHADER_MISS)
++         continue;
++
++      /* Avoid emitting stages with the same shaders/handles multiple times. */
++      bool is_dup = false;
++      for (unsigned j = 0; j < i; ++j)
++         if (pipeline->groups[j].handle.general_index == pipeline->groups[i].handle.general_index)
++            is_dup = true;
++
++      if (is_dup)
++         continue;
++
++      nir_shader *nir_stage = radv_pipeline_cache_handle_to_nir(device, pipeline->stages[shader_id].nir);
++      assert(nir_stage);
++
++      insert_rt_case(b, nir_stage, vars, sbt_idx, pipeline->groups[i].handle.general_index);
++      ralloc_free(nir_stage);
++   }
++
++   if (!(vars->flags & VK_PIPELINE_CREATE_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR))
++      nir_pop_if(b, NULL);
++}
++
+ static void
+ store_stack_entry(nir_builder *b, nir_def *index, nir_def *value, const struct radv_ray_traversal_args *args)
+ {
+@@ -1424,25 +1498,47 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
+    /* Register storage for hit attributes */
+    nir_variable *hit_attribs[RADV_MAX_HIT_ATTRIB_SIZE / sizeof(uint32_t)];
+ 
+-   for (uint32_t i = 0; i < ARRAY_SIZE(hit_attribs); i++)
+-      hit_attribs[i] = nir_local_variable_create(nir_shader_get_entrypoint(b->shader), glsl_uint_type(), "ahit_attrib");
++   if (!key->rt.monolithic || b->shader->info.stage != MESA_SHADER_RAYGEN) {
++      for (uint32_t i = 0; i < ARRAY_SIZE(hit_attribs); i++)
++         hit_attribs[i] =
++            nir_local_variable_create(nir_shader_get_entrypoint(b->shader), glsl_uint_type(), "ahit_attrib");
+ 
+-   lower_hit_attribs(b->shader, hit_attribs, device->physical_device->rt_wave_size);
++      lower_hit_attribs(b->shader, hit_attribs, device->physical_device->rt_wave_size);
++   }
+ 
+    /* Initialize follow-up shader. */
+    nir_push_if(b, nir_load_var(b, trav_vars.hit));
+    {
+-      for (int i = 0; i < ARRAY_SIZE(hit_attribs); ++i)
+-         nir_store_hit_attrib_amd(b, nir_load_var(b, hit_attribs[i]), .base = i);
+-      nir_execute_closest_hit_amd(b, nir_load_var(b, vars->idx), nir_load_var(b, vars->tmax),
+-                                  nir_load_var(b, vars->primitive_id), nir_load_var(b, vars->instance_addr),
+-                                  nir_load_var(b, vars->geometry_id_and_flags), nir_load_var(b, vars->hit_kind));
++      if (key->rt.monolithic && b->shader->info.stage == MESA_SHADER_RAYGEN) {
++         load_sbt_entry(b, vars, nir_load_var(b, vars->idx), SBT_HIT, SBT_CLOSEST_HIT_IDX);
++
++         nir_def *should_return =
++            nir_test_mask(b, nir_load_var(b, vars->cull_mask_and_flags), SpvRayFlagsSkipClosestHitShaderKHRMask);
++
++         /* should_return is set if we had a hit but we won't be calling the closest hit
++          * shader and hence need to return immediately to the calling shader. */
++         nir_push_if(b, nir_inot(b, should_return));
++         visit_closest_hit_shaders(device, b, pipeline, vars);
++         nir_pop_if(b, NULL);
++      } else {
++         for (int i = 0; i < ARRAY_SIZE(hit_attribs); ++i)
++            nir_store_hit_attrib_amd(b, nir_load_var(b, hit_attribs[i]), .base = i);
++         nir_execute_closest_hit_amd(b, nir_load_var(b, vars->idx), nir_load_var(b, vars->tmax),
++                                     nir_load_var(b, vars->primitive_id), nir_load_var(b, vars->instance_addr),
++                                     nir_load_var(b, vars->geometry_id_and_flags), nir_load_var(b, vars->hit_kind));
++      }
+    }
+    nir_push_else(b, NULL);
+    {
+-      /* Only load the miss shader if we actually miss. It is valid to not specify an SBT pointer
+-       * for miss shaders if none of the rays miss. */
+-      nir_execute_miss_amd(b, nir_load_var(b, vars->tmax));
++      if (key->rt.monolithic && b->shader->info.stage == MESA_SHADER_RAYGEN) {
++         load_sbt_entry(b, vars, nir_load_var(b, vars->miss_index), SBT_MISS, SBT_GENERAL_IDX);
++
++         visit_miss_shaders(device, b, pipeline, vars);
++      } else {
++         /* Only load the miss shader if we actually miss. It is valid to not specify an SBT pointer
++          * for miss shaders if none of the rays miss. */
++         nir_execute_miss_amd(b, nir_load_var(b, vars->tmax));
++      }
+    }
+    nir_pop_if(b, NULL);
+ }
+@@ -1487,6 +1583,98 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
+    return b.shader;
+ }
+ 
++struct lower_rt_instruction_monolithic_state {
++   struct radv_device *device;
++   struct radv_ray_tracing_pipeline *pipeline;
++   const struct radv_pipeline_key *key;
++   const VkRayTracingPipelineCreateInfoKHR *pCreateInfo;
++
++   struct rt_variables *vars;
++};
++
++static bool
++lower_rt_instruction_monolithic(nir_builder *b, nir_instr *instr, void *data)
++{
++   if (instr->type != nir_instr_type_intrinsic)
++      return false;
++
++   b->cursor = nir_after_instr(instr);
++
++   nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
++
++   struct lower_rt_instruction_monolithic_state *state = data;
++   struct rt_variables *vars = state->vars;
++
++   switch (intr->intrinsic) {
++   case nir_intrinsic_execute_callable:
++      unreachable("nir_intrinsic_execute_callable");
++   case nir_intrinsic_trace_ray: {
++      nir_store_var(b, vars->arg, nir_iadd_imm(b, intr->src[10].ssa, -b->shader->scratch_size), 1);
++
++      /* Per the SPIR-V extension spec we have to ignore some bits for some arguments. */
++      nir_store_var(b, vars->accel_struct, intr->src[0].ssa, 0x1);
++      nir_store_var(b, vars->cull_mask_and_flags, nir_ior(b, nir_ishl_imm(b, intr->src[2].ssa, 24), intr->src[1].ssa),
++                    0x1);
++      nir_store_var(b, vars->sbt_offset, nir_iand_imm(b, intr->src[3].ssa, 0xf), 0x1);
++      nir_store_var(b, vars->sbt_stride, nir_iand_imm(b, intr->src[4].ssa, 0xf), 0x1);
++      nir_store_var(b, vars->miss_index, nir_iand_imm(b, intr->src[5].ssa, 0xffff), 0x1);
++      nir_store_var(b, vars->origin, intr->src[6].ssa, 0x7);
++      nir_store_var(b, vars->tmin, intr->src[7].ssa, 0x1);
++      nir_store_var(b, vars->direction, intr->src[8].ssa, 0x7);
++      nir_store_var(b, vars->tmax, intr->src[9].ssa, 0x1);
++
++      nir_def *stack_ptr = nir_load_var(b, vars->stack_ptr);
++      nir_store_var(b, vars->stack_ptr, nir_iadd_imm(b, stack_ptr, b->shader->scratch_size), 0x1);
++
++      radv_build_traversal(state->device, state->pipeline, state->pCreateInfo, state->key, b, vars);
++      b->shader->info.shared_size = MAX2(b->shader->info.shared_size, state->device->physical_device->rt_wave_size *
++                                                                         MAX_STACK_ENTRY_COUNT * sizeof(uint32_t));
++
++      nir_store_var(b, vars->stack_ptr, stack_ptr, 0x1);
++
++      nir_instr_remove(instr);
++      return true;
++   }
++   case nir_intrinsic_rt_resume:
++      unreachable("nir_intrinsic_rt_resume");
++   case nir_intrinsic_rt_return_amd:
++      unreachable("nir_intrinsic_rt_return_amd");
++   case nir_intrinsic_execute_closest_hit_amd:
++      unreachable("nir_intrinsic_execute_closest_hit_amd");
++   case nir_intrinsic_execute_miss_amd:
++      unreachable("nir_intrinsic_execute_miss_amd");
++   default:
++      return false;
++   }
++}
++
++static void
++lower_rt_instructions_monolithic(nir_shader *shader, struct radv_device *device,
++                                 struct radv_ray_tracing_pipeline *pipeline, const struct radv_pipeline_key *key,
++                                 const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, struct rt_variables *vars)
++{
++   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
++
++   struct lower_rt_instruction_monolithic_state state = {
++      .device = device,
++      .pipeline = pipeline,
++      .key = key,
++      .pCreateInfo = pCreateInfo,
++      .vars = vars,
++   };
++
++   nir_shader_instructions_pass(shader, lower_rt_instruction_monolithic, nir_metadata_none, &state);
++   nir_index_ssa_defs(impl);
++
++   /* Register storage for hit attributes */
++   nir_variable *hit_attribs[RADV_MAX_HIT_ATTRIB_SIZE / sizeof(uint32_t)];
++
++   for (uint32_t i = 0; i < ARRAY_SIZE(hit_attribs); i++)
++      hit_attribs[i] = nir_local_variable_create(impl, glsl_uint_type(), "ahit_attrib");
++
++   lower_hit_attribs(shader, hit_attribs, 0);
++}
++
+ /** Select the next shader based on priorities:
+  *
+  * Detect the priority of the shader stage by the lowest bits in the address (low to high):
+@@ -1527,13 +1715,18 @@ select_next_shader(nir_builder *b, nir_def *shader_va, unsigned wave_size)
+ void
+ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                       const struct radv_shader_args *args, const struct radv_shader_info *info, uint32_t *stack_size,
+-                      bool resume_shader)
++                      bool resume_shader, struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
++                      const struct radv_pipeline_key *key)
+ {
+    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
+ 
+    const VkPipelineCreateFlagBits2KHR create_flags = radv_get_pipeline_create_flags(pCreateInfo);
+ 
+    struct rt_variables vars = create_rt_variables(shader, create_flags);
++
++   if (key->rt.monolithic && shader->info.stage == MESA_SHADER_RAYGEN)
++      lower_rt_instructions_monolithic(shader, device, pipeline, key, pCreateInfo, &vars);
++
+    lower_rt_instructions(shader, &vars, true);
+ 
+    if (stack_size) {
+@@ -1593,31 +1786,36 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
+    if (shader_guard)
+       nir_pop_if(&b, shader_guard);
+ 
+-   /* select next shader */
+    b.cursor = nir_after_cf_list(&impl->body);
+-   shader_va = nir_load_var(&b, vars.shader_va);
+-   nir_def *next = select_next_shader(&b, shader_va, info->wave_size);
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.shader_pc, next);
+-
+-   /* store back all variables to registers */
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.dynamic_callable_stack_base, nir_load_var(&b, vars.stack_ptr));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.next_shader, nir_load_var(&b, vars.shader_va));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.shader_record, nir_load_var(&b, vars.shader_record_ptr));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.payload_offset, nir_load_var(&b, vars.arg));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.accel_struct, nir_load_var(&b, vars.accel_struct));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.cull_mask_and_flags, nir_load_var(&b, vars.cull_mask_and_flags));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.sbt_offset, nir_load_var(&b, vars.sbt_offset));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.sbt_stride, nir_load_var(&b, vars.sbt_stride));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.miss_index, nir_load_var(&b, vars.miss_index));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_origin, nir_load_var(&b, vars.origin));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_tmin, nir_load_var(&b, vars.tmin));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_direction, nir_load_var(&b, vars.direction));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_tmax, nir_load_var(&b, vars.tmax));
+-
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.primitive_id, nir_load_var(&b, vars.primitive_id));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.instance_addr, nir_load_var(&b, vars.instance_addr));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.geometry_id_and_flags, nir_load_var(&b, vars.geometry_id_and_flags));
+-   ac_nir_store_arg(&b, &args->ac, args->ac.rt.hit_kind, nir_load_var(&b, vars.hit_kind));
++
++   if (key->rt.monolithic && shader->info.stage == MESA_SHADER_RAYGEN) {
++      nir_terminate(&b);
++   } else {
++      /* select next shader */
++      shader_va = nir_load_var(&b, vars.shader_va);
++      nir_def *next = select_next_shader(&b, shader_va, info->wave_size);
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.shader_pc, next);
++
++      /* store back all variables to registers */
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.dynamic_callable_stack_base, nir_load_var(&b, vars.stack_ptr));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.next_shader, nir_load_var(&b, vars.shader_va));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.shader_record, nir_load_var(&b, vars.shader_record_ptr));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.payload_offset, nir_load_var(&b, vars.arg));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.accel_struct, nir_load_var(&b, vars.accel_struct));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.cull_mask_and_flags, nir_load_var(&b, vars.cull_mask_and_flags));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.sbt_offset, nir_load_var(&b, vars.sbt_offset));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.sbt_stride, nir_load_var(&b, vars.sbt_stride));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.miss_index, nir_load_var(&b, vars.miss_index));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_origin, nir_load_var(&b, vars.origin));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_tmin, nir_load_var(&b, vars.tmin));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_direction, nir_load_var(&b, vars.direction));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.ray_tmax, nir_load_var(&b, vars.tmax));
++
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.primitive_id, nir_load_var(&b, vars.primitive_id));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.instance_addr, nir_load_var(&b, vars.instance_addr));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.geometry_id_and_flags, nir_load_var(&b, vars.geometry_id_and_flags));
++      ac_nir_store_arg(&b, &args->ac, args->ac.rt.hit_kind, nir_load_var(&b, vars.hit_kind));
++   }
+ 
+    nir_metadata_preserve(impl, nir_metadata_none);
+ 
+diff --git a/src/amd/vulkan/radv_shader.h b/src/amd/vulkan/radv_shader.h
+index 106ca2b8e62f..9d219ffa19ba 100644
+--- a/src/amd/vulkan/radv_shader.h
++++ b/src/amd/vulkan/radv_shader.h
+@@ -631,7 +631,8 @@ nir_shader *radv_parse_rt_stage(struct radv_device *device, const VkPipelineShad
+ 
+ void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+                            const struct radv_shader_args *args, const struct radv_shader_info *info,
+-                           uint32_t *stack_size, bool resume_shader);
++                           uint32_t *stack_size, bool resume_shader, struct radv_device *device,
++                           struct radv_ray_tracing_pipeline *pipeline, const struct radv_pipeline_key *key);
+ 
+ struct radv_shader_stage;
+ 
+-- 
+GitLab
+
+
+From ef8b882bcaadcb6a6557e1ec71769ea41ad520ec Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sun, 25 Jun 2023 10:49:36 +0200
+Subject: [PATCH 07/10] radv/rt: Split stage initialization and hashing
+
+The dependency chain is: init stages -> compute pipeline key -> hash
+stages.
+---
+ src/amd/vulkan/radv_pipeline_rt.c | 30 +++++++++++++++++++-----------
+ 1 file changed, 19 insertions(+), 11 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
+index 05dfe44a467b..2c14bb0ef95d 100644
+--- a/src/amd/vulkan/radv_pipeline_rt.c
++++ b/src/amd/vulkan/radv_pipeline_rt.c
+@@ -252,20 +252,12 @@ radv_rt_fill_group_info(struct radv_device *device, const struct radv_ray_tracin
+ }
+ 
+ static void
+-radv_rt_fill_stage_info(struct radv_device *device, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+-                        struct radv_ray_tracing_stage *stages, struct radv_pipeline_key *key)
++radv_rt_fill_stage_info(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, struct radv_ray_tracing_stage *stages)
+ {
+-   RADV_FROM_HANDLE(radv_pipeline_layout, pipeline_layout, pCreateInfo->layout);
+    uint32_t idx;
+-   for (idx = 0; idx < pCreateInfo->stageCount; idx++) {
++   for (idx = 0; idx < pCreateInfo->stageCount; idx++)
+       stages[idx].stage = vk_to_mesa_shader_stage(pCreateInfo->pStages[idx].stage);
+ 
+-      struct radv_shader_stage stage;
+-      radv_pipeline_stage_init(&pCreateInfo->pStages[idx], pipeline_layout, &stage);
+-
+-      radv_hash_shaders(stages[idx].sha1, &stage, 1, NULL, key, radv_get_hash_flags(device, false));
+-   }
+-
+    if (pCreateInfo->pLibraryInfo) {
+       for (unsigned i = 0; i < pCreateInfo->pLibraryInfo->libraryCount; ++i) {
+          RADV_FROM_HANDLE(radv_pipeline, pipeline, pCreateInfo->pLibraryInfo->pLibraries[i]);
+@@ -284,6 +276,20 @@ radv_rt_fill_stage_info(struct radv_device *device, const VkRayTracingPipelineCr
+    }
+ }
+ 
++static void
++radv_init_rt_stage_hashes(struct radv_device *device, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
++                          struct radv_ray_tracing_stage *stages, const struct radv_pipeline_key *key)
++{
++   RADV_FROM_HANDLE(radv_pipeline_layout, pipeline_layout, pCreateInfo->layout);
++
++   for (uint32_t idx = 0; idx < pCreateInfo->stageCount; idx++) {
++      struct radv_shader_stage stage;
++      radv_pipeline_stage_init(&pCreateInfo->pStages[idx], pipeline_layout, &stage);
++
++      radv_hash_shaders(stages[idx].sha1, &stage, 1, NULL, key, radv_get_hash_flags(device, false));
++   }
++}
++
+ static VkRayTracingPipelineCreateInfoKHR
+ radv_create_merged_rt_create_info(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo)
+ {
+@@ -689,6 +695,8 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkRayTra
+    pipeline->stages = stages;
+    pipeline->groups = groups;
+ 
++   radv_rt_fill_stage_info(pCreateInfo, stages);
++
+    struct radv_pipeline_key key = radv_generate_rt_pipeline_key(device, pipeline, pCreateInfo);
+ 
+    /* cache robustness state for making merged shaders */
+@@ -698,7 +706,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkRayTra
+    if (key.stage_info[MESA_SHADER_INTERSECTION].uniform_robustness2)
+       pipeline->traversal_uniform_robustness2 = true;
+ 
+-   radv_rt_fill_stage_info(device, pCreateInfo, stages, &key);
++   radv_init_rt_stage_hashes(device, pCreateInfo, stages, &key);
+    result = radv_rt_fill_group_info(device, pipeline, pCreateInfo, stages, capture_replay_blocks, pipeline->groups);
+    if (result != VK_SUCCESS)
+       goto fail;
+-- 
+GitLab
+
+
+From 9f20a452c480b4343f219322a65eb1d66ac51d13 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sat, 24 Jun 2023 16:11:16 +0200
+Subject: [PATCH 08/10] radv/rt: Use monolithic pipelines
+
+Only available for non-recursive pipelines that do not have callables.
+---
+ src/amd/vulkan/radv_pipeline_rt.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/amd/vulkan/radv_pipeline_rt.c b/src/amd/vulkan/radv_pipeline_rt.c
+index 2c14bb0ef95d..3b2b97959109 100644
+--- a/src/amd/vulkan/radv_pipeline_rt.c
++++ b/src/amd/vulkan/radv_pipeline_rt.c
+@@ -103,6 +103,17 @@ radv_generate_rt_pipeline_key(const struct radv_device *device, const struct rad
+       }
+    }
+ 
++   if (!(pCreateInfo->flags & VK_PIPELINE_CREATE_LIBRARY_BIT_KHR)) {
++      key.rt.monolithic = pCreateInfo->maxPipelineRayRecursionDepth <= 1;
++
++      for (uint32_t i = 0; i < pipeline->stage_count; i++) {
++         if (pipeline->stages[i].stage == MESA_SHADER_CALLABLE) {
++            key.rt.monolithic = false;
++            break;
++         }
++      }
++   }
++
+    return key;
+ }
+ 
+-- 
+GitLab
+
+
+From c8d7b843b6a525bda0013943df3a5807b9da56c1 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sun, 16 Jul 2023 12:16:38 +0200
+Subject: [PATCH 09/10] aco: Do not fixup registers if there are no shader
+ calls
+
+Frees up some registers when using monolithic compilation.
+
+Quake II RTX and Control:
+
+Totals from 10 (29.41% of 34) affected shaders:
+MaxWaves: 77 -> 98 (+27.27%)
+Instrs: 49047 -> 48984 (-0.13%); split: -0.16%, +0.03%
+CodeSize: 260420 -> 259880 (-0.21%); split: -0.25%, +0.04%
+VGPRs: 1328 -> 1104 (-16.87%)
+Latency: 477134 -> 479377 (+0.47%); split: -0.05%, +0.52%
+InvThroughput: 137763 -> 114108 (-17.17%)
+VClause: 1318 -> 1286 (-2.43%); split: -2.66%, +0.23%
+SClause: 1295 -> 1293 (-0.15%); split: -0.54%, +0.39%
+Copies: 7838 -> 7782 (-0.71%); split: -0.82%, +0.10%
+Branches: 2592 -> 2589 (-0.12%)
+PreSGPRs: 874 -> 796 (-8.92%)
+PreVGPRs: 1283 -> 1013 (-21.04%)
+---
+ .../compiler/aco_instruction_selection.cpp    | 48 ++++++++++++-------
+ 1 file changed, 30 insertions(+), 18 deletions(-)
+
+diff --git a/src/amd/compiler/aco_instruction_selection.cpp b/src/amd/compiler/aco_instruction_selection.cpp
+index 77c63c4c3397..5e9cff81cd96 100644
+--- a/src/amd/compiler/aco_instruction_selection.cpp
++++ b/src/amd/compiler/aco_instruction_selection.cpp
+@@ -11077,6 +11077,31 @@ merged_wave_info_to_mask(isel_context* ctx, unsigned i)
+    return lanecount_to_mask(ctx, count);
+ }
+ 
++static void
++insert_rt_jump_next(isel_context& ctx, const struct ac_shader_args* args)
++{
++   append_logical_end(ctx.block);
++   ctx.block->kind |= block_kind_uniform;
++
++   unsigned src_count = ctx.args->arg_count;
++   Pseudo_instruction* ret =
++      create_instruction<Pseudo_instruction>(aco_opcode::p_return, Format::PSEUDO, src_count, 0);
++   ctx.block->instructions.emplace_back(ret);
++
++   for (unsigned i = 0; i < src_count; i++) {
++      enum ac_arg_regfile file = ctx.args->args[i].file;
++      unsigned size = ctx.args->args[i].size;
++      unsigned reg = ctx.args->args[i].offset + (file == AC_ARG_SGPR ? 0 : 256);
++      RegClass type = RegClass(file == AC_ARG_SGPR ? RegType::sgpr : RegType::vgpr, size);
++      Operand op = ctx.arg_temps[i].id() ? Operand(ctx.arg_temps[i], PhysReg{reg})
++                                         : Operand(PhysReg{reg}, type);
++      ret->operands[i] = op;
++   }
++
++   Builder bld(ctx.program, ctx.block);
++   bld.sop1(aco_opcode::s_setpc_b64, get_arg(&ctx, ctx.args->rt.shader_pc));
++}
++
+ void
+ select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* const* shaders,
+                   const struct ac_shader_args* args)
+@@ -11096,24 +11121,11 @@ select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* c
+       split_arguments(&ctx, startpgm);
+       visit_cf_list(&ctx, &nir_shader_get_entrypoint(nir)->body);
+ 
+-      /* Fix output registers and jump to next shader */
+-      append_logical_end(ctx.block);
+-      ctx.block->kind |= block_kind_uniform;
+-      Builder bld(ctx.program, ctx.block);
+-      unsigned src_count = ctx.args->arg_count;
+-      Pseudo_instruction* ret =
+-         create_instruction<Pseudo_instruction>(aco_opcode::p_return, Format::PSEUDO, src_count, 0);
+-      ctx.block->instructions.emplace_back(ret);
+-      for (unsigned j = 0; j < src_count; j++) {
+-         enum ac_arg_regfile file = ctx.args->args[j].file;
+-         unsigned size = ctx.args->args[j].size;
+-         unsigned reg = ctx.args->args[j].offset + (file == AC_ARG_SGPR ? 0 : 256);
+-         RegClass type = RegClass(file == AC_ARG_SGPR ? RegType::sgpr : RegType::vgpr, size);
+-         Operand op = ctx.arg_temps[j].id() ? Operand(ctx.arg_temps[j], PhysReg{reg})
+-                                            : Operand(PhysReg{reg}, type);
+-         ret->operands[j] = op;
+-      }
+-      bld.sop1(aco_opcode::s_setpc_b64, get_arg(&ctx, ctx.args->rt.shader_pc));
++      /* Fix output registers and jump to next shader. We can skip this when dealing with a raygen
++       * shader without shader calls.
++       */
++      if (shader_count > 1 || shaders[i]->info.stage != MESA_SHADER_RAYGEN)
++         insert_rt_jump_next(ctx, args);
+ 
+       cleanup_context(&ctx);
+    }
+-- 
+GitLab
+
+
+From d4aae2517ad80bf72ca82a5c1e19dfdac4346858 Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Sun, 6 Aug 2023 12:11:54 +0200
+Subject: [PATCH 10/10] radv: Stop updating the stack_size in insert_rt_case
+
+There are two paths that call insert_rt_case:
+- Traversal shader: The stack size is ignored.
+- Monolithic raygen shader: The stack sizes of the inlined shaders are
+                            accounted for in compute_rt_stack_size.
+---
+ src/amd/vulkan/radv_rt_shader.c | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/src/amd/vulkan/radv_rt_shader.c b/src/amd/vulkan/radv_rt_shader.c
+index 4cab6a42af95..1a3f14fe28c3 100644
+--- a/src/amd/vulkan/radv_rt_shader.c
++++ b/src/amd/vulkan/radv_rt_shader.c
+@@ -788,8 +788,6 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
+    NIR_PASS(_, shader, nir_lower_returns);
+    NIR_PASS(_, shader, nir_opt_dce);
+ 
+-   src_vars.stack_size = MAX2(src_vars.stack_size, shader->scratch_size);
+-
+    inline_constants(b->shader, shader);
+ 
+    nir_push_if(b, nir_ieq_imm(b, idx, call_idx));
+-- 
+GitLab
+
