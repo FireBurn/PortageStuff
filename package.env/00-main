@@ -83,3 +83,5 @@ net-libs/libssh2			clango3.conf
 dev-libs/modsecurity			debug.conf
 sys-apps/uutils-coreutils		clango3.conf
 #games-emulation/yuzu			clango3ltofat.conf
+dev-util/android-tools			o3.conf
+dev-cpp/abseil-cpp			o3.conf

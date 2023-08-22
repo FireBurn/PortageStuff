@@ -1,0 +1,40 @@
+From 583644612059a58ede31bd8a1758b84b9ce6c41e Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Tue, 22 Aug 2023 00:18:12 +0100
+Subject: [PATCH] Fix jsonbp.cpp
+
+---
+ vendor/extras/libjsonpb/parse/jsonpb.cpp | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/vendor/extras/libjsonpb/parse/jsonpb.cpp b/vendor/extras/libjsonpb/parse/jsonpb.cpp
+index 62d651d..b392479 100644
+--- a/vendor/extras/libjsonpb/parse/jsonpb.cpp
++++ b/vendor/extras/libjsonpb/parse/jsonpb.cpp
+@@ -50,8 +50,10 @@ ErrorOr<std::string> MessageToJsonString(const Message& message) {
+   if (!status.ok()) {
+ #if GOOGLE_PROTOBUF_VERSION < 3016000
+     return MakeError<std::string>(status.error_message().as_string());
++#elif GOOGLE_PROTOBUF_VERSION < 4022000
++    return MakeError<std::string>(status.error_message().as_string());
+ #else
+-    return MakeError<std::string>(status.message().as_string());
++    return MakeError<std::string>(std::string(status.message()));
+ #endif
+   }
+   return ErrorOr<std::string>(std::move(json));
+@@ -67,8 +69,10 @@ ErrorOr<std::monostate> JsonStringToMessage(const std::string& content, Message*
+   if (!status.ok()) {
+ #if GOOGLE_PROTOBUF_VERSION < 3016000
+     return MakeError<std::monostate>(status.error_message().as_string());
++#elif GOOGLE_PROTOBUF_VERSION < 4022000
++    return MakeError<std::monostate>(status.error_message().as_string());
+ #else
+-    return MakeError<std::monostate>(status.message().as_string());
++    return MakeError<std::monostate>(std::string(status.message()));
+ #endif
+   }
+   if (!message->ParseFromString(binary)) {
+-- 
+2.42.0
+
