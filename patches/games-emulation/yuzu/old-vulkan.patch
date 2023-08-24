@@ -16,7 +16,7 @@ index 7f8febb90..58de1b7e1 100644
  if (ENABLE_WEB_SERVICE)
      find_package(cpp-jwt 1.4 CONFIG)
 -    find_package(httplib 0.12 MODULE COMPONENTS OpenSSL)
-+    find_package(httplib 0.13 MODULE COMPONENTS OpenSSL)
++    find_package(httplib 0.14 MODULE COMPONENTS OpenSSL)
  endif()
  
  if (YUZU_TESTS)
