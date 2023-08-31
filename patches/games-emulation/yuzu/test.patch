@@ -1,0 +1,17 @@
+diff --git a/externals/CMakeLists.txt b/externals/CMakeLists.txt
+index 798258af2..c49b7756b 100644
+--- a/externals/CMakeLists.txt
++++ b/externals/CMakeLists.txt
+@@ -36,12 +36,6 @@ add_subdirectory(glad)
+ 
+ # inih
+ 
+-if (NOT MSVC)
+-    target_compile_options(mbedcrypto PRIVATE
+-        -Wno-unused-but-set-variable
+-        -Wno-string-concatenation)
+-endif()
+-
+ # MicroProfile
+ add_library(microprofile INTERFACE)
+ target_include_directories(microprofile INTERFACE ./microprofile)
