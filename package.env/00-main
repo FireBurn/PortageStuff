@@ -82,4 +82,4 @@ net-misc/openssh			o3lto.conf
 net-libs/libssh2			clango3.conf
 dev-libs/modsecurity			debug.conf
 sys-apps/uutils-coreutils		clango3.conf
-#games-emulation/yuzu			clango3ltofat.conf
+#games-emulation/yuzu			clango3ltomold.conf
