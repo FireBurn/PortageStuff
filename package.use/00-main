@@ -74,7 +74,7 @@ media-libs/libpng			-apng
 media-libs/libsdl2			gles2 haptic
 media-libs/libva			abi_x86_32 utils
 media-libs/libvpx			svc
-media-libs/mesa				abi_x86_32 gles1 gles2 -opencl proprietary-codecs zink -classic -video_cards_intel -video_cards_iris -video_cards_i965 -video_cards_radeon
+media-libs/mesa				abi_x86_32 gles1 gles2 opencl proprietary-codecs zink -classic -video_cards_intel -video_cards_iris -video_cards_i965 -video_cards_radeon
 media-libs/phonon			gstreamer
 media-libs/vulkan-layers		abi_x86_32
 media-libs/vulkan-loader		abi_x86_32 demos layers
