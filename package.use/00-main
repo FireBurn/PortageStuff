@@ -151,3 +151,4 @@ x11-wm/mutter				gles2
 x11-libs/xcb-util-keysyms		abi_x86_32
 sys-boot/gnu-efi			-custom-cflags
 x11-base/xwayland			libei
+dev-libs/icu				abi_x86_32
