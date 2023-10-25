@@ -15,7 +15,7 @@ dev-qt/qtscript				ofast.conf
 dev-util/valgrind			ofast.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 #media-libs/mesa				clangdebug.conf
-media-libs/mesa				clangofastlto.conf
+media-libs/mesa				clango3lto.conf
 #media-libs/mesa				clangofast.conf
 #media-libs/mesa				debug.conf
 #media-libs/mesa				ofast.conf
@@ -81,7 +81,7 @@ app-crypt/gpgme				clangofastlto.conf
 net-libs/libssh2			clangofast.conf
 dev-libs/modsecurity			debug.conf
 sys-apps/uutils-coreutils		clangofast.conf
-games-emulation/yuzu			clangofastlto.conf
+games-emulation/yuzu			clango3lto.conf
 dev-lang/duktape			o3lto.conf
 sys-apps/systemd			o3lto.conf
 media-libs/rnnoise			o3lto.conf
@@ -90,3 +90,6 @@ sys-auth/polkit				o3lto.conf
 net-fs/cifs-utils			o3lto.conf
 kde-frameworks/kjs			o3lto.conf
 app-emulation/wine-staging		o3lto.conf
+dev-libs/double-conversion		clango3lto.conf
+dev-qt/*				clango3lto.conf
+kde*/*					clango3lto.conf
