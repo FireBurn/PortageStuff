@@ -14,8 +14,9 @@ dev-libs/libaio				ofast.conf
 dev-qt/qtscript				ofast.conf
 dev-util/valgrind			ofast.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
-#media-libs/mesa				clangdebug.conf
 media-libs/mesa				clango3lto.conf
+x11-apps/mesa-progs			clango3lto.conf
+#media-libs/mesa				clango3lto.conf
 #media-libs/mesa				clangofast.conf
 #media-libs/mesa				debug.conf
 #media-libs/mesa				ofast.conf
