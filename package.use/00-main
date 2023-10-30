@@ -13,7 +13,7 @@ app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
 app-emulation/vkd3d-proton		abi_x86_32
 app-emulation/wine-gecko		abi_x86_32
-app-emulation/wine-staging		mingw wow64 -abi_x86_32
+app-emulation/wine-staging		mingw -wow64 abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-misc/mime-types			nginx
 app-office/libreoffice			clang gtk gtk3 java kde
@@ -128,7 +128,7 @@ virtual/mysql				embedded
 virtual/notification-daemon		kde
 virtual/opengl				abi_x86_32
 virtual/pkgconfig			abi_x86_32
-virtual/wine				staging -abi_x86_32 -d3d9
+virtual/wine				staging abi_x86_32 -d3d9
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
 www-client/chromium			custom-cflags gtk4 hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone
 www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
@@ -152,3 +152,4 @@ x11-libs/xcb-util-keysyms		abi_x86_32
 sys-boot/gnu-efi			-custom-cflags
 x11-base/xwayland			libei
 dev-libs/icu				abi_x86_32
+media-libs/freetype			-harfbuzz
