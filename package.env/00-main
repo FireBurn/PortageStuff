@@ -23,7 +23,8 @@ x11-apps/mesa-progs			clango3lto.conf
 dev-util/directx-headers		clangofast.conf
 media-libs/x264                         ofast.conf
 media-libs/dav1d			ofast.conf
-media-video/ffmpeg			ofast.conf
+#media-video/ffmpeg			ofast.conf
+media-video/ffmpeg			o3.conf
 #sys-libs/glibc				debug.conf
 sys-libs/glibc				glibc.conf
 sys-devel/gcc				ofast.conf
@@ -82,7 +83,8 @@ app-crypt/gpgme				clangofastlto.conf
 net-libs/libssh2			clangofast.conf
 dev-libs/modsecurity			debug.conf
 sys-apps/uutils-coreutils		clangofast.conf
-games-emulation/yuzu			clango3lto.conf
+#games-emulation/yuzu			o2.conf
+games-emulation/yuzu                    clango3lto.conf
 dev-lang/duktape			o3lto.conf
 sys-apps/systemd			o3lto.conf
 media-libs/rnnoise			o3lto.conf
