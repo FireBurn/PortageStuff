@@ -23,8 +23,8 @@ x11-apps/mesa-progs			clango3lto.conf
 dev-util/directx-headers		clangofast.conf
 media-libs/x264                         ofast.conf
 media-libs/dav1d			ofast.conf
-#media-video/ffmpeg			ofast.conf
-media-video/ffmpeg			o3.conf
+media-video/ffmpeg			ofast.conf
+#media-video/ffmpeg			clango3.conf
 #sys-libs/glibc				debug.conf
 sys-libs/glibc				glibc.conf
 sys-devel/gcc				ofast.conf

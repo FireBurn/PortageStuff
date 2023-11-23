@@ -82,7 +82,7 @@ media-libs/x264				-opencl
 media-plugins/alsa-plugins		-pulseaudio
 media-plugins/grilo-plugins		tracker
 media-sound/pulseaudio			gnome -alsa-plugin -daemon
-media-video/ffmpeg			amr chromium fdk libdrm x265
+media-video/ffmpeg			amr chromium fdk libdrm x265 -vulkan
 media-video/mpv				samba
 media-video/pipewire			extra sound-server
 media-video/smplayer			-qt4
