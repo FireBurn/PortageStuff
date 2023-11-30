@@ -1,0 +1,37 @@
+--- a/setup.py	2023-11-30 12:24:55.116974040 +0000
++++ b/setup.py	2023-11-30 12:25:05.515000577 +0000
+@@ -14,6 +14,7 @@
+ import distutils.command.build as distutils_build
+ import distutils.command.clean as distutils_clean
+ import setuptools
++import setuptools.modified
+
+ # Add the src folder to the path
+ sys.path.insert(0, os.path.realpath("src"))
+@@ -39,7 +39,7 @@
+     def compile_rc(self, qrc_file):
+         import PyQt5
+         py_file = os.path.splitext(qrc_file)[0] + "_rc.py"
+-        if not distutils.dep_util.newer(qrc_file, py_file):
++        if not setuptools.modified.newer(qrc_file, py_file):
+             return
+         origpath = os.getenv("PATH")
+         path = origpath.split(os.pathsep)
+@@ -54,7 +54,7 @@
+     def compile_ui(self, ui_file):
+         from PyQt5 import uic
+         py_file = os.path.splitext(ui_file)[0] + "_ui.py"
+-        if not distutils.dep_util.newer(ui_file, py_file):
++        if not setuptools.modified.newer(ui_file, py_file):
+             return
+         with open(py_file, "w") as a_file:
+             uic.compileUi(ui_file, a_file, from_imports=True)
+@@ -62,7 +62,7 @@
+     def compile_ts(self, ts_file):
+         import PyQt5
+         qm_file = os.path.splitext(ts_file)[0] + ".qm"
+-        if not distutils.dep_util.newer(ts_file, qm_file):
++        if not setuptools.modified.newer(ts_file, qm_file):
+             return
+         origpath = os.getenv("PATH")
+         path = origpath.split(os.pathsep)
