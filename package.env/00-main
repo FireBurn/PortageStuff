@@ -26,8 +26,8 @@ dev-libs/rocclr                         clango3.conf
 #dev-libs/rocm-comgr                     clangdebug.conf
 dev-libs/rocm-comgr			clango3.conf
 dev-libs/rocm-device-libs		clango3.conf
-#dev-libs/rocm-opencl-runtime		clangdebug.conf
-dev-libs/rocm-opencl-runtime            clango3.conf
+dev-libs/rocm-opencl-runtime		clangdebug.conf
+#dev-libs/rocm-opencl-runtime            clango3.conf
 dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 dev-qt/*				clango3lto.conf
