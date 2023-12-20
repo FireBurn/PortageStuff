@@ -1,5 +1,6 @@
 -glamor
 -qt5
+-kf6compat
 -input_devices_libinput
 -gentoo-vm
 -custom-cflags

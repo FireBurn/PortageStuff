@@ -1,0 +1,12 @@
+net-libs/kdsoap **
+net-libs/kdsoap-ws-discovery-client **
+dev-libs/kirigami-addons **
+net-libs/accounts-qt **
+net-libs/accounts-qml **
+net-libs/signond **
+kde-misc/kio-fuse **
+net-libs/signon-oauth2 **
+dev-libs/appstream **
+kde-apps/kwrite **
+kde-apps/kate-lib **
+kde-apps/dolphin **
