@@ -85,3 +85,6 @@ x11-apps/mesa-progs			clango3lto.conf
 #x11-base/xorg-server			debug.conf
 #x11-drivers/xf86-video-intel		debug.conf
 x11-drivers/xf86-video-intel		o3.conf
+net-irc/konversation			clango3lto.conf
+net-libs/libktorrent			clango3lto.conf
+net-p2p/ktorrent			clango3lto.conf
