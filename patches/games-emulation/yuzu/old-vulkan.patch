@@ -16,7 +16,7 @@ index 1e2260b09..713c98295 100644
  
  if (NOT YUZU_USE_EXTERNAL_VULKAN_HEADERS)
 -    find_package(Vulkan 1.3.274 REQUIRED)
-+    find_package(Vulkan 1.3.250 REQUIRED)
++    find_package(Vulkan 1.3.268 REQUIRED)
  endif()
  
  if (ENABLE_LIBUSB)
