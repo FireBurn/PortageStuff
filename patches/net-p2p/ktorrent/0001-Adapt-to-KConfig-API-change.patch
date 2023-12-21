@@ -1,0 +1,74 @@
+From 0e87be4e4d69620fb5d6fa67de1a4bfd0f9ea9aa Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 21 Dec 2023 13:32:08 +0000
+Subject: [PATCH] Adapt to KConfig API change
+
+
+diff --git a/plugins/mediaplayer/mediaplayeractivity.cpp b/plugins/mediaplayer/mediaplayeractivity.cpp
+index bfaaf575..1cb2518f 100644
+--- a/plugins/mediaplayer/mediaplayeractivity.cpp
++++ b/plugins/mediaplayer/mediaplayeractivity.cpp
+@@ -341,7 +341,7 @@ void MediaPlayerActivity::setVideoFullScreen(bool on)
+ 
+ void MediaPlayerActivity::saveState(KSharedConfigPtr cfg)
+ {
+-    KConfigGroup g = cfg->group("MediaPlayerActivity");
++    KConfigGroup g = cfg->group(QStringLiteral("MediaPlayerActivity"));
+     g.writeEntry("splitter_state", splitter->saveState());
+     play_list->saveState(cfg);
+     play_list->playList()->save(kt::DataDir() + QLatin1String("playlist"));
+@@ -351,7 +351,7 @@ void MediaPlayerActivity::saveState(KSharedConfigPtr cfg)
+ 
+ void MediaPlayerActivity::loadState(KSharedConfigPtr cfg)
+ {
+-    KConfigGroup g = cfg->group("MediaPlayerActivity");
++    KConfigGroup g = cfg->group(QStringLiteral("MediaPlayerActivity"));
+     QByteArray d = g.readEntry("splitter_state", QByteArray());
+     if (!d.isEmpty())
+         splitter->restoreState(d);
+diff --git a/plugins/mediaplayer/mediaview.cpp b/plugins/mediaplayer/mediaview.cpp
+index 05b1ae82..f9070245 100644
+--- a/plugins/mediaplayer/mediaview.cpp
++++ b/plugins/mediaplayer/mediaview.cpp
+@@ -130,14 +130,14 @@ void MediaView::showIncompleteChanged(bool on)
+ 
+ void MediaView::loadState(KSharedConfig::Ptr cfg)
+ {
+-    KConfigGroup g = cfg->group("MediaView");
++    KConfigGroup g = cfg->group(QStringLiteral("MediaView"));
+     show_incomplete->setChecked(g.readEntry("show_incomplete", false));
+     search_box->setText(g.readEntry("search_text", QString()));
+ }
+ 
+ void MediaView::saveState(KSharedConfig::Ptr cfg)
+ {
+-    KConfigGroup g = cfg->group("MediaView");
++    KConfigGroup g = cfg->group(QStringLiteral("MediaView"));
+     g.writeEntry("show_incomplete", show_incomplete->isChecked());
+     g.writeEntry("search_text", search_box->text());
+ }
+diff --git a/plugins/mediaplayer/playlistwidget.cpp b/plugins/mediaplayer/playlistwidget.cpp
+index 2704df67..fb4e31e1 100644
+--- a/plugins/mediaplayer/playlistwidget.cpp
++++ b/plugins/mediaplayer/playlistwidget.cpp
+@@ -122,7 +122,7 @@ void PlayListWidget::doubleClicked(const QModelIndex &index)
+ 
+ void PlayListWidget::saveState(KSharedConfigPtr cfg)
+ {
+-    KConfigGroup g = cfg->group("PlayListWidget");
++    KConfigGroup g = cfg->group(QStringLiteral("PlayListWidget"));
+     QHeaderView *v = view->header();
+     g.writeEntry("play_list_state", v->saveState());
+     g.writeEntry("random_mode", random_mode->isChecked());
+@@ -130,7 +130,7 @@ void PlayListWidget::saveState(KSharedConfigPtr cfg)
+ 
+ void PlayListWidget::loadState(KSharedConfigPtr cfg)
+ {
+-    KConfigGroup g = cfg->group("PlayListWidget");
++    KConfigGroup g = cfg->group(QStringLiteral("PlayListWidget"));
+     QByteArray d = g.readEntry("play_list_state", QByteArray());
+     if (!d.isEmpty())
+         view->header()->restoreState(d);
+-- 
+2.43.0
+

@@ -1,0 +1,343 @@
+From 4f7e3e922a8ba09037647a5958759f4b93075428 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 21 Dec 2023 13:52:31 +0000
+Subject: [PATCH] Adapt to KConfig API change
+
+---
+ attica-kde/kdeplugin/kdeplatformdependent.cpp          | 10 +++++-----
+ kcms/access/kcmaccess.cpp                              |  2 +-
+ kcms/activities/activityconfig.cpp                     |  4 ++--
+ kcms/baloo/kcm.cpp                                     |  2 +-
+ kcms/dateandtime/dtime.cpp                             |  2 +-
+ kcms/dateandtime/helper.cpp                            |  2 +-
+ kcms/keyboard/keyboard_hardware.cpp                    |  2 +-
+ kcms/keys/globalaccelmodel.cpp                         |  4 ++--
+ kcms/keys/kcm_keys.cpp                                 |  2 +-
+ kcms/keys/standardshortcutsmodel.cpp                   |  4 ++--
+ kcms/mouse/backends/kwin_wl/kwin_wl_backend.cpp        |  4 ++--
+ kcms/mouse/backends/x11/libinput_settings.cpp          |  8 ++++----
+ kcms/mouse/backends/x11/x11_backend.cpp                |  2 +-
+ kcms/runners/plasmasearch/kcm.cpp                      |  4 ++--
+ .../plugininstaller/KRunnerPluginInstallerRcJob.cpp    |  2 +-
+ kcms/touchpad/touchpadparametersbase.cpp               |  2 +-
+ 16 files changed, 28 insertions(+), 28 deletions(-)
+
+diff --git a/attica-kde/kdeplugin/kdeplatformdependent.cpp b/attica-kde/kdeplugin/kdeplatformdependent.cpp
+index ab1ac44f1..d7ce09d84 100644
+--- a/attica-kde/kdeplugin/kdeplatformdependent.cpp
++++ b/attica-kde/kdeplugin/kdeplatformdependent.cpp
+@@ -214,7 +214,7 @@ bool Attica::KdePlatformDependent::askForCredentials(const QUrl &baseUrl, QStrin
+ 
+ QList<QUrl> KdePlatformDependent::getDefaultProviderFiles() const
+ {
+-    KConfigGroup group(m_config, "General");
++    KConfigGroup group(m_config, QStringLiteral("General"));
+     const QStringList pathStrings = group.readPathEntry("providerFiles", QStringList(QStringLiteral("https://autoconfig.kde.org/ocs/providers.xml")));
+     QList<QUrl> paths;
+     for (const QString &pathString : pathStrings) {
+@@ -226,7 +226,7 @@ QList<QUrl> KdePlatformDependent::getDefaultProviderFiles() const
+ 
+ void KdePlatformDependent::addDefaultProviderFile(const QUrl &url)
+ {
+-    KConfigGroup group(m_config, "General");
++    KConfigGroup group(m_config, QStringLiteral("General"));
+     QStringList pathStrings = group.readPathEntry("providerFiles", QStringList(QStringLiteral("https://autoconfig.kde.org/ocs/providers.xml")));
+     QString urlString = url.toString();
+     if (!pathStrings.contains(urlString)) {
+@@ -239,7 +239,7 @@ void KdePlatformDependent::addDefaultProviderFile(const QUrl &url)
+ 
+ void KdePlatformDependent::removeDefaultProviderFile(const QUrl &url)
+ {
+-    KConfigGroup group(m_config, "General");
++    KConfigGroup group(m_config, QStringLiteral("General"));
+     QStringList pathStrings = group.readPathEntry("providerFiles", QStringList(QStringLiteral("https://autoconfig.kde.org/ocs/providers.xml")));
+     pathStrings.removeAll(url.toString());
+     group.writeEntry("providerFiles", pathStrings);
+@@ -247,7 +247,7 @@ void KdePlatformDependent::removeDefaultProviderFile(const QUrl &url)
+ 
+ void KdePlatformDependent::enableProvider(const QUrl &baseUrl, bool enabled) const
+ {
+-    KConfigGroup group(m_config, "General");
++    KConfigGroup group(m_config, QStringLiteral("General"));
+     QStringList pathStrings = group.readPathEntry("disabledProviders", QStringList());
+     if (enabled) {
+         pathStrings.removeAll(baseUrl.toString());
+@@ -262,7 +262,7 @@ void KdePlatformDependent::enableProvider(const QUrl &baseUrl, bool enabled) con
+ 
+ bool KdePlatformDependent::isEnabled(const QUrl &baseUrl) const
+ {
+-    KConfigGroup group(m_config, "General");
++    KConfigGroup group(m_config, QStringLiteral("General"));
+     return !group.readPathEntry("disabledProviders", QStringList()).contains(baseUrl.toString());
+ }
+ 
+diff --git a/kcms/access/kcmaccess.cpp b/kcms/access/kcmaccess.cpp
+index ba1179dd4..e63c45713 100644
+--- a/kcms/access/kcmaccess.cpp
++++ b/kcms/access/kcmaccess.cpp
+@@ -192,7 +192,7 @@ void KAccessConfig::save()
+ 
+     if (bellSettings()->systemBell() || bellSettings()->customBell() || bellSettings()->visibleBell()) {
+         KConfig _cfg(QStringLiteral("kdeglobals"), KConfig::NoGlobals);
+-        KConfigGroup cfg(&_cfg, "General");
++        KConfigGroup cfg(&_cfg, QStringLiteral("General"));
+         cfg.writeEntry("UseSystemBell", true);
+         cfg.sync();
+     }
+diff --git a/kcms/activities/activityconfig.cpp b/kcms/activities/activityconfig.cpp
+index 783105d47..8f2351cac 100644
+--- a/kcms/activities/activityconfig.cpp
++++ b/kcms/activities/activityconfig.cpp
+@@ -126,7 +126,7 @@ void ActivityConfig::load()
+     });
+ 
+     KConfig powerdevilConfig("powerdevilrc");
+-    KConfigGroup activityGroup = powerdevilConfig.group("Activities").group(m_activityId);
++    KConfigGroup activityGroup = powerdevilConfig.group(QStringLiteral("Activities")).group(m_activityId);
+     m_inhibitScreen = activityGroup.readEntry("InhibitScreenManagement", false);
+     m_savedInhibitScreen = m_inhibitScreen;
+     m_inhibitSleep = activityGroup.readEntry("InhibitSuspend", false);
+@@ -165,7 +165,7 @@ void ActivityConfig::save()
+     QDBusConnection::sessionBus().asyncCall(message);
+ 
+     KConfig powerdevilConfig("powerdevilrc");
+-    KConfigGroup activityGroup = powerdevilConfig.group("Activities").group(m_activityId);
++    KConfigGroup activityGroup = powerdevilConfig.group(QStringLiteral("Activities")).group(m_activityId);
+     activityGroup.writeEntry("InhibitScreenManagement", m_inhibitScreen);
+     m_savedInhibitScreen = m_inhibitScreen;
+     activityGroup.writeEntry("InhibitSuspend", m_inhibitSleep);
+diff --git a/kcms/baloo/kcm.cpp b/kcms/baloo/kcm.cpp
+index 6991ae2a0..bdb2eff1d 100644
+--- a/kcms/baloo/kcm.cpp
++++ b/kcms/baloo/kcm.cpp
+@@ -90,7 +90,7 @@ void ServerConfigModule::save()
+ 
+     // enable baloo runner if we have indexing enabled, otherwise disable it
+     KConfig cfg(QStringLiteral("krunnerrc"));
+-    KConfigGroup grp = cfg.group("Plugins");
++    KConfigGroup grp = cfg.group(QStringLiteral("Plugins"));
+     grp.writeEntry("baloosearchEnabled", balooSettings()->indexingEnabled(), KConfig::Notify);
+ }
+ 
+diff --git a/kcms/dateandtime/dtime.cpp b/kcms/dateandtime/dtime.cpp
+index 165a46a9c..fc9e3e85e 100644
+--- a/kcms/dateandtime/dtime.cpp
++++ b/kcms/dateandtime/dtime.cpp
+@@ -199,7 +199,7 @@ void Dtime::load()
+         // The config is actually written to the system config, but the user does not have any local config,
+         // since there is nothing writing it.
+         KConfig _config(QStringLiteral("kcmclockrc"), KConfig::NoGlobals);
+-        KConfigGroup config(&_config, "NTP");
++        KConfigGroup config(&_config, QStringLiteral("NTP"));
+         timeServerList->clear();
+         timeServerList->addItems(config
+                                      .readEntry("servers", i18n("Public Time Server (pool.ntp.org),\
+diff --git a/kcms/dateandtime/helper.cpp b/kcms/dateandtime/helper.cpp
+index 1cd8c9cd4..369052b03 100644
+--- a/kcms/dateandtime/helper.cpp
++++ b/kcms/dateandtime/helper.cpp
+@@ -43,7 +43,7 @@ int ClockHelper::ntp(const QStringList &ntpServers, bool ntpEnabled)
+         config_file.setPermissions(QFile::ReadOwner | QFile::WriteOwner | QFile::ReadGroup | QFile::ReadOther);
+     }
+     KConfig _config(config_file.fileName(), KConfig::SimpleConfig);
+-    KConfigGroup config(&_config, "NTP");
++    KConfigGroup config(&_config, QStringLiteral("NTP"));
+     config.writeEntry("servers", ntpServers);
+     config.writeEntry("enabled", ntpEnabled);
+ 
+diff --git a/kcms/keyboard/keyboard_hardware.cpp b/kcms/keyboard/keyboard_hardware.cpp
+index 704be6f93..6fde11d0a 100644
+--- a/kcms/keyboard/keyboard_hardware.cpp
++++ b/kcms/keyboard/keyboard_hardware.cpp
+@@ -60,7 +60,7 @@ void init_keyboard_hardware()
+ {
+     auto inputConfig = KSharedConfig::openConfig(QStringLiteral("kcminputrc"));
+     inputConfig->reparseConfiguration();
+-    KConfigGroup config(inputConfig, "Keyboard");
++    KConfigGroup config(inputConfig, QStringLiteral("Keyboard"));
+ 
+     QString keyRepeatStr = config.readEntry("KeyRepeat", "accent");
+ 
+diff --git a/kcms/keys/globalaccelmodel.cpp b/kcms/keys/globalaccelmodel.cpp
+index 4320273e8..30b68d842 100644
+--- a/kcms/keys/globalaccelmodel.cpp
++++ b/kcms/keys/globalaccelmodel.cpp
+@@ -231,7 +231,7 @@ void GlobalAccelModel::exportToConfig(const KConfigBase &config)
+     for (const auto &component : std::as_const(m_components)) {
+         if (component.checked) {
+             KConfigGroup mainGroup(&config, component.id);
+-            KConfigGroup group(&mainGroup, "Global Shortcuts");
++            KConfigGroup group(&mainGroup, QStringLiteral("Global Shortcuts"));
+             for (const auto &action : component.actions) {
+                 const QList<QKeySequence> shortcutsList(action.activeShortcuts.cbegin(), action.activeShortcuts.cend());
+                 group.writeEntry(action.id, QKeySequence::listToString(shortcutsList));
+@@ -256,7 +256,7 @@ void GlobalAccelModel::importConfig(const KConfigBase &config)
+             qCWarning(KCMKEYS) << "Group" << componentGroupName << "has no shortcuts group";
+             continue;
+         }
+-        KConfigGroup shortcutsGroup(&componentGroup, "Global Shortcuts");
++        KConfigGroup shortcutsGroup(&componentGroup, QStringLiteral("Global Shortcuts"));
+         const QStringList keys = shortcutsGroup.keyList();
+         for (const auto &key : keys) {
+             auto action = std::find_if(component->actions.begin(), component->actions.end(), [&](const Action &a) {
+diff --git a/kcms/keys/kcm_keys.cpp b/kcms/keys/kcm_keys.cpp
+index 590b3514d..14872f009 100644
+--- a/kcms/keys/kcm_keys.cpp
++++ b/kcms/keys/kcm_keys.cpp
+@@ -157,7 +157,7 @@ QVariantList KCMKeys::defaultSchemes() const
+         for (const QString &file : fileNames) {
+             const QString path = dir + QLatin1Char('/') + file;
+             KConfig scheme(path, KConfig::SimpleConfig);
+-            const QString name = KConfigGroup(&scheme, "Settings").readEntry("Name", file);
++            const QString name = KConfigGroup(&scheme, QStringLiteral("Settings")).readEntry(QStringLiteral("Name"), file);
+             schemes.append(QVariantMap({{"name", name}, {"url", QUrl::fromLocalFile(path)}}));
+         }
+     }
+diff --git a/kcms/keys/standardshortcutsmodel.cpp b/kcms/keys/standardshortcutsmodel.cpp
+index b99986759..d30424824 100644
+--- a/kcms/keys/standardshortcutsmodel.cpp
++++ b/kcms/keys/standardshortcutsmodel.cpp
+@@ -68,7 +68,7 @@ void StandardShortcutsModel::load()
+ 
+ void StandardShortcutsModel::exportToConfig(const KConfigBase &config)
+ {
+-    KConfigGroup group(&config, "StandardShortcuts");
++    KConfigGroup group(&config, QStringLiteral("StandardShortcuts"));
+     for (const auto &component : std::as_const(m_components)) {
+         if (component.checked) {
+             for (const auto &action : component.actions) {
+@@ -85,7 +85,7 @@ void StandardShortcutsModel::importConfig(const KConfigBase &config)
+         qCDebug(KCMKEYS) << "Config has no StandardShortcuts group";
+         return;
+     }
+-    const KConfigGroup group = config.group("StandardShortcuts");
++    const KConfigGroup group = config.group(QStringLiteral("StandardShortcuts"));
+     const QStringList keys = group.keyList();
+     for (const auto &key : keys) {
+         KStandardShortcut::StandardShortcut id = KStandardShortcut::findByName(key);
+diff --git a/kcms/mouse/backends/kwin_wl/kwin_wl_backend.cpp b/kcms/mouse/backends/kwin_wl/kwin_wl_backend.cpp
+index 07fc50040..b2a16b6e7 100644
+--- a/kcms/mouse/backends/kwin_wl/kwin_wl_backend.cpp
++++ b/kcms/mouse/backends/kwin_wl/kwin_wl_backend.cpp
+@@ -94,7 +94,7 @@ void KWinWaylandBackend::findDevices()
+ 
+ bool KWinWaylandBackend::applyConfig()
+ {
+-    KConfigGroup buttonGroup = KSharedConfig::openConfig("kcminputrc")->group("ButtonRebinds").group("Mouse");
++    KConfigGroup buttonGroup = KSharedConfig::openConfig(QStringLiteral("kcminputrc"))->group(QStringLiteral("ButtonRebinds")).group(QStringLiteral("Mouse"));
+     for (auto it = m_buttonMapping.cbegin(); it != m_buttonMapping.cend(); ++it) {
+         if (auto keys = it.value().value<QKeySequence>(); !keys.isEmpty()) {
+             buttonGroup.writeEntry(it.key(), QStringList{"Key", keys.toString(QKeySequence::PortableText)}, KConfig::Notify);
+@@ -111,7 +111,7 @@ bool KWinWaylandBackend::applyConfig()
+ bool KWinWaylandBackend::getConfig()
+ {
+     m_loadedButtonMapping.clear();
+-    const KConfigGroup buttonGroup = KSharedConfig::openConfig("kcminputrc")->group("ButtonRebinds").group("Mouse");
++    const KConfigGroup buttonGroup = KSharedConfig::openConfig(QStringLiteral("kcminputrc"))->group(QStringLiteral("ButtonRebinds")).group(QStringLiteral("Mouse"));
+     for (int i = 1; i <= 24; ++i) {
+         const QString buttonName = QLatin1String("ExtraButton%1").arg(QString::number(i));
+         auto entry = buttonGroup.readEntry(buttonName, QStringList());
+diff --git a/kcms/mouse/backends/x11/libinput_settings.cpp b/kcms/mouse/backends/x11/libinput_settings.cpp
+index 59c1c2249..546d44d3d 100644
+--- a/kcms/mouse/backends/x11/libinput_settings.cpp
++++ b/kcms/mouse/backends/x11/libinput_settings.cpp
+@@ -12,7 +12,7 @@ template<>
+ bool LibinputSettings::load(QString key, bool defVal)
+ {
+     KSharedConfig::Ptr kcminputPtr = KSharedConfig::openConfig("kcminputrc");
+-    KConfigGroup group(kcminputPtr, "Mouse");
++    KConfigGroup group(kcminputPtr, QStringLiteral("Mouse"));
+ 
+     return group.readEntry(key, defVal);
+ }
+@@ -21,7 +21,7 @@ template<>
+ qreal LibinputSettings::load(QString key, qreal defVal)
+ {
+     KSharedConfig::Ptr kcminputPtr = KSharedConfig::openConfig("kcminputrc");
+-    KConfigGroup group(kcminputPtr, "Mouse");
++    KConfigGroup group(kcminputPtr, QStringLiteral("Mouse"));
+ 
+     return group.readEntry(key, defVal);
+ }
+@@ -30,7 +30,7 @@ template<>
+ void LibinputSettings::save(QString key, bool val)
+ {
+     KSharedConfig::Ptr kcminputPtr = KSharedConfig::openConfig("kcminputrc");
+-    KConfigGroup group(kcminputPtr, "Mouse");
++    KConfigGroup group(kcminputPtr, QStringLiteral("Mouse"));
+ 
+     group.writeEntry(key, val);
+ 
+@@ -42,7 +42,7 @@ template<>
+ void LibinputSettings::save(QString key, qreal val)
+ {
+     KSharedConfig::Ptr kcminputPtr = KSharedConfig::openConfig("kcminputrc");
+-    KConfigGroup group(kcminputPtr, "Mouse");
++    KConfigGroup group(kcminputPtr, QStringLiteral("Mouse"));
+ 
+     group.writeEntry(key, val);
+ 
+diff --git a/kcms/mouse/backends/x11/x11_backend.cpp b/kcms/mouse/backends/x11/x11_backend.cpp
+index 3c1ab0e2f..628010be2 100644
+--- a/kcms/mouse/backends/x11/x11_backend.cpp
++++ b/kcms/mouse/backends/x11/x11_backend.cpp
+@@ -106,7 +106,7 @@ void X11Backend::applyCursorTheme(const QString &theme, int size)
+ void X11Backend::kcmInit()
+ {
+     auto config = KSharedConfig::openConfig("kcminputrc", KConfig::NoGlobals);
+-    KConfigGroup group = config->group("Mouse");
++    KConfigGroup group = config->group(QStringLiteral("Mouse"));
+     const QString theme = group.readEntry("cursorTheme", QStringLiteral("breeze_cursors"));
+     const int size = group.readEntry("cursorSize", 24);
+ 
+diff --git a/kcms/runners/plasmasearch/kcm.cpp b/kcms/runners/plasmasearch/kcm.cpp
+index 642faa881..3c0f11615 100644
+--- a/kcms/runners/plasmasearch/kcm.cpp
++++ b/kcms/runners/plasmasearch/kcm.cpp
+@@ -28,7 +28,7 @@ public:
+     bool isDefaults() const override
+     {
+         const QList<KPluginMetaData> runnerData = KRunner::RunnerManager::runnerMetaDataList();
+-        KConfigGroup cfgGroup(m_krunnerConfig, "Plugins");
++        KConfigGroup cfgGroup(m_krunnerConfig, QStringLiteral("Plugins"));
+         if (cfgGroup.group("Favorites").readEntry("plugins", SearchConfigModule::defaultFavoriteIds()) != SearchConfigModule::defaultFavoriteIds()) {
+             return false;
+         }
+@@ -149,7 +149,7 @@ void SearchConfigModule::showKCM(const KPluginMetaData &data, const QVariantList
+ void SearchConfigModule::save()
+ {
+     KQuickManagedConfigModule::save();
+-    KConfigGroup grp = m_config->group("Plugins").group("Favorites");
++    KConfigGroup grp = m_config->group(QStringLiteral("Plugins")).group(QStringLiteral("Favorites"));
+     grp.writeEntry("plugins", getFavPluginIds(), KConfigGroup::Notify);
+     m_model->save();
+ 
+diff --git a/kcms/runners/plugininstaller/KRunnerPluginInstallerRcJob.cpp b/kcms/runners/plugininstaller/KRunnerPluginInstallerRcJob.cpp
+index d783448ea..ed496d1a4 100644
+--- a/kcms/runners/plugininstaller/KRunnerPluginInstallerRcJob.cpp
++++ b/kcms/runners/plugininstaller/KRunnerPluginInstallerRcJob.cpp
+@@ -35,7 +35,7 @@ static InstallerInfo getInstallerInfo(const QFileInfo &info)
+     Q_ASSERT(installerConfigFile.endsWith("krunner-plugininstallerrc"));
+ 
+     KConfig cfg(installerConfigFile);
+-    KConfigGroup grp = cfg.group("");
++    KConfigGroup grp = cfg.group(QStringLiteral(""));
+     const QString exec = grp.readEntry("Exec").replace(QStringLiteral("%{PROJECTDIR}"), info.absolutePath());
+     const QString metaDataFile = grp.readEntry("MetaDataFile");
+     KDesktopFile desktopFile(rootDir.absoluteFilePath(metaDataFile));
+diff --git a/kcms/touchpad/touchpadparametersbase.cpp b/kcms/touchpad/touchpadparametersbase.cpp
+index dfdc1bad4..32373cbb3 100644
+--- a/kcms/touchpad/touchpadparametersbase.cpp
++++ b/kcms/touchpad/touchpadparametersbase.cpp
+@@ -12,7 +12,7 @@ namespace
+ KConfigGroup &systemDefaults()
+ {
+     static KSharedConfig::Ptr p(KSharedConfig::openConfig(".touchpaddefaults", KConfig::SimpleConfig, QStandardPaths::TempLocation));
+-    static KConfigGroup group(p->group("parameters"));
++    static KConfigGroup group(p->group(QStringLiteral("parameters")));
+     return group;
+ }
+ 
+-- 
+2.43.0
+
