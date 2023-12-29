@@ -1,3 +1,14 @@
+From 284af8a39de37481899258ac6158deb89724de6a Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 22 Dec 2023 13:28:17 +0000
+Subject: [PATCH] Simplify VkResult lookup
+
+---
+ .../renderer_vulkan/vk_swapchain.cpp          |   5 +-
+ .../vulkan_common/vulkan_wrapper.cpp          | 107 +-----------------
+ src/video_core/vulkan_common/vulkan_wrapper.h |   3 -
+ 3 files changed, 6 insertions(+), 109 deletions(-)
+
 diff --git a/src/video_core/renderer_vulkan/vk_swapchain.cpp b/src/video_core/renderer_vulkan/vk_swapchain.cpp
 index 86a30dcd1..7dc0f6fdb 100644
 --- a/src/video_core/renderer_vulkan/vk_swapchain.cpp
@@ -29,7 +40,7 @@ index 86a30dcd1..7dc0f6fdb 100644
      }
      ++frame_index;
 diff --git a/src/video_core/vulkan_common/vulkan_wrapper.cpp b/src/video_core/vulkan_common/vulkan_wrapper.cpp
-index 70cf14afa..424dd8ac8 100644
+index 2f78b8af0..424dd8ac8 100644
 --- a/src/video_core/vulkan_common/vulkan_wrapper.cpp
 +++ b/src/video_core/vulkan_common/vulkan_wrapper.cpp
 @@ -6,6 +6,7 @@
@@ -40,7 +51,7 @@ index 70cf14afa..424dd8ac8 100644
  
  #include "common/common_types.h"
  #include "common/logging/log.h"
-@@ -286,107 +287,7 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
+@@ -286,109 +287,7 @@ bool Load(VkInstance instance, InstanceDispatch& dld) noexcept {
  }
  
  const char* Exception::what() const noexcept {
@@ -135,6 +146,8 @@ index 70cf14afa..424dd8ac8 100644
 -        return "VK_OPERATION_DEFERRED_KHR";
 -    case VkResult::VK_OPERATION_NOT_DEFERRED_KHR:
 -        return "VK_OPERATION_NOT_DEFERRED_KHR";
+-    case VkResult::VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR:
+-        return "VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR";
 -    case VkResult::VK_PIPELINE_COMPILE_REQUIRED_EXT:
 -        return "VK_PIPELINE_COMPILE_REQUIRED_EXT";
 -    case VkResult::VK_RESULT_MAX_ENUM:
@@ -149,7 +162,7 @@ index 70cf14afa..424dd8ac8 100644
  }
  
  void Destroy(VkInstance instance, const InstanceDispatch& dld) noexcept {
-@@ -1053,7 +954,7 @@ u32 AvailableVersion(const InstanceDispatch& dld) noexcept {
+@@ -1055,7 +954,7 @@ u32 AvailableVersion(const InstanceDispatch& dld) noexcept {
      u32 version;
      if (const VkResult result = vkEnumerateInstanceVersion(&version); result != VK_SUCCESS) {
          LOG_ERROR(Render_Vulkan, "vkEnumerateInstanceVersion returned {}, assuming Vulkan 1.1",
@@ -172,3 +185,6 @@ index a0c70797f..757f3c8af 100644
  /// Throws a Vulkan exception if result is not success.
  inline void Check(VkResult result) {
      if (result != VK_SUCCESS) {
+-- 
+2.43.0
+
