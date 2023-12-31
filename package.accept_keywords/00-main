@@ -10,3 +10,4 @@ app-emulation/vkd3d-proton		**
 =app-office/libreoffice-l10n-7.5*	**
 =virtual/rust-1.70.0			**
 =dev-lang/rust-1.70.0			**
+x11-misc/sddm				**
