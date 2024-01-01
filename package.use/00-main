@@ -40,7 +40,7 @@ dev-libs/libpcre2			pcre32 -recursion-limit
 dev-libs/libxml2			abi_x86_32
 dev-libs/modsecurity			fuzzyhash geoip2 json lmdb lua pcre2
 dev-libs/wayland			abi_x86_32
-dev-libs/weston				gles2 wayland-compositor xwayland
+dev-libs/weston				gles2 wayland-compositor xwayland fullscreen
 dev-libs/xmlsec				nss -gnutls -openssl
 dev-qt/qtsql				-mysql
 dev-qt/qtwidgets			-gtk
