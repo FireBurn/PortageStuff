@@ -104,7 +104,7 @@ net-p2p/ktorrent			-kross -rss -webengine
 net-p2p/transmission			-gtk -qt4
 net-proxy/haproxy			lua -slz
 net-wireless/crda                       gcrypt
-net-wireless/wpa_supplicant		-gnutls
+net-wireless/wpa_supplicant		-gnutls tkip wep
 sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
 sys-apps/lm-sensors			abi_x86_32
 sys-apps/pciutils			-zlib
