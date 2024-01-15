@@ -13,7 +13,8 @@ www-plugins/chrome-binary-plugins
 dev-util/spirv-llvm-translator
 =dev-lang/rust-1.70.0
 =virtual/rust-1.70.0
-dev-util/rocm-cmake
+# move dev-util/rocm-cmake dev-build/rocm-cmake
+dev-build/rocm-cmake
 dev-libs/roct-thunk-interface
 dev-libs/rocm-device-libs
 dev-libs/rocm-comgr

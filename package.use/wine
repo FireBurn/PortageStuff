@@ -1112,3 +1112,9 @@
 # required by @selected
 # required by @world (argument)
 >=x11-libs/libxkbcommon-1.6.0 abi_x86_32
+# required by media-plugins/gst-plugins-mpg123-1.22.3-r2::gentoo
+# required by media-plugins/gst-plugins-meta-1.20.6::gentoo[mp3]
+# required by app-emulation/wine-staging-8.21::gentoo[gstreamer]
+# required by @selected
+# required by @world (argument)
+>=media-sound/mpg123-base-1.32.3 abi_x86_32

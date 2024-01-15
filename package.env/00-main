@@ -34,7 +34,8 @@ dev-qt/*				clango3lto.conf
 dev-qt/qtscript				o3.conf
 dev-util/clinfo                         clango3.conf
 dev-util/directx-headers		clango3.conf
-dev-util/lldb				clango3lto.conf
+# move dev-util/lldb dev-debug/lldb
+dev-debug/lldb				clango3lto.conf
 dev-util/rocminfo                       clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
 dev-util/valgrind			o3.conf

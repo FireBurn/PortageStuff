@@ -45,7 +45,8 @@ dev-libs/xmlsec				nss -gnutls -openssl
 dev-qt/qtsql				-mysql
 dev-qt/qtwidgets			-gtk
 dev-util/apitrace			system-snappy
-dev-util/cmake				qt5 -qt4
+# move dev-util/cmake dev-build/cmake
+dev-build/cmake				qt5 -qt4
 dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
 dev-util/vulkan-tools			cube -wayland
