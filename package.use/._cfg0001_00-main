@@ -1,0 +1,161 @@
+app-accessibility/speech-dispatcher	python
+app-admin/gamemode			abi_x86_32
+app-admin/logstash-bin			all-plugins
+app-arch/bzip2				abi_x86_32
+app-arch/p7zip 				-kde -wxwidgets
+app-arch/xz-utils			abi_x86_32
+app-arch/zstd				abi_x86_32
+app-benchmarks/luxmark			scenes
+app-crypt/libsecret			-introspection -vala
+app-crypt/pinentry			gnome-keyring
+app-emulation/dxvk			abi_x86_32
+app-emulation/gallium-nine-standalone	abi_x86_32
+app-emulation/vkd3d			abi_x86_32
+app-emulation/vkd3d-proton		abi_x86_32
+app-emulation/wine-gecko		abi_x86_32
+app-emulation/wine-staging		mingw -wow64 abi_x86_32
+app-emulation/winetricks		kde -gtk
+app-misc/mime-types			nginx
+app-office/libreoffice			clang gtk gtk3 java kde
+cross-i686-w64-mingw32/binutils		-default-gold
+cross-i686-w64-mingw32/gcc		libssp zstd -fortran -hardened -pie -sanitize -vtv
+cross-i686-w64-mingw32/mingw64-runtime	libraries tools
+cross-x86_64-w64-mingw32/binutils	-default-gold
+cross-x86_64-w64-mingw32/gcc		libssp zstd -fortran -hardened -pie -sanitize -vtv
+cross-x86_64-w64-mingw32/mingw64-runtime libraries tools
+dev-db/mariadb				embedded
+dev-db/sqlite				secure-delete
+dev-java/icedtea			sunec
+dev-lang/python				sqlite
+dev-lang/rust				cargo
+dev-libs/boost				context python
+dev-libs/elfutils			abi_x86_32
+dev-libs/expat				abi_x86_32
+dev-libs/folks				eds
+dev-libs/libdbusmenu			gtk3
+dev-libs/libffi				abi_x86_32
+dev-libs/libgdata			gnome-online-accounts vala
+dev-libs/libical			vala
+dev-libs/libpcre2			pcre32 -recursion-limit
+dev-libs/libxml2			abi_x86_32
+dev-libs/modsecurity			fuzzyhash geoip2 json lmdb lua pcre2
+dev-libs/wayland			abi_x86_32
+dev-libs/weston				gles2 wayland-compositor xwayland fullscreen
+dev-libs/xmlsec				nss -gnutls -openssl
+dev-qt/qtsql				-mysql
+dev-qt/qtwidgets			-gtk
+dev-util/apitrace			system-snappy
+# move dev-util/cmake dev-build/cmake
+dev-build/cmake				qt5 -qt4
+dev-util/glslang			abi_x86_32
+dev-util/spirv-tools			abi_x86_32
+dev-util/vulkan-tools			cube -wayland
+dev-vcs/git				tk
+dev-vcs/subversion			perl -kwallet
+games-emulation/cemu			sdl
+games-emulation/dolphin			-wxwidgets
+games-emulation/yuzu			sdl
+games-fps/worldofpadman			maps
+games-util/steam-client-meta		flash steamfonts trayicon
+games-util/steam-launcher		steamruntime
+gnome-base/gvfs				cdda
+gnome-extra/evolution-data-server	vala
+kde-apps/kio-extras			mtp samba
+kde-plasma/plasma-desktop		gtk2 legacy-systray
+kde-plasma/powerdevil			brightness-control
+media-gfx/exiv2				xmp
+media-gfx/graphviz			python 
+media-gfx/pstoedit			plotutils
+media-libs/cogl				gles2
+media-libs/embree			clang raymask -ispc
+media-libs/gegl				jpeg2k raw
+media-libs/libglvnd			abi_x86_32
+media-libs/libmediaart			-qt5
+media-libs/libpng			-apng
+media-libs/libsdl2			gles2 haptic
+media-libs/libva			abi_x86_32 utils
+media-libs/libvpx			svc
+media-libs/mesa				abi_x86_32 gles1 gles2 opencl proprietary-codecs -llvm -classic -video_cards_intel -video_cards_iris -video_cards_i965 -video_cards_radeon
+media-libs/phonon			gstreamer
+media-libs/vulkan-layers		abi_x86_32
+media-libs/vulkan-loader		abi_x86_32 demos layers
+media-libs/x264				-opencl
+media-plugins/alsa-plugins		-pulseaudio
+media-plugins/grilo-plugins		tracker
+media-sound/pulseaudio			gnome -alsa-plugin -daemon
+media-video/ffmpeg			amr chromium fdk libdrm x265 -opencl
+media-video/mpv				samba
+media-video/pipewire			extra sound-server
+media-video/smplayer			-qt4
+media-video/vlc				-qt4
+net-dns/dnsmasq				-lua
+net-fs/cifs-utils			-acl
+net-fs/samba				client gnutls winbind
+net-irc/konversation			-crypt
+net-libs/gnutls				pkcs11
+net-libs/libpsl				-idn
+net-libs/mbedtls			cmac
+net-libs/nodejs				inspector lto
+net-misc/curl				-threads
+net-misc/networkmanager			gnutls modemmanager -nss
+net-misc/networkmanager-openconnect	-gtk
+net-misc/openssh			-ldap
+net-nds/openldap			-gnutls
+net-p2p/ktorrent			-kross -rss -webengine
+net-p2p/transmission			-gtk -qt4
+net-proxy/haproxy			lua -slz
+net-wireless/crda                       gcrypt
+net-wireless/wpa_supplicant		-gnutls tkip wep
+sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
+sys-apps/lm-sensors			abi_x86_32
+sys-apps/pciutils			-zlib
+sys-apps/systemd			elfutils sysv-utils -gcrypt
+sys-devel/clang				abi_x86_32
+sys-devel/gcc				zstd
+sys-devel/llvm				abi_x86_32 -ncurses
+sys-fs/cryptsetup			-gcrypt
+sys-fs/ntfs3g				-crypt
+sys-libs/binutils-libs			abi_x86_32
+sys-libs/libxcrypt			abi_x86_32
+sys-libs/ncurses			tinfo
+sys-libs/ntdb                           python
+sys-libs/talloc 			python
+sys-libs/tdb				python
+sys-libs/tevent				python
+sys-libs/zlib				abi_x86_32
+virtual/libelf				abi_x86_32
+virtual/libintl				abi_x86_32
+virtual/mysql				embedded
+virtual/notification-daemon		kde
+virtual/opengl				abi_x86_32
+virtual/pkgconfig			abi_x86_32
+virtual/wine				staging abi_x86_32 -d3d9
+www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
+www-client/chromium			custom-cflags gtk4 hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone
+www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
+www-servers/apache			apache2_modules_auth_digest
+x11-apps/mesa-progs			egl gles2
+x11-base/xorg-drivers			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel -video_cards_i965
+x11-libs/libdrm				abi_x86_32
+x11-libs/libX11				abi_x86_32
+x11-libs/libXau				abi_x86_32
+x11-libs/libxcb				abi_x86_32
+x11-libs/libXdmcp			abi_x86_32
+x11-libs/libXext			abi_x86_32
+x11-libs/libXfixes			abi_x86_32
+x11-libs/libXrandr			abi_x86_32
+x11-libs/libXrender			abi_x86_32
+x11-libs/libxshmfence			abi_x86_32
+x11-libs/libXxf86vm			abi_x86_32
+x11-libs/wxGTK				-gstreamer
+x11-wm/mutter				gles2
+x11-libs/xcb-util-keysyms		abi_x86_32
+sys-boot/gnu-efi			-custom-cflags
+x11-base/xwayland			libei
+dev-libs/icu				abi_x86_32
+media-libs/freetype			-harfbuzz
+>=dev-qt/qttools-6.6.1			qdbus
+>=dev-qt/qtbase-6.6.1-r1		accessibility
+>=dev-qt/qttools-6.6.1			designer
+x11-misc/sddm				-X
+app-editors/vim				-X
