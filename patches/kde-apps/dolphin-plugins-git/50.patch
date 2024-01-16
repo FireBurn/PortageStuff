@@ -1,0 +1,27 @@
+From d2db040d76be2b508761e745a411f0360047a505 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 4 Jan 2024 12:51:00 +0000
+Subject: [PATCH] Git plugin needs ConfigGui not XmlGui
+
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>
+---
+ git/CMakeLists.txt | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/git/CMakeLists.txt b/git/CMakeLists.txt
+index 55713f53..550c4a43 100644
+--- a/git/CMakeLists.txt
++++ b/git/CMakeLists.txt
+@@ -28,8 +28,8 @@ target_link_libraries(fileviewgitplugin PRIVATE
+     Qt6::Core
+     Qt6::Core5Compat
+     Qt6::Widgets
++    KF6::ConfigGui
+     KF6::I18n
+-    KF6::XmlGui
+     KF6::KIOCore
+     KF6::KIOFileWidgets
+     KF6::TextWidgets
+-- 
+GitLab
+
