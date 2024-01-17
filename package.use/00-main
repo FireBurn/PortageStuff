@@ -159,3 +159,4 @@ media-libs/freetype			-harfbuzz
 >=dev-qt/qttools-6.6.1			designer
 x11-misc/sddm				-X
 app-editors/vim				-X
+>=app-crypt/gpgme-1.23.2		python

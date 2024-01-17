@@ -1,0 +1,25 @@
+From d87820c0329cc9ffaf17f295c037eca601ec7f2c Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Wed, 17 Jan 2024 00:21:13 +0000
+Subject: [PATCH] Subversion plugin needs ConfigGui not XmlGui
+
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>#
+---
+ svn/CMakeLists.txt | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/svn/CMakeLists.txt b/svn/CMakeLists.txt
+index 470de1a..4a884ac 100644
+--- a/svn/CMakeLists.txt
++++ b/svn/CMakeLists.txt
+@@ -35,7 +35,6 @@ target_link_libraries(fileviewsvnplugin
+     Qt6::Core
+     Qt6::Widgets
+     KF6::I18n
+-    KF6::XmlGui
+     KF6::KIOCore
+     KF6::KIOWidgets
+     DolphinVcs
+-- 
+2.43.0
+
