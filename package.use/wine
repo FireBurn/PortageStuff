@@ -1118,3 +1118,7 @@
 # required by @selected
 # required by @world (argument)
 >=media-sound/mpg123-base-1.32.3 abi_x86_32
+# required by www-client/chromium-122.0.6261.6::gentoo
+# required by @selected
+# required by @world (argument)
+>=dev-lang/rust-1.74.1 profiler
