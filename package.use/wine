@@ -1223,3 +1223,24 @@
 # required by @selected
 # required by @world (argument)
 >=virtual/libusb-1-r2 abi_x86_32
+# required by dev-db/sqlite-3.45.1::gentoo[readline]
+# required by dev-libs/nss-3.97::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=sys-libs/readline-8.2_p10 abi_x86_32
+# required by sys-libs/readline-8.2_p10::gentoo
+# required by dev-db/sqlite-3.45.1::gentoo[readline]
+# required by dev-libs/nss-3.97::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=sys-libs/ncurses-6.4_p20230401 abi_x86_32
+# required by sys-libs/ncurses-6.4_p20230401::gentoo[gpm]
+# required by sys-libs/readline-8.2_p10::gentoo
+# required by dev-db/sqlite-3.45.1::gentoo[readline]
+# required by dev-libs/nss-3.97::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=sys-libs/gpm-1.20.7-r5 abi_x86_32
