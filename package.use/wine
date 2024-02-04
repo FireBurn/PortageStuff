@@ -1122,3 +1122,104 @@
 # required by @selected
 # required by @world (argument)
 >=dev-lang/rust-1.74.1 profiler
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=app-accessibility/at-spi2-core-2.50.1 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=dev-libs/dbus-glib-0.112 abi_x86_32
+# required by dev-libs/nss-3.97::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=dev-libs/nspr-4.35-r2 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=dev-libs/nss-3.97 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=media-libs/libpng-compat-1.2.59-r1:1.2 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-misc/curl-8.6.0 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-misc/networkmanager-1.44.2 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=sys-libs/libudev-compat-186-r1 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/gtk+-2.24.33-r3:2 abi_x86_32
+# required by x11-libs/libSM-1.2.4::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libICE-1.1.1-r1 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libSM-1.2.4 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libvdpau-1.5 abi_x86_32
+# required by x11-libs/gtk+-2.24.33-r3::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libXdamage-1.1.6 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libXinerama-1.1.5 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libXScrnSaver-1.2.4 abi_x86_32
+# required by app-accessibility/at-spi2-core-2.50.1::gentoo[X]
+# required by x11-libs/gtk+-2.24.33-r3::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=x11-libs/libXtst-1.2.4 abi_x86_32
+# required by net-misc/networkmanager-1.44.2::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-libs/libndp-1.8 abi_x86_32
+# required by net-misc/curl-8.6.0::gentoo[adns]
+# required by net-misc/networkmanager-1.44.2::gentoo[concheck]
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-dns/c-ares-1.26.0 abi_x86_32
+# required by net-misc/curl-8.6.0::gentoo[http2]
+# required by net-misc/networkmanager-1.44.2::gentoo[concheck]
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-libs/nghttp2-1.59.0 abi_x86_32
+# required by net-misc/curl-8.6.0::gentoo[psl]
+# required by net-misc/networkmanager-1.44.2::gentoo[concheck]
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=net-libs/libpsl-0.21.5 abi_x86_32
+# required by dev-libs/nss-3.97::gentoo
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=dev-db/sqlite-3.45.1 abi_x86_32
+# required by games-util/steam-launcher-1.0.0.78-r2::steam-overlay
+# required by @selected
+# required by @world (argument)
+>=virtual/libusb-1-r2 abi_x86_32
