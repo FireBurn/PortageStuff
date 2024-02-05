@@ -1,0 +1,138 @@
+From 78f72b3bf5aca16f8f3c5fd14c14eb0dae6e0604 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Tue, 30 Jan 2024 02:18:48 -0500
+Subject: [PATCH] cmif_serialization: enforce const for references
+
+---
+ src/core/hle/service/cmif_serialization.h |  6 +++++
+ src/core/hle/service/cmif_types.h         | 27 +++++++++++++++++++++--
+ 2 files changed, 31 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/hle/service/cmif_serialization.h b/src/core/hle/service/cmif_serialization.h
+index 315475e71b8e..e985fe317023 100644
+--- a/src/core/hle/service/cmif_serialization.h
++++ b/src/core/hle/service/cmif_serialization.h
+@@ -115,6 +115,11 @@ struct ArgumentTraits {
+     static constexpr ArgumentType Type = ArgumentType::InData;
+ };
+ 
++template <typename... Ts>
++consteval bool ConstIfReference() {
++    return ((!std::is_reference_v<Ts> || std::is_const_v<std::remove_reference_t<Ts>>) && ... && true);
++}
++
+ struct RequestLayout {
+     u32 copy_handle_count;
+     u32 move_handle_count;
+@@ -435,6 +440,7 @@ void CmifReplyWrapImpl(HLERequestContext& ctx, T& t, Result (T::*f)(A...)) {
+     }
+     const bool is_domain = Domain ? ctx.GetManager()->IsDomain() : false;
+ 
++    static_assert(ConstIfReference<A...>(), "Arguments taken by reference must be const");
+     using MethodArguments = std::tuple<std::remove_cvref_t<A>...>;
+ 
+     OutTemporaryBuffers buffers{};
+diff --git a/src/core/hle/service/cmif_types.h b/src/core/hle/service/cmif_types.h
+index dc06169f44ff..84f4c2456a3a 100644
+--- a/src/core/hle/service/cmif_types.h
++++ b/src/core/hle/service/cmif_types.h
+@@ -4,10 +4,9 @@
+ #pragma once
+ 
+ #include <memory>
++#include <span>
+ 
+-#include "common/common_funcs.h"
+ #include "common/common_types.h"
+-#include "core/hle/service/hle_ipc.h"
+ 
+ namespace Service {
+ 
+@@ -22,8 +21,10 @@ class Out {
+ public:
+     using Type = T;
+ 
++    /* implicit */ Out(const Out& t) : raw(t.raw) {}
+     /* implicit */ Out(AutoOut<Type>& t) : raw(&t.raw) {}
+     /* implicit */ Out(Type* t) : raw(t) {}
++    Out& operator=(const Out&) = delete;
+ 
+     Type* Get() const {
+         return raw;
+@@ -37,6 +38,10 @@ class Out {
+         return raw;
+     }
+ 
++    operator Type*() const {
++        return raw;
++    }
++
+ private:
+     Type* raw;
+ };
+@@ -113,8 +118,10 @@ class OutCopyHandle {
+ public:
+     using Type = T*;
+ 
++    /* implicit */ OutCopyHandle(const OutCopyHandle& t) : raw(t.raw) {}
+     /* implicit */ OutCopyHandle(AutoOut<Type>& t) : raw(&t.raw) {}
+     /* implicit */ OutCopyHandle(Type* t) : raw(t) {}
++    OutCopyHandle& operator=(const OutCopyHandle&) = delete;
+ 
+     Type* Get() const {
+         return raw;
+@@ -128,6 +135,10 @@ class OutCopyHandle {
+         return raw;
+     }
+ 
++    operator Type*() const {
++        return raw;
++    }
++
+ private:
+     Type* raw;
+ };
+@@ -137,8 +148,10 @@ class OutMoveHandle {
+ public:
+     using Type = T*;
+ 
++    /* implicit */ OutMoveHandle(const OutMoveHandle& t) : raw(t.raw) {}
+     /* implicit */ OutMoveHandle(AutoOut<Type>& t) : raw(&t.raw) {}
+     /* implicit */ OutMoveHandle(Type* t) : raw(t) {}
++    OutMoveHandle& operator=(const OutMoveHandle&) = delete;
+ 
+     Type* Get() const {
+         return raw;
+@@ -152,6 +165,10 @@ class OutMoveHandle {
+         return raw;
+     }
+ 
++    operator Type*() const {
++        return raw;
++    }
++
+ private:
+     Type* raw;
+ };
+@@ -248,8 +265,10 @@ class OutLargeData {
+     static constexpr BufferAttr Attr = static_cast<BufferAttr>(A | BufferAttr_In | BufferAttr_FixedSize);
+     using Type = T;
+ 
++    /* implicit */ OutLargeData(const OutLargeData& t) : raw(t.raw) {}
+     /* implicit */ OutLargeData(Type* t) : raw(t) {}
+     /* implicit */ OutLargeData(AutoOut<T>& t) : raw(&t.raw) {}
++    OutLargeData& operator=(const OutLargeData&) = delete;
+ 
+     Type* Get() const {
+         return raw;
+@@ -263,6 +282,10 @@ class OutLargeData {
+         return raw;
+     }
+ 
++    operator Type*() const {
++        return raw;
++    }
++
+ private:
+     Type* raw;
+ };
