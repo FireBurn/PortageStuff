@@ -57,7 +57,7 @@ games-emulation/dolphin			-wxwidgets
 games-emulation/yuzu			sdl
 games-fps/worldofpadman			maps
 games-util/steam-client-meta		flash steamfonts trayicon
-games-util/steam-launcher		steamruntime
+games-util/steam-launcher		steamruntime desktop-portal
 gnome-base/gvfs				cdda
 gnome-extra/evolution-data-server	vala
 kde-apps/kio-extras			mtp samba
