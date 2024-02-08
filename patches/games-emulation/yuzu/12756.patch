@@ -1,0 +1,3427 @@
+From 07fecc40c90453fe67294061bbd33daba251a11f Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Tue, 30 Jan 2024 00:44:26 -0500
+Subject: [PATCH 1/9] core: fix multiprocess with nce
+
+---
+ src/core/hle/kernel/k_process.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/hle/kernel/k_process.cpp b/src/core/hle/kernel/k_process.cpp
+index 0b08e877ef7c..1bcc428907a8 100644
+--- a/src/core/hle/kernel/k_process.cpp
++++ b/src/core/hle/kernel/k_process.cpp
+@@ -4,8 +4,9 @@
+ #include <random>
+ #include "common/scope_exit.h"
+ #include "common/settings.h"
++#include "core/arm/dynarmic/arm_dynarmic.h"
++#include "core/arm/dynarmic/dynarmic_exclusive_monitor.h"
+ #include "core/core.h"
+-#include "core/gpu_dirty_memory_manager.h"
+ #include "core/hle/kernel/k_process.h"
+ #include "core/hle/kernel/k_scoped_resource_reservation.h"
+ #include "core/hle/kernel/k_shared_memory.h"
+@@ -1258,6 +1259,10 @@ void KProcess::InitializeInterfaces() {
+ 
+ #ifdef HAS_NCE
+     if (this->IsApplication() && Settings::IsNceEnabled()) {
++        // Register the scoped JIT handler before creating any NCE instances
++        // so that its signal handler will appear first in the signal chain.
++        Core::ScopedJitExecution::RegisterHandler();
++
+         for (size_t i = 0; i < Core::Hardware::NUM_CPU_CORES; i++) {
+             m_arm_interfaces[i] = std::make_unique<Core::ArmNce>(m_kernel.System(), true, i);
+         }
+
+From 309f0d1dbd14aa10adeb841427fc3ea561aad773 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Fri, 19 Jan 2024 19:14:34 -0500
+Subject: [PATCH 2/9] video_core: defensively program around unmapped device
+ pointers
+
+---
+ src/video_core/renderer_opengl/present/layer.cpp | 10 ++++++----
+ src/video_core/renderer_vulkan/present/layer.cpp |  8 +++++---
+ 2 files changed, 11 insertions(+), 7 deletions(-)
+
+diff --git a/src/video_core/renderer_opengl/present/layer.cpp b/src/video_core/renderer_opengl/present/layer.cpp
+index 8643e07c6874..e3fffaa060e2 100644
+--- a/src/video_core/renderer_opengl/present/layer.cpp
++++ b/src/video_core/renderer_opengl/present/layer.cpp
+@@ -131,10 +131,12 @@ FramebufferTextureInfo Layer::LoadFBToScreenInfo(const Tegra::FramebufferConfig&
+     const u64 size_in_bytes{Tegra::Texture::CalculateSize(
+         true, bytes_per_pixel, framebuffer.stride, framebuffer.height, 1, block_height_log2, 0)};
+     const u8* const host_ptr{device_memory.GetPointer<u8>(framebuffer_addr)};
+-    const std::span<const u8> input_data(host_ptr, size_in_bytes);
+-    Tegra::Texture::UnswizzleTexture(gl_framebuffer_data, input_data, bytes_per_pixel,
+-                                     framebuffer.width, framebuffer.height, 1, block_height_log2,
+-                                     0);
++    if (host_ptr) {
++        const std::span<const u8> input_data(host_ptr, size_in_bytes);
++        Tegra::Texture::UnswizzleTexture(gl_framebuffer_data, input_data, bytes_per_pixel,
++                                         framebuffer.width, framebuffer.height, 1,
++                                         block_height_log2, 0);
++    }
+ 
+     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+     glPixelStorei(GL_UNPACK_ROW_LENGTH, static_cast<GLint>(framebuffer.stride));
+diff --git a/src/video_core/renderer_vulkan/present/layer.cpp b/src/video_core/renderer_vulkan/present/layer.cpp
+index cfc04be44df6..550955d4daa1 100644
+--- a/src/video_core/renderer_vulkan/present/layer.cpp
++++ b/src/video_core/renderer_vulkan/present/layer.cpp
+@@ -270,9 +270,11 @@ void Layer::UpdateRawImage(const Tegra::FramebufferConfig& framebuffer, size_t i
+     const u64 linear_size{GetSizeInBytes(framebuffer)};
+     const u64 tiled_size{Tegra::Texture::CalculateSize(
+         true, bytes_per_pixel, framebuffer.stride, framebuffer.height, 1, block_height_log2, 0)};
+-    Tegra::Texture::UnswizzleTexture(
+-        mapped_span.subspan(image_offset, linear_size), std::span(host_ptr, tiled_size),
+-        bytes_per_pixel, framebuffer.width, framebuffer.height, 1, block_height_log2, 0);
++    if (host_ptr) {
++        Tegra::Texture::UnswizzleTexture(
++            mapped_span.subspan(image_offset, linear_size), std::span(host_ptr, tiled_size),
++            bytes_per_pixel, framebuffer.width, framebuffer.height, 1, block_height_log2, 0);
++    }
+ 
+     const VkBufferImageCopy copy{
+         .bufferOffset = image_offset,
+
+From e9ab8ea67e844e0f838a36e79a7933bba548410a Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Sun, 28 Jan 2024 21:58:18 -0500
+Subject: [PATCH 3/9] nvservices: unmap only on last container free
+
+---
+ src/core/hle/service/nvdrv/core/container.cpp | 7 ++++++-
+ src/core/hle/service/nvdrv/core/container.h   | 1 +
+ src/core/hle/service/nvdrv/core/nvmap.cpp     | 8 ++++++--
+ 3 files changed, 13 insertions(+), 3 deletions(-)
+
+diff --git a/src/core/hle/service/nvdrv/core/container.cpp b/src/core/hle/service/nvdrv/core/container.cpp
+index e89cca6f288d..9edce03f640d 100644
+--- a/src/core/hle/service/nvdrv/core/container.cpp
++++ b/src/core/hle/service/nvdrv/core/container.cpp
+@@ -49,6 +49,7 @@ SessionId Container::OpenSession(Kernel::KProcess* process) {
+             continue;
+         }
+         if (session.process == process) {
++            session.ref_count++;
+             return session.id;
+         }
+     }
+@@ -66,6 +67,7 @@ SessionId Container::OpenSession(Kernel::KProcess* process) {
+     }
+     auto& session = impl->sessions[new_id];
+     session.is_active = true;
++    session.ref_count = 1;
+     // Optimization
+     if (process->IsApplication()) {
+         auto& page_table = process->GetPageTable().GetBasePageTable();
+@@ -114,8 +116,11 @@ SessionId Container::OpenSession(Kernel::KProcess* process) {
+ 
+ void Container::CloseSession(SessionId session_id) {
+     std::scoped_lock lk(impl->session_guard);
+-    impl->file.UnmapAllHandles(session_id);
+     auto& session = impl->sessions[session_id.id];
++    if (--session.ref_count > 0) {
++        return;
++    }
++    impl->file.UnmapAllHandles(session_id);
+     auto& smmu = impl->host1x.MemoryManager();
+     if (session.has_preallocated_area) {
+         const DAddr region_start = session.mapper->GetRegionStart();
+diff --git a/src/core/hle/service/nvdrv/core/container.h b/src/core/hle/service/nvdrv/core/container.h
+index b4d3938a8e4e..f159ced09b80 100644
+--- a/src/core/hle/service/nvdrv/core/container.h
++++ b/src/core/hle/service/nvdrv/core/container.h
+@@ -46,6 +46,7 @@ struct Session {
+     bool has_preallocated_area{};
+     std::unique_ptr<HeapMapper> mapper{};
+     bool is_active{};
++    s32 ref_count{};
+ };
+ 
+ class Container {
+diff --git a/src/core/hle/service/nvdrv/core/nvmap.cpp b/src/core/hle/service/nvdrv/core/nvmap.cpp
+index bc1c033c6655..453cb5831931 100644
+--- a/src/core/hle/service/nvdrv/core/nvmap.cpp
++++ b/src/core/hle/service/nvdrv/core/nvmap.cpp
+@@ -333,9 +333,13 @@ void NvMap::UnmapAllHandles(NvCore::SessionId session_id) {
+     }();
+ 
+     for (auto& [id, handle] : handles_copy) {
+-        if (handle->session_id.id == session_id.id) {
+-            FreeHandle(id, false);
++        {
++            std::scoped_lock lk{handle->mutex};
++            if (handle->session_id.id != session_id.id || handle->dupes <= 0) {
++                continue;
++            }
+         }
++        FreeHandle(id, false);
+     }
+ }
+ 
+
+From 0b55fa4e2702562776dd4dc4fa9c93e6eb6e9f44 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Mon, 22 Jan 2024 12:40:50 -0500
+Subject: [PATCH 4/9] nvnflinger/gpu: implement blending
+
+---
+ src/core/hle/service/am/am_types.h            |   6 +-
+ .../am/frontend/applet_software_keyboard.cpp  |  12 +-
+ .../am/frontend/applet_software_keyboard.h    |   2 +-
+ .../hle/service/am/library_applet_creator.cpp |   6 +-
+ src/core/hle/service/am/self_controller.cpp   |   3 +-
+ .../hle/service/am/system_buffer_manager.cpp  |  10 +-
+ .../hle/service/am/system_buffer_manager.h    |   3 +-
+ .../service/nvdrv/devices/nvdisp_disp0.cpp    |  17 ++
+ .../nvnflinger/fb_share_buffer_manager.cpp    | 154 +++++++++++++-----
+ .../nvnflinger/fb_share_buffer_manager.h      |  24 ++-
+ .../service/nvnflinger/hardware_composer.cpp  |   1 +
+ src/core/hle/service/nvnflinger/hwc_layer.h   |  13 ++
+ .../hle/service/nvnflinger/nvnflinger.cpp     |   7 +-
+ src/core/hle/service/nvnflinger/nvnflinger.h  |   6 +-
+ src/core/hle/service/vi/layer/vi_layer.cpp    |   6 +-
+ src/core/hle/service/vi/layer/vi_layer.h      |  13 ++
+ src/video_core/framebuffer_config.h           |   7 +
+ .../host_shaders/fidelityfx_fsr.frag          |  21 ++-
+ src/video_core/host_shaders/fxaa.frag         |   2 +-
+ .../host_shaders/opengl_fidelityfx_fsr.frag   |  19 +--
+ .../host_shaders/opengl_present.frag          |   2 +-
+ .../host_shaders/present_bicubic.frag         |   2 +-
+ .../host_shaders/present_gaussian.frag        |  14 +-
+ .../vulkan_fidelityfx_fsr_easu_fp16.frag      |   1 +
+ .../vulkan_fidelityfx_fsr_easu_fp32.frag      |   1 +
+ .../vulkan_fidelityfx_fsr_rcas_fp16.frag      |   1 +
+ .../vulkan_fidelityfx_fsr_rcas_fp32.frag      |   1 +
+ .../vulkan_present_scaleforce_fp16.frag       |   2 +-
+ .../vulkan_present_scaleforce_fp32.frag       |   2 +-
+ .../present/window_adapt_pass.cpp             |  15 ++
+ .../renderer_vulkan/present/util.cpp          |  92 +++++++----
+ src/video_core/renderer_vulkan/present/util.h |   9 +-
+ .../present/window_adapt_pass.cpp             |  29 +++-
+ .../present/window_adapt_pass.h               |   6 +-
+ .../renderer_vulkan/renderer_vulkan.cpp       |   4 +-
+ .../renderer_vulkan/renderer_vulkan.h         |   3 +
+ src/video_core/texture_cache/texture_cache.h  |   8 +-
+ 37 files changed, 383 insertions(+), 141 deletions(-)
+
+diff --git a/src/core/hle/service/am/am_types.h b/src/core/hle/service/am/am_types.h
+index a2b852b1224d..8c33feb15933 100644
+--- a/src/core/hle/service/am/am_types.h
++++ b/src/core/hle/service/am/am_types.h
+@@ -130,9 +130,9 @@ enum class AppletProgramId : u64 {
+ 
+ enum class LibraryAppletMode : u32 {
+     AllForeground = 0,
+-    Background = 1,
+-    NoUI = 2,
+-    BackgroundIndirectDisplay = 3,
++    PartialForeground = 1,
++    NoUi = 2,
++    PartialForegroundIndirectDisplay = 3,
+     AllForegroundInitiallyHidden = 4,
+ };
+ 
+diff --git a/src/core/hle/service/am/frontend/applet_software_keyboard.cpp b/src/core/hle/service/am/frontend/applet_software_keyboard.cpp
+index fbf75d379d3e..034c62f32745 100644
+--- a/src/core/hle/service/am/frontend/applet_software_keyboard.cpp
++++ b/src/core/hle/service/am/frontend/applet_software_keyboard.cpp
+@@ -68,9 +68,9 @@ void SoftwareKeyboard::Initialize() {
+     case LibraryAppletMode::AllForeground:
+         InitializeForeground();
+         break;
+-    case LibraryAppletMode::Background:
+-    case LibraryAppletMode::BackgroundIndirectDisplay:
+-        InitializeBackground(applet_mode);
++    case LibraryAppletMode::PartialForeground:
++    case LibraryAppletMode::PartialForegroundIndirectDisplay:
++        InitializePartialForeground(applet_mode);
+         break;
+     default:
+         ASSERT_MSG(false, "Invalid LibraryAppletMode={}", applet_mode);
+@@ -243,7 +243,7 @@ void SoftwareKeyboard::InitializeForeground() {
+     InitializeFrontendNormalKeyboard();
+ }
+ 
+-void SoftwareKeyboard::InitializeBackground(LibraryAppletMode library_applet_mode) {
++void SoftwareKeyboard::InitializePartialForeground(LibraryAppletMode library_applet_mode) {
+     LOG_INFO(Service_AM, "Initializing Inline Software Keyboard Applet.");
+ 
+     is_background = true;
+@@ -258,9 +258,9 @@ void SoftwareKeyboard::InitializeBackground(LibraryAppletMode library_applet_mod
+                 swkbd_inline_initialize_arg.size());
+ 
+     if (swkbd_initialize_arg.library_applet_mode_flag) {
+-        ASSERT(library_applet_mode == LibraryAppletMode::Background);
++        ASSERT(library_applet_mode == LibraryAppletMode::PartialForeground);
+     } else {
+-        ASSERT(library_applet_mode == LibraryAppletMode::BackgroundIndirectDisplay);
++        ASSERT(library_applet_mode == LibraryAppletMode::PartialForegroundIndirectDisplay);
+     }
+ }
+ 
+diff --git a/src/core/hle/service/am/frontend/applet_software_keyboard.h b/src/core/hle/service/am/frontend/applet_software_keyboard.h
+index f464b7e15652..2a7d01b965f2 100644
+--- a/src/core/hle/service/am/frontend/applet_software_keyboard.h
++++ b/src/core/hle/service/am/frontend/applet_software_keyboard.h
+@@ -62,7 +62,7 @@ class SoftwareKeyboard final : public FrontendApplet {
+     void InitializeForeground();
+ 
+     /// Initializes the inline software keyboard.
+-    void InitializeBackground(LibraryAppletMode library_applet_mode);
++    void InitializePartialForeground(LibraryAppletMode library_applet_mode);
+ 
+     /// Processes the text check sent by the application.
+     void ProcessTextCheck();
+diff --git a/src/core/hle/service/am/library_applet_creator.cpp b/src/core/hle/service/am/library_applet_creator.cpp
+index 47bab7528457..ee646bea5511 100644
+--- a/src/core/hle/service/am/library_applet_creator.cpp
++++ b/src/core/hle/service/am/library_applet_creator.cpp
+@@ -87,7 +87,7 @@ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
+     // Set focus state
+     switch (mode) {
+     case LibraryAppletMode::AllForeground:
+-    case LibraryAppletMode::NoUI:
++    case LibraryAppletMode::NoUi:
+         applet->focus_state = FocusState::InFocus;
+         applet->hid_registration.EnableAppletToGetInput(true);
+         applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoForeground);
+@@ -99,8 +99,8 @@ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
+         applet->hid_registration.EnableAppletToGetInput(false);
+         applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::FocusStateChanged);
+         break;
+-    case LibraryAppletMode::Background:
+-    case LibraryAppletMode::BackgroundIndirectDisplay:
++    case LibraryAppletMode::PartialForeground:
++    case LibraryAppletMode::PartialForegroundIndirectDisplay:
+     default:
+         applet->focus_state = FocusState::Background;
+         applet->hid_registration.EnableAppletToGetInput(true);
+diff --git a/src/core/hle/service/am/self_controller.cpp b/src/core/hle/service/am/self_controller.cpp
+index 0289f5cf10e2..b92663b2b0a6 100644
+--- a/src/core/hle/service/am/self_controller.cpp
++++ b/src/core/hle/service/am/self_controller.cpp
+@@ -288,7 +288,8 @@ void ISelfController::GetSystemSharedBufferHandle(HLERequestContext& ctx) {
+ }
+ 
+ Result ISelfController::EnsureBufferSharingEnabled(Kernel::KProcess* process) {
+-    if (applet->system_buffer_manager.Initialize(&nvnflinger, process, applet->applet_id)) {
++    if (applet->system_buffer_manager.Initialize(&nvnflinger, process, applet->applet_id,
++                                                 applet->library_applet_mode)) {
+         return ResultSuccess;
+     }
+ 
+diff --git a/src/core/hle/service/am/system_buffer_manager.cpp b/src/core/hle/service/am/system_buffer_manager.cpp
+index 60a9afc9df4f..3cccc53888c2 100644
+--- a/src/core/hle/service/am/system_buffer_manager.cpp
++++ b/src/core/hle/service/am/system_buffer_manager.cpp
+@@ -17,11 +17,12 @@ SystemBufferManager::~SystemBufferManager() {
+ 
+     // Clean up shared layers.
+     if (m_buffer_sharing_enabled) {
++        m_nvnflinger->GetSystemBufferManager().Finalize(m_process);
+     }
+ }
+ 
+ bool SystemBufferManager::Initialize(Nvnflinger::Nvnflinger* nvnflinger, Kernel::KProcess* process,
+-                                     AppletId applet_id) {
++                                     AppletId applet_id, LibraryAppletMode mode) {
+     if (m_nvnflinger) {
+         return m_buffer_sharing_enabled;
+     }
+@@ -36,9 +37,14 @@ bool SystemBufferManager::Initialize(Nvnflinger::Nvnflinger* nvnflinger, Kernel:
+         return false;
+     }
+ 
++    Nvnflinger::LayerBlending blending = Nvnflinger::LayerBlending::None;
++    if (mode == LibraryAppletMode::PartialForeground) {
++        blending = Nvnflinger::LayerBlending::Coverage;
++    }
++
+     const auto display_id = m_nvnflinger->OpenDisplay("Default").value();
+     const auto res = m_nvnflinger->GetSystemBufferManager().Initialize(
+-        &m_system_shared_buffer_id, &m_system_shared_layer_id, display_id);
++        m_process, &m_system_shared_buffer_id, &m_system_shared_layer_id, display_id, blending);
+ 
+     if (res.IsSuccess()) {
+         m_buffer_sharing_enabled = true;
+diff --git a/src/core/hle/service/am/system_buffer_manager.h b/src/core/hle/service/am/system_buffer_manager.h
+index 98c3cf055a2d..0690f68b658d 100644
+--- a/src/core/hle/service/am/system_buffer_manager.h
++++ b/src/core/hle/service/am/system_buffer_manager.h
+@@ -27,7 +27,8 @@ class SystemBufferManager {
+     SystemBufferManager();
+     ~SystemBufferManager();
+ 
+-    bool Initialize(Nvnflinger::Nvnflinger* flinger, Kernel::KProcess* process, AppletId applet_id);
++    bool Initialize(Nvnflinger::Nvnflinger* flinger, Kernel::KProcess* process, AppletId applet_id,
++                    LibraryAppletMode mode);
+ 
+     void GetSystemSharedLayerHandle(u64* out_system_shared_buffer_id,
+                                     u64* out_system_shared_layer_id) {
+diff --git a/src/core/hle/service/nvdrv/devices/nvdisp_disp0.cpp b/src/core/hle/service/nvdrv/devices/nvdisp_disp0.cpp
+index abe95303e251..995646e250e7 100644
+--- a/src/core/hle/service/nvdrv/devices/nvdisp_disp0.cpp
++++ b/src/core/hle/service/nvdrv/devices/nvdisp_disp0.cpp
+@@ -15,6 +15,22 @@
+ 
+ namespace Service::Nvidia::Devices {
+ 
++namespace {
++
++Tegra::BlendMode ConvertBlending(Service::Nvnflinger::LayerBlending blending) {
++    switch (blending) {
++    case Service::Nvnflinger::LayerBlending::None:
++    default:
++        return Tegra::BlendMode::Opaque;
++    case Service::Nvnflinger::LayerBlending::Premultiplied:
++        return Tegra::BlendMode::Premultiplied;
++    case Service::Nvnflinger::LayerBlending::Coverage:
++        return Tegra::BlendMode::Coverage;
++    }
++}
++
++} // namespace
++
+ nvdisp_disp0::nvdisp_disp0(Core::System& system_, NvCore::Container& core)
+     : nvdevice{system_}, container{core}, nvmap{core.GetNvMapFile()} {}
+ nvdisp_disp0::~nvdisp_disp0() = default;
+@@ -56,6 +72,7 @@ void nvdisp_disp0::Composite(std::span<const Nvnflinger::HwcLayer> sorted_layers
+             .pixel_format = layer.format,
+             .transform_flags = layer.transform,
+             .crop_rect = layer.crop_rect,
++            .blending = ConvertBlending(layer.blending),
+         });
+ 
+         for (size_t i = 0; i < layer.acquire_fence.num_fences; i++) {
+diff --git a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
+index e71652cdf197..6a7da0caed8e 100644
+--- a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
++++ b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
+@@ -14,24 +14,19 @@
+ #include "core/hle/service/nvnflinger/ui/graphic_buffer.h"
+ #include "core/hle/service/vi/layer/vi_layer.h"
+ #include "core/hle/service/vi/vi_results.h"
++#include "video_core/gpu.h"
+ 
+ namespace Service::Nvnflinger {
+ 
+ namespace {
+ 
+-Result AllocateIoForProcessAddressSpace(Common::ProcessAddress* out_map_address,
+-                                        std::unique_ptr<Kernel::KPageGroup>* out_page_group,
+-                                        Core::System& system, u32 size) {
++Result AllocateSharedBufferMemory(std::unique_ptr<Kernel::KPageGroup>* out_page_group,
++                                  Core::System& system, u32 size) {
+     using Core::Memory::YUZU_PAGESIZE;
+ 
+     // Allocate memory for the system shared buffer.
+-    // FIXME: Because the gmmu can only point to cpu addresses, we need
+-    //        to map this in the application space to allow it to be used.
+-    // FIXME: Add proper smmu emulation.
+     // FIXME: This memory belongs to vi's .data section.
+     auto& kernel = system.Kernel();
+-    auto* process = system.ApplicationProcess();
+-    auto& page_table = process->GetPageTable();
+ 
+     // Hold a temporary page group reference while we try to map it.
+     auto pg = std::make_unique<Kernel::KPageGroup>(
+@@ -43,6 +38,30 @@ Result AllocateIoForProcessAddressSpace(Common::ProcessAddress* out_map_address,
+         Kernel::KMemoryManager::EncodeOption(Kernel::KMemoryManager::Pool::Secure,
+                                              Kernel::KMemoryManager::Direction::FromBack)));
+ 
++    // Fill the output data with red.
++    for (auto& block : *pg) {
++        u32* start = system.DeviceMemory().GetPointer<u32>(block.GetAddress());
++        u32* end = system.DeviceMemory().GetPointer<u32>(block.GetAddress() + block.GetSize());
++
++        for (; start < end; start++) {
++            *start = 0xFF0000FF;
++        }
++    }
++
++    // Return the mapped page group.
++    *out_page_group = std::move(pg);
++
++    // We succeeded.
++    R_SUCCEED();
++}
++
++Result MapSharedBufferIntoProcessAddressSpace(Common::ProcessAddress* out_map_address,
++                                              std::unique_ptr<Kernel::KPageGroup>& pg,
++                                              Kernel::KProcess* process, Core::System& system) {
++    using Core::Memory::YUZU_PAGESIZE;
++
++    auto& page_table = process->GetPageTable();
++
+     // Get bounds of where mapping is possible.
+     const VAddr alias_code_begin = GetInteger(page_table.GetAliasCodeRegionStart());
+     const VAddr alias_code_size = page_table.GetAliasCodeRegionSize() / YUZU_PAGESIZE;
+@@ -64,9 +83,6 @@ Result AllocateIoForProcessAddressSpace(Common::ProcessAddress* out_map_address,
+     // Return failure, if necessary
+     R_UNLESS(i < 64, res);
+ 
+-    // Return the mapped page group.
+-    *out_page_group = std::move(pg);
+-
+     // We succeeded.
+     R_SUCCEED();
+ }
+@@ -135,6 +151,13 @@ Result AllocateHandleForBuffer(u32* out_handle, Nvidia::Module& nvdrv, Nvidia::D
+     R_RETURN(AllocNvMapHandle(*nvmap, *out_handle, buffer, size, nvmap_fd));
+ }
+ 
++void FreeHandle(u32 handle, Nvidia::Module& nvdrv, Nvidia::DeviceFD nvmap_fd) {
++    auto nvmap = nvdrv.GetDevice<Nvidia::Devices::nvmap>(nvmap_fd);
++    ASSERT(nvmap != nullptr);
++
++    R_ASSERT(FreeNvMapHandle(*nvmap, handle, nvmap_fd));
++}
++
+ constexpr auto SharedBufferBlockLinearFormat = android::PixelFormat::Rgba8888;
+ constexpr u32 SharedBufferBlockLinearBpp = 4;
+ 
+@@ -186,53 +209,97 @@ FbShareBufferManager::FbShareBufferManager(Core::System& system, Nvnflinger& fli
+ 
+ FbShareBufferManager::~FbShareBufferManager() = default;
+ 
+-Result FbShareBufferManager::Initialize(u64* out_buffer_id, u64* out_layer_id, u64 display_id) {
++Result FbShareBufferManager::Initialize(Kernel::KProcess* owner_process, u64* out_buffer_id,
++                                        u64* out_layer_handle, u64 display_id,
++                                        LayerBlending blending) {
+     std::scoped_lock lk{m_guard};
+ 
+-    // Ensure we have not already created a buffer.
+-    R_UNLESS(m_buffer_id == 0, VI::ResultOperationFailed);
++    // Ensure we haven't already created.
++    const u64 aruid = owner_process->GetProcessId();
++    R_UNLESS(!m_sessions.contains(aruid), VI::ResultPermissionDenied);
++
++    // Allocate memory for the shared buffer if needed.
++    if (!m_buffer_page_group) {
++        R_TRY(AllocateSharedBufferMemory(std::addressof(m_buffer_page_group), m_system,
++                                         SharedBufferSize));
+ 
+-    // Allocate memory and space for the shared buffer.
+-    Common::ProcessAddress map_address;
+-    R_TRY(AllocateIoForProcessAddressSpace(std::addressof(map_address),
+-                                           std::addressof(m_buffer_page_group), m_system,
+-                                           SharedBufferSize));
++        // Record buffer id.
++        m_buffer_id = m_next_buffer_id++;
++
++        // Record display id.
++        m_display_id = display_id;
++    }
++
++    // Map into process.
++    Common::ProcessAddress map_address{};
++    R_TRY(MapSharedBufferIntoProcessAddressSpace(std::addressof(map_address), m_buffer_page_group,
++                                                 owner_process, m_system));
++
++    // Create new session.
++    auto [it, was_emplaced] = m_sessions.emplace(aruid, FbShareSession{});
++    auto& session = it->second;
+ 
+     auto& container = m_nvdrv->GetContainer();
+-    m_session_id = container.OpenSession(m_system.ApplicationProcess());
+-    m_nvmap_fd = m_nvdrv->Open("/dev/nvmap", m_session_id);
++    session.session_id = container.OpenSession(owner_process);
++    session.nvmap_fd = m_nvdrv->Open("/dev/nvmap", session.session_id);
+ 
+     // Create an nvmap handle for the buffer and assign the memory to it.
+-    R_TRY(AllocateHandleForBuffer(std::addressof(m_buffer_nvmap_handle), *m_nvdrv, m_nvmap_fd,
+-                                  map_address, SharedBufferSize));
+-
+-    // Record the display id.
+-    m_display_id = display_id;
++    R_TRY(AllocateHandleForBuffer(std::addressof(session.buffer_nvmap_handle), *m_nvdrv,
++                                  session.nvmap_fd, map_address, SharedBufferSize));
+ 
+     // Create and open a layer for the display.
+-    m_layer_id = m_flinger.CreateLayer(m_display_id).value();
+-    m_flinger.OpenLayer(m_layer_id);
+-
+-    // Set up the buffer.
+-    m_buffer_id = m_next_buffer_id++;
++    session.layer_id = m_flinger.CreateLayer(m_display_id, blending).value();
++    m_flinger.OpenLayer(session.layer_id);
+ 
+     // Get the layer.
+-    VI::Layer* layer = m_flinger.FindLayer(m_display_id, m_layer_id);
++    VI::Layer* layer = m_flinger.FindLayer(m_display_id, session.layer_id);
+     ASSERT(layer != nullptr);
+ 
+     // Get the producer and set preallocated buffers.
+     auto& producer = layer->GetBufferQueue();
+-    MakeGraphicBuffer(producer, 0, m_buffer_nvmap_handle);
+-    MakeGraphicBuffer(producer, 1, m_buffer_nvmap_handle);
++    MakeGraphicBuffer(producer, 0, session.buffer_nvmap_handle);
++    MakeGraphicBuffer(producer, 1, session.buffer_nvmap_handle);
+ 
+     // Assign outputs.
+     *out_buffer_id = m_buffer_id;
+-    *out_layer_id = m_layer_id;
++    *out_layer_handle = session.layer_id;
+ 
+     // We succeeded.
+     R_SUCCEED();
+ }
+ 
++void FbShareBufferManager::Finalize(Kernel::KProcess* owner_process) {
++    std::scoped_lock lk{m_guard};
++
++    if (m_buffer_id == 0) {
++        return;
++    }
++
++    const u64 aruid = owner_process->GetProcessId();
++    const auto it = m_sessions.find(aruid);
++    if (it == m_sessions.end()) {
++        return;
++    }
++
++    auto& session = it->second;
++
++    // Destroy the layer.
++    m_flinger.DestroyLayer(session.layer_id);
++
++    // Close nvmap handle.
++    FreeHandle(session.buffer_nvmap_handle, *m_nvdrv, session.nvmap_fd);
++
++    // Close nvmap device.
++    m_nvdrv->Close(session.nvmap_fd);
++
++    // Close session.
++    auto& container = m_nvdrv->GetContainer();
++    container.CloseSession(session.session_id);
++
++    // Erase.
++    m_sessions.erase(it);
++}
++
+ Result FbShareBufferManager::GetSharedBufferMemoryHandleId(u64* out_buffer_size,
+                                                            s32* out_nvmap_handle,
+                                                            SharedMemoryPoolLayout* out_pool_layout,
+@@ -242,17 +309,18 @@ Result FbShareBufferManager::GetSharedBufferMemoryHandleId(u64* out_buffer_size,
+ 
+     R_UNLESS(m_buffer_id > 0, VI::ResultNotFound);
+     R_UNLESS(buffer_id == m_buffer_id, VI::ResultNotFound);
++    R_UNLESS(m_sessions.contains(applet_resource_user_id), VI::ResultNotFound);
+ 
+     *out_pool_layout = SharedBufferPoolLayout;
+     *out_buffer_size = SharedBufferSize;
+-    *out_nvmap_handle = m_buffer_nvmap_handle;
++    *out_nvmap_handle = m_sessions[applet_resource_user_id].buffer_nvmap_handle;
+ 
+     R_SUCCEED();
+ }
+ 
+ Result FbShareBufferManager::GetLayerFromId(VI::Layer** out_layer, u64 layer_id) {
+     // Ensure the layer id is valid.
+-    R_UNLESS(m_layer_id > 0 && layer_id == m_layer_id, VI::ResultNotFound);
++    R_UNLESS(layer_id > 0, VI::ResultNotFound);
+ 
+     // Get the layer.
+     VI::Layer* layer = m_flinger.FindLayer(m_display_id, layer_id);
+@@ -309,6 +377,10 @@ Result FbShareBufferManager::PresentSharedFrameBuffer(android::Fence fence,
+                  android::Status::NoError,
+              VI::ResultOperationFailed);
+ 
++    ON_RESULT_FAILURE {
++        producer.CancelBuffer(static_cast<s32>(slot), fence);
++    };
++
+     // Queue the buffer to the producer.
+     android::QueueBufferInput input{};
+     android::QueueBufferOutput output{};
+@@ -342,4 +414,12 @@ Result FbShareBufferManager::GetSharedFrameBufferAcquirableEvent(Kernel::KReadab
+     R_SUCCEED();
+ }
+ 
++Result FbShareBufferManager::WriteAppletCaptureBuffer(bool* out_was_written,
++                                                      s32* out_layer_index) {
++    // TODO
++    *out_was_written = true;
++    *out_layer_index = 1;
++    R_SUCCEED();
++}
++
+ } // namespace Service::Nvnflinger
+diff --git a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.h b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.h
+index 033bf4bbe325..b79a7d23ac69 100644
+--- a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.h
++++ b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.h
+@@ -3,9 +3,12 @@
+ 
+ #pragma once
+ 
++#include <map>
++
+ #include "common/math_util.h"
+ #include "core/hle/service/nvdrv/core/container.h"
+ #include "core/hle/service/nvdrv/nvdata.h"
++#include "core/hle/service/nvnflinger/hwc_layer.h"
+ #include "core/hle/service/nvnflinger/nvnflinger.h"
+ #include "core/hle/service/nvnflinger/ui/fence.h"
+ 
+@@ -29,13 +32,18 @@ struct SharedMemoryPoolLayout {
+ };
+ static_assert(sizeof(SharedMemoryPoolLayout) == 0x188, "SharedMemoryPoolLayout has wrong size");
+ 
++struct FbShareSession;
++
+ class FbShareBufferManager final {
+ public:
+     explicit FbShareBufferManager(Core::System& system, Nvnflinger& flinger,
+                                   std::shared_ptr<Nvidia::Module> nvdrv);
+     ~FbShareBufferManager();
+ 
+-    Result Initialize(u64* out_buffer_id, u64* out_layer_handle, u64 display_id);
++    Result Initialize(Kernel::KProcess* owner_process, u64* out_buffer_id, u64* out_layer_handle,
++                      u64 display_id, LayerBlending blending);
++    void Finalize(Kernel::KProcess* owner_process);
++
+     Result GetSharedBufferMemoryHandleId(u64* out_buffer_size, s32* out_nvmap_handle,
+                                          SharedMemoryPoolLayout* out_pool_layout, u64 buffer_id,
+                                          u64 applet_resource_user_id);
+@@ -45,6 +53,8 @@ class FbShareBufferManager final {
+                                     u32 transform, s32 swap_interval, u64 layer_id, s64 slot);
+     Result GetSharedFrameBufferAcquirableEvent(Kernel::KReadableEvent** out_event, u64 layer_id);
+ 
++    Result WriteAppletCaptureBuffer(bool* out_was_written, s32* out_layer_index);
++
+ private:
+     Result GetLayerFromId(VI::Layer** out_layer, u64 layer_id);
+ 
+@@ -52,11 +62,8 @@ class FbShareBufferManager final {
+     u64 m_next_buffer_id = 1;
+     u64 m_display_id = 0;
+     u64 m_buffer_id = 0;
+-    u64 m_layer_id = 0;
+-    u32 m_buffer_nvmap_handle = 0;
+     SharedMemoryPoolLayout m_pool_layout = {};
+-    Nvidia::DeviceFD m_nvmap_fd = {};
+-    Nvidia::NvCore::SessionId m_session_id = {};
++    std::map<u64, FbShareSession> m_sessions;
+     std::unique_ptr<Kernel::KPageGroup> m_buffer_page_group;
+ 
+     std::mutex m_guard;
+@@ -65,4 +72,11 @@ class FbShareBufferManager final {
+     std::shared_ptr<Nvidia::Module> m_nvdrv;
+ };
+ 
++struct FbShareSession {
++    Nvidia::DeviceFD nvmap_fd = {};
++    Nvidia::NvCore::SessionId session_id = {};
++    u64 layer_id = {};
++    u32 buffer_nvmap_handle = 0;
++};
++
+ } // namespace Service::Nvnflinger
+diff --git a/src/core/hle/service/nvnflinger/hardware_composer.cpp b/src/core/hle/service/nvnflinger/hardware_composer.cpp
+index c720dd1f8e4b..b2e35ffd41b0 100644
+--- a/src/core/hle/service/nvnflinger/hardware_composer.cpp
++++ b/src/core/hle/service/nvnflinger/hardware_composer.cpp
+@@ -109,6 +109,7 @@ u32 HardwareComposer::ComposeLocked(f32* out_speed_scale, VI::Display& display,
+             .height = igbp_buffer.Height(),
+             .stride = igbp_buffer.Stride(),
+             .z_index = 0,
++            .blending = layer.GetBlending(),
+             .transform = static_cast<android::BufferTransformFlags>(item.transform),
+             .crop_rect = item.crop,
+             .acquire_fence = item.fence,
+diff --git a/src/core/hle/service/nvnflinger/hwc_layer.h b/src/core/hle/service/nvnflinger/hwc_layer.h
+index 3af668a256d1..f71a5d8227c3 100644
+--- a/src/core/hle/service/nvnflinger/hwc_layer.h
++++ b/src/core/hle/service/nvnflinger/hwc_layer.h
+@@ -11,6 +11,18 @@
+ 
+ namespace Service::Nvnflinger {
+ 
++// hwc_layer_t::blending values
++enum class LayerBlending : u32 {
++    // No blending
++    None = 0x100,
++
++    // ONE / ONE_MINUS_SRC_ALPHA
++    Premultiplied = 0x105,
++
++    // SRC_ALPHA / ONE_MINUS_SRC_ALPHA
++    Coverage = 0x405,
++};
++
+ struct HwcLayer {
+     u32 buffer_handle;
+     u32 offset;
+@@ -19,6 +31,7 @@ struct HwcLayer {
+     u32 height;
+     u32 stride;
+     s32 z_index;
++    LayerBlending blending;
+     android::BufferTransformFlags transform;
+     Common::Rectangle<int> crop_rect;
+     android::Fence acquire_fence;
+diff --git a/src/core/hle/service/nvnflinger/nvnflinger.cpp b/src/core/hle/service/nvnflinger/nvnflinger.cpp
+index a4e848882379..0ad3e099af7d 100644
+--- a/src/core/hle/service/nvnflinger/nvnflinger.cpp
++++ b/src/core/hle/service/nvnflinger/nvnflinger.cpp
+@@ -157,7 +157,7 @@ bool Nvnflinger::CloseDisplay(u64 display_id) {
+     return true;
+ }
+ 
+-std::optional<u64> Nvnflinger::CreateLayer(u64 display_id) {
++std::optional<u64> Nvnflinger::CreateLayer(u64 display_id, LayerBlending blending) {
+     const auto lock_guard = Lock();
+     auto* const display = FindDisplay(display_id);
+ 
+@@ -166,13 +166,14 @@ std::optional<u64> Nvnflinger::CreateLayer(u64 display_id) {
+     }
+ 
+     const u64 layer_id = next_layer_id++;
+-    CreateLayerAtId(*display, layer_id);
++    CreateLayerAtId(*display, layer_id, blending);
+     return layer_id;
+ }
+ 
+-void Nvnflinger::CreateLayerAtId(VI::Display& display, u64 layer_id) {
++void Nvnflinger::CreateLayerAtId(VI::Display& display, u64 layer_id, LayerBlending blending) {
+     const auto buffer_id = next_buffer_queue_id++;
+     display.CreateLayer(layer_id, buffer_id, nvdrv->container);
++    display.FindLayer(layer_id)->SetBlending(blending);
+ }
+ 
+ bool Nvnflinger::OpenLayer(u64 layer_id) {
+diff --git a/src/core/hle/service/nvnflinger/nvnflinger.h b/src/core/hle/service/nvnflinger/nvnflinger.h
+index c984d55a0051..4cf4f069d7a6 100644
+--- a/src/core/hle/service/nvnflinger/nvnflinger.h
++++ b/src/core/hle/service/nvnflinger/nvnflinger.h
+@@ -15,6 +15,7 @@
+ #include "common/thread.h"
+ #include "core/hle/result.h"
+ #include "core/hle/service/kernel_helpers.h"
++#include "core/hle/service/nvnflinger/hwc_layer.h"
+ 
+ namespace Common {
+ class Event;
+@@ -72,7 +73,8 @@ class Nvnflinger final {
+     /// Creates a layer on the specified display and returns the layer ID.
+     ///
+     /// If an invalid display ID is specified, then an empty optional is returned.
+-    [[nodiscard]] std::optional<u64> CreateLayer(u64 display_id);
++    [[nodiscard]] std::optional<u64> CreateLayer(u64 display_id,
++                                                 LayerBlending blending = LayerBlending::None);
+ 
+     /// Opens a layer on all displays for the given layer ID.
+     bool OpenLayer(u64 layer_id);
+@@ -128,7 +130,7 @@ class Nvnflinger final {
+     [[nodiscard]] VI::Layer* FindLayer(u64 display_id, u64 layer_id);
+ 
+     /// Creates a layer with the specified layer ID in the desired display.
+-    void CreateLayerAtId(VI::Display& display, u64 layer_id);
++    void CreateLayerAtId(VI::Display& display, u64 layer_id, LayerBlending blending);
+ 
+     void SplitVSync(std::stop_token stop_token);
+ 
+diff --git a/src/core/hle/service/vi/layer/vi_layer.cpp b/src/core/hle/service/vi/layer/vi_layer.cpp
+index 493bd6e9e57f..eca35d82a97b 100644
+--- a/src/core/hle/service/vi/layer/vi_layer.cpp
++++ b/src/core/hle/service/vi/layer/vi_layer.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: Copyright 2019 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include "core/hle/service/nvnflinger/hwc_layer.h"
+ #include "core/hle/service/vi/layer/vi_layer.h"
+ 
+ namespace Service::VI {
+@@ -8,8 +9,9 @@ namespace Service::VI {
+ Layer::Layer(u64 layer_id_, u32 binder_id_, android::BufferQueueCore& core_,
+              android::BufferQueueProducer& binder_,
+              std::shared_ptr<android::BufferItemConsumer>&& consumer_)
+-    : layer_id{layer_id_}, binder_id{binder_id_}, core{core_}, binder{binder_},
+-      consumer{std::move(consumer_)}, open{false}, visible{true} {}
++    : layer_id{layer_id_}, binder_id{binder_id_}, core{core_}, binder{binder_}, consumer{std::move(
++                                                                                    consumer_)},
++      blending{Nvnflinger::LayerBlending::None}, open{false}, visible{true} {}
+ 
+ Layer::~Layer() = default;
+ 
+diff --git a/src/core/hle/service/vi/layer/vi_layer.h b/src/core/hle/service/vi/layer/vi_layer.h
+index b4b031ee75df..14e229903a4e 100644
+--- a/src/core/hle/service/vi/layer/vi_layer.h
++++ b/src/core/hle/service/vi/layer/vi_layer.h
+@@ -14,6 +14,10 @@ class BufferQueueCore;
+ class BufferQueueProducer;
+ } // namespace Service::android
+ 
++namespace Service::Nvnflinger {
++enum class LayerBlending : u32;
++}
++
+ namespace Service::VI {
+ 
+ /// Represents a single display layer.
+@@ -92,12 +96,21 @@ class Layer {
+         return !std::exchange(open, true);
+     }
+ 
++    Nvnflinger::LayerBlending GetBlending() {
++        return blending;
++    }
++
++    void SetBlending(Nvnflinger::LayerBlending b) {
++        blending = b;
++    }
++
+ private:
+     const u64 layer_id;
+     const u32 binder_id;
+     android::BufferQueueCore& core;
+     android::BufferQueueProducer& binder;
+     std::shared_ptr<android::BufferItemConsumer> consumer;
++    Service::Nvnflinger::LayerBlending blending;
+     bool open;
+     bool visible;
+ };
+diff --git a/src/video_core/framebuffer_config.h b/src/video_core/framebuffer_config.h
+index 6a18b76fb518..8b2a49de5e46 100644
+--- a/src/video_core/framebuffer_config.h
++++ b/src/video_core/framebuffer_config.h
+@@ -11,6 +11,12 @@
+ 
+ namespace Tegra {
+ 
++enum class BlendMode {
++    Opaque,
++    Premultiplied,
++    Coverage,
++};
++
+ /**
+  * Struct describing framebuffer configuration
+  */
+@@ -23,6 +29,7 @@ struct FramebufferConfig {
+     Service::android::PixelFormat pixel_format{};
+     Service::android::BufferTransformFlags transform_flags{};
+     Common::Rectangle<int> crop_rect{};
++    BlendMode blending{};
+ };
+ 
+ Common::Rectangle<f32> NormalizeCrop(const FramebufferConfig& framebuffer, u32 texture_width,
+diff --git a/src/video_core/host_shaders/fidelityfx_fsr.frag b/src/video_core/host_shaders/fidelityfx_fsr.frag
+index a266e1c4ebfa..54eedb450ee3 100644
+--- a/src/video_core/host_shaders/fidelityfx_fsr.frag
++++ b/src/video_core/host_shaders/fidelityfx_fsr.frag
+@@ -37,6 +37,7 @@ layout(set=0,binding=0) uniform sampler2D InputTexture;
+ 
+ #define A_GPU 1
+ #define A_GLSL 1
++#define FSR_RCAS_PASSTHROUGH_ALPHA 1
+ 
+ #ifndef YUZU_USE_FP16
+     #include "ffx_a.h"
+@@ -71,9 +72,7 @@ layout(set=0,binding=0) uniform sampler2D InputTexture;
+ 
+ #include "ffx_fsr1.h"
+ 
+-#if USE_RCAS
+-    layout(location = 0) in vec2 frag_texcoord;
+-#endif
++layout (location = 0) in vec2 frag_texcoord;
+ layout (location = 0) out vec4 frag_color;
+ 
+ void CurrFilter(AU2 pos) {
+@@ -81,22 +80,22 @@ void CurrFilter(AU2 pos) {
+     #ifndef YUZU_USE_FP16
+         AF3 c;
+         FsrEasuF(c, pos, Const0, Const1, Const2, Const3);
+-        frag_color = AF4(c, 1.0);
++        frag_color = AF4(c, texture(InputTexture, frag_texcoord).a);
+     #else
+         AH3 c;
+         FsrEasuH(c, pos, Const0, Const1, Const2, Const3);
+-        frag_color = AH4(c, 1.0);
++        frag_color = AH4(c, texture(InputTexture, frag_texcoord).a);
+     #endif
+ #endif
+ #if USE_RCAS
+     #ifndef YUZU_USE_FP16
+-        AF3 c;
+-        FsrRcasF(c.r, c.g, c.b, pos, Const0);
+-        frag_color = AF4(c, 1.0);
++        AF4 c;
++        FsrRcasF(c.r, c.g, c.b, c.a, pos, Const0);
++        frag_color = c;
+     #else
+-        AH3 c;
+-        FsrRcasH(c.r, c.g, c.b, pos, Const0);
+-        frag_color = AH4(c, 1.0);
++        AH4 c;
++        FsrRcasH(c.r, c.g, c.b, c.a, pos, Const0);
++        frag_color = c;
+     #endif
+ #endif
+ }
+diff --git a/src/video_core/host_shaders/fxaa.frag b/src/video_core/host_shaders/fxaa.frag
+index 9bffc20d5604..192a602c14d5 100644
+--- a/src/video_core/host_shaders/fxaa.frag
++++ b/src/video_core/host_shaders/fxaa.frag
+@@ -71,5 +71,5 @@ vec3 FxaaPixelShader(vec4 posPos, sampler2D tex) {
+ }
+ 
+ void main() {
+-  frag_color = vec4(FxaaPixelShader(posPos, input_texture), 1.0);
++  frag_color = vec4(FxaaPixelShader(posPos, input_texture), texture(input_texture, posPos.xy).a);
+ }
+diff --git a/src/video_core/host_shaders/opengl_fidelityfx_fsr.frag b/src/video_core/host_shaders/opengl_fidelityfx_fsr.frag
+index 16d22f58e5ef..fc47d381016e 100644
+--- a/src/video_core/host_shaders/opengl_fidelityfx_fsr.frag
++++ b/src/video_core/host_shaders/opengl_fidelityfx_fsr.frag
+@@ -31,6 +31,7 @@ layout (location = 0) uniform uvec4 constants[4];
+ 
+ #define A_GPU 1
+ #define A_GLSL 1
++#define FSR_RCAS_PASSTHROUGH_ALPHA 1
+ 
+ #ifdef YUZU_USE_FP16
+     #define A_HALF
+@@ -67,9 +68,7 @@ layout (location = 0) uniform uvec4 constants[4];
+ 
+ #include "ffx_fsr1.h"
+ 
+-#if USE_RCAS
+-    layout(location = 0) in vec2 frag_texcoord;
+-#endif
++layout (location = 0) in vec2 frag_texcoord;
+ layout (location = 0) out vec4 frag_color;
+ 
+ void CurrFilter(AU2 pos)
+@@ -78,22 +77,22 @@ void CurrFilter(AU2 pos)
+     #ifndef YUZU_USE_FP16
+         AF3 c;
+         FsrEasuF(c, pos, constants[0], constants[1], constants[2], constants[3]);
+-        frag_color = AF4(c, 1.0);
++        frag_color = AF4(c, texture(InputTexture, frag_texcoord).a);
+     #else
+         AH3 c;
+         FsrEasuH(c, pos, constants[0], constants[1], constants[2], constants[3]);
+-        frag_color = AH4(c, 1.0);
++        frag_color = AH4(c, texture(InputTexture, frag_texcoord).a);
+     #endif
+ #endif
+ #if USE_RCAS
+     #ifndef YUZU_USE_FP16
+-        AF3 c;
+-        FsrRcasF(c.r, c.g, c.b, pos, constants[0]);
+-        frag_color = AF4(c, 1.0);
++        AF4 c;
++        FsrRcasF(c.r, c.g, c.b, c.a, pos, constants[0]);
++        frag_color = c;
+     #else
+         AH3 c;
+-        FsrRcasH(c.r, c.g, c.b, pos, constants[0]);
+-        frag_color = AH4(c, 1.0);
++        FsrRcasH(c.r, c.g, c.b, c.a, pos, constants[0]);
++        frag_color = c;
+     #endif
+ #endif
+ }
+diff --git a/src/video_core/host_shaders/opengl_present.frag b/src/video_core/host_shaders/opengl_present.frag
+index 5fd7ad29765c..096b4e4dbc5a 100644
+--- a/src/video_core/host_shaders/opengl_present.frag
++++ b/src/video_core/host_shaders/opengl_present.frag
+@@ -9,5 +9,5 @@ layout (location = 0) out vec4 color;
+ layout (binding = 0) uniform sampler2D color_texture;
+ 
+ void main() {
+-    color = vec4(texture(color_texture, frag_tex_coord).rgb, 1.0f);
++    color = vec4(texture(color_texture, frag_tex_coord));
+ }
+diff --git a/src/video_core/host_shaders/present_bicubic.frag b/src/video_core/host_shaders/present_bicubic.frag
+index c814629cf161..a9d9d40a3850 100644
+--- a/src/video_core/host_shaders/present_bicubic.frag
++++ b/src/video_core/host_shaders/present_bicubic.frag
+@@ -52,5 +52,5 @@ vec4 textureBicubic( sampler2D textureSampler, vec2 texCoords ) {
+ }
+ 
+ void main() {
+-    color = vec4(textureBicubic(color_texture, frag_tex_coord).rgb, 1.0f);
++    color = textureBicubic(color_texture, frag_tex_coord);
+ }
+diff --git a/src/video_core/host_shaders/present_gaussian.frag b/src/video_core/host_shaders/present_gaussian.frag
+index ad9bb76a4957..78edeb9b40e7 100644
+--- a/src/video_core/host_shaders/present_gaussian.frag
++++ b/src/video_core/host_shaders/present_gaussian.frag
+@@ -46,14 +46,14 @@ vec4 blurDiagonal(sampler2D textureSampler, vec2 coord, vec2 norm) {
+ }
+ 
+ void main() {
+-    vec3 base = texture(color_texture, vec2(frag_tex_coord)).rgb * weight[0];
++    vec4 base = texture(color_texture, vec2(frag_tex_coord)) * weight[0];
+     vec2 tex_offset = 1.0f / textureSize(color_texture, 0);
+ 
+     // TODO(Blinkhawk): This code can be optimized through shader group instructions.
+-    vec3 horizontal = blurHorizontal(color_texture, frag_tex_coord, tex_offset).rgb;
+-    vec3 vertical = blurVertical(color_texture, frag_tex_coord, tex_offset).rgb;
+-    vec3 diagonalA = blurDiagonal(color_texture, frag_tex_coord, tex_offset).rgb;
+-    vec3 diagonalB = blurDiagonal(color_texture, frag_tex_coord, tex_offset * vec2(1.0, -1.0)).rgb;
+-    vec3 combination = mix(mix(horizontal, vertical, 0.5f), mix(diagonalA, diagonalB, 0.5f), 0.5f);
+-    color = vec4(combination + base, 1.0f);
++    vec4 horizontal = blurHorizontal(color_texture, frag_tex_coord, tex_offset);
++    vec4 vertical = blurVertical(color_texture, frag_tex_coord, tex_offset);
++    vec4 diagonalA = blurDiagonal(color_texture, frag_tex_coord, tex_offset);
++    vec4 diagonalB = blurDiagonal(color_texture, frag_tex_coord, tex_offset * vec2(1.0, -1.0));
++    vec4 combination = mix(mix(horizontal, vertical, 0.5f), mix(diagonalA, diagonalB, 0.5f), 0.5f);
++    color = combination + base;
+ }
+diff --git a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp16.frag b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp16.frag
+index d369bef069dd..05d0333104aa 100644
+--- a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp16.frag
++++ b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp16.frag
+@@ -6,5 +6,6 @@
+ 
+ #define YUZU_USE_FP16
+ #define USE_EASU 1
++#define VERSION 1
+ 
+ #include "fidelityfx_fsr.frag"
+diff --git a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp32.frag b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp32.frag
+index 6f25ef00f6ac..7ae11dd66a90 100644
+--- a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp32.frag
++++ b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_easu_fp32.frag
+@@ -5,5 +5,6 @@
+ #extension GL_GOOGLE_include_directive : enable
+ 
+ #define USE_EASU 1
++#define VERSION 1
+ 
+ #include "fidelityfx_fsr.frag"
+diff --git a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp16.frag b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp16.frag
+index 0c953a9009fc..c017214a5145 100644
+--- a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp16.frag
++++ b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp16.frag
+@@ -6,5 +6,6 @@
+ 
+ #define YUZU_USE_FP16
+ #define USE_RCAS 1
++#define VERSION 1
+ 
+ #include "fidelityfx_fsr.frag"
+diff --git a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp32.frag b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp32.frag
+index 02e9a27c6533..976825f4bb43 100644
+--- a/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp32.frag
++++ b/src/video_core/host_shaders/vulkan_fidelityfx_fsr_rcas_fp32.frag
+@@ -5,5 +5,6 @@
+ #extension GL_GOOGLE_include_directive : enable
+ 
+ #define USE_RCAS 1
++#define VERSION 1
+ 
+ #include "fidelityfx_fsr.frag"
+diff --git a/src/video_core/host_shaders/vulkan_present_scaleforce_fp16.frag b/src/video_core/host_shaders/vulkan_present_scaleforce_fp16.frag
+index 79ea817c2f9a..cea5dac9dabf 100644
+--- a/src/video_core/host_shaders/vulkan_present_scaleforce_fp16.frag
++++ b/src/video_core/host_shaders/vulkan_present_scaleforce_fp16.frag
+@@ -5,7 +5,7 @@
+ 
+ #extension GL_GOOGLE_include_directive : enable
+ 
+-#define VERSION 1
++#define VERSION 2
+ #define YUZU_USE_FP16
+ 
+ #include "opengl_present_scaleforce.frag"
+diff --git a/src/video_core/host_shaders/vulkan_present_scaleforce_fp32.frag b/src/video_core/host_shaders/vulkan_present_scaleforce_fp32.frag
+index 9605bb58bded..10ddf04019cb 100644
+--- a/src/video_core/host_shaders/vulkan_present_scaleforce_fp32.frag
++++ b/src/video_core/host_shaders/vulkan_present_scaleforce_fp32.frag
+@@ -5,6 +5,6 @@
+ 
+ #extension GL_GOOGLE_include_directive : enable
+ 
+-#define VERSION 1
++#define VERSION 2
+ 
+ #include "opengl_present_scaleforce.frag"
+diff --git a/src/video_core/renderer_opengl/present/window_adapt_pass.cpp b/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
+index 4d681606b397..0328abd70824 100644
+--- a/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
++++ b/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
+@@ -92,6 +92,21 @@ void WindowAdaptPass::DrawToFramebuffer(ProgramManager& program_manager, std::li
+     glClear(GL_COLOR_BUFFER_BIT);
+ 
+     for (size_t i = 0; i < layer_count; i++) {
++        switch (framebuffers[i].blending) {
++        case Tegra::BlendMode::Opaque:
++        default:
++            glDisablei(GL_BLEND, 0);
++            break;
++        case Tegra::BlendMode::Premultiplied:
++            glEnablei(GL_BLEND, 0);
++            glBlendFuncSeparatei(0, GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
++            break;
++        case Tegra::BlendMode::Coverage:
++            glEnablei(GL_BLEND, 0);
++            glBlendFuncSeparatei(0, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
++            break;
++        }
++
+         glBindTextureUnit(0, textures[i]);
+         glProgramUniformMatrix3x2fv(vert.handle, ModelViewMatrixLocation, 1, GL_FALSE,
+                                     matrices[i].data());
+diff --git a/src/video_core/renderer_vulkan/present/util.cpp b/src/video_core/renderer_vulkan/present/util.cpp
+index 6ee16595df14..7f27c7c1b543 100644
+--- a/src/video_core/renderer_vulkan/present/util.cpp
++++ b/src/video_core/renderer_vulkan/present/util.cpp
+@@ -362,10 +362,10 @@ vk::PipelineLayout CreateWrappedPipelineLayout(const Device& device,
+     });
+ }
+ 
+-vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderpass,
+-                                   vk::PipelineLayout& layout,
+-                                   std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders,
+-                                   bool enable_blending) {
++static vk::Pipeline CreateWrappedPipelineImpl(
++    const Device& device, vk::RenderPass& renderpass, vk::PipelineLayout& layout,
++    std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders,
++    VkPipelineColorBlendAttachmentState blending) {
+     const std::array<VkPipelineShaderStageCreateInfo, 2> shader_stages{{
+         {
+             .sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+@@ -443,30 +443,6 @@ vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderp
+         .alphaToOneEnable = VK_FALSE,
+     };
+ 
+-    constexpr VkPipelineColorBlendAttachmentState color_blend_attachment_disabled{
+-        .blendEnable = VK_FALSE,
+-        .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+-        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
+-        .colorBlendOp = VK_BLEND_OP_ADD,
+-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+-        .alphaBlendOp = VK_BLEND_OP_ADD,
+-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+-    };
+-
+-    constexpr VkPipelineColorBlendAttachmentState color_blend_attachment_enabled{
+-        .blendEnable = VK_TRUE,
+-        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
+-        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+-        .colorBlendOp = VK_BLEND_OP_ADD,
+-        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
+-        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
+-        .alphaBlendOp = VK_BLEND_OP_ADD,
+-        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+-                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
+-    };
+-
+     const VkPipelineColorBlendStateCreateInfo color_blend_ci{
+         .sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+         .pNext = nullptr,
+@@ -474,8 +450,7 @@ vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderp
+         .logicOpEnable = VK_FALSE,
+         .logicOp = VK_LOGIC_OP_COPY,
+         .attachmentCount = 1,
+-        .pAttachments =
+-            enable_blending ? &color_blend_attachment_enabled : &color_blend_attachment_disabled,
++        .pAttachments = &blending,
+         .blendConstants = {0.0f, 0.0f, 0.0f, 0.0f},
+     };
+ 
+@@ -515,6 +490,63 @@ vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderp
+     });
+ }
+ 
++vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderpass,
++                                   vk::PipelineLayout& layout,
++                                   std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders) {
++    constexpr VkPipelineColorBlendAttachmentState color_blend_attachment_disabled{
++        .blendEnable = VK_FALSE,
++        .srcColorBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .dstColorBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .colorBlendOp = VK_BLEND_OP_ADD,
++        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .alphaBlendOp = VK_BLEND_OP_ADD,
++        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
++                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
++    };
++
++    return CreateWrappedPipelineImpl(device, renderpass, layout, shaders,
++                                     color_blend_attachment_disabled);
++}
++
++vk::Pipeline CreateWrappedPremultipliedBlendingPipeline(
++    const Device& device, vk::RenderPass& renderpass, vk::PipelineLayout& layout,
++    std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders) {
++    constexpr VkPipelineColorBlendAttachmentState color_blend_attachment_premultiplied{
++        .blendEnable = VK_TRUE,
++        .srcColorBlendFactor = VK_BLEND_FACTOR_ONE,
++        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
++        .colorBlendOp = VK_BLEND_OP_ADD,
++        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
++        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .alphaBlendOp = VK_BLEND_OP_ADD,
++        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
++                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
++    };
++
++    return CreateWrappedPipelineImpl(device, renderpass, layout, shaders,
++                                     color_blend_attachment_premultiplied);
++}
++
++vk::Pipeline CreateWrappedCoverageBlendingPipeline(
++    const Device& device, vk::RenderPass& renderpass, vk::PipelineLayout& layout,
++    std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders) {
++    constexpr VkPipelineColorBlendAttachmentState color_blend_attachment_coverage{
++        .blendEnable = VK_TRUE,
++        .srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA,
++        .dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
++        .colorBlendOp = VK_BLEND_OP_ADD,
++        .srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE,
++        .dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO,
++        .alphaBlendOp = VK_BLEND_OP_ADD,
++        .colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
++                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT,
++    };
++
++    return CreateWrappedPipelineImpl(device, renderpass, layout, shaders,
++                                     color_blend_attachment_coverage);
++}
++
+ VkWriteDescriptorSet CreateWriteDescriptorSet(std::vector<VkDescriptorImageInfo>& images,
+                                               VkSampler sampler, VkImageView view,
+                                               VkDescriptorSet set, u32 binding) {
+diff --git a/src/video_core/renderer_vulkan/present/util.h b/src/video_core/renderer_vulkan/present/util.h
+index 1104aaa1570c..5b22f0fa8254 100644
+--- a/src/video_core/renderer_vulkan/present/util.h
++++ b/src/video_core/renderer_vulkan/present/util.h
+@@ -42,8 +42,13 @@ vk::PipelineLayout CreateWrappedPipelineLayout(const Device& device,
+                                                vk::DescriptorSetLayout& layout);
+ vk::Pipeline CreateWrappedPipeline(const Device& device, vk::RenderPass& renderpass,
+                                    vk::PipelineLayout& layout,
+-                                   std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders,
+-                                   bool enable_blending = false);
++                                   std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders);
++vk::Pipeline CreateWrappedPremultipliedBlendingPipeline(
++    const Device& device, vk::RenderPass& renderpass, vk::PipelineLayout& layout,
++    std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders);
++vk::Pipeline CreateWrappedCoverageBlendingPipeline(
++    const Device& device, vk::RenderPass& renderpass, vk::PipelineLayout& layout,
++    std::tuple<vk::ShaderModule&, vk::ShaderModule&> shaders);
+ VkWriteDescriptorSet CreateWriteDescriptorSet(std::vector<VkDescriptorImageInfo>& images,
+                                               VkSampler sampler, VkImageView view,
+                                               VkDescriptorSet set, u32 binding);
+diff --git a/src/video_core/renderer_vulkan/present/window_adapt_pass.cpp b/src/video_core/renderer_vulkan/present/window_adapt_pass.cpp
+index c5db0230d90c..22ffacf11942 100644
+--- a/src/video_core/renderer_vulkan/present/window_adapt_pass.cpp
++++ b/src/video_core/renderer_vulkan/present/window_adapt_pass.cpp
+@@ -22,7 +22,7 @@ WindowAdaptPass::WindowAdaptPass(const Device& device_, VkFormat frame_format,
+     CreatePipelineLayout();
+     CreateVertexShader();
+     CreateRenderPass(frame_format);
+-    CreatePipeline();
++    CreatePipelines();
+ }
+ 
+ WindowAdaptPass::~WindowAdaptPass() = default;
+@@ -34,7 +34,6 @@ void WindowAdaptPass::Draw(RasterizerVulkan& rasterizer, Scheduler& scheduler, s
+ 
+     const VkFramebuffer host_framebuffer{*dst->framebuffer};
+     const VkRenderPass renderpass{*render_pass};
+-    const VkPipeline graphics_pipeline{*pipeline};
+     const VkPipelineLayout graphics_pipeline_layout{*pipeline_layout};
+     const VkExtent2D render_area{
+         .width = dst->width,
+@@ -44,9 +43,23 @@ void WindowAdaptPass::Draw(RasterizerVulkan& rasterizer, Scheduler& scheduler, s
+     const size_t layer_count = configs.size();
+     std::vector<PresentPushConstants> push_constants(layer_count);
+     std::vector<VkDescriptorSet> descriptor_sets(layer_count);
++    std::vector<VkPipeline> graphics_pipelines(layer_count);
+ 
+     auto layer_it = layers.begin();
+     for (size_t i = 0; i < layer_count; i++) {
++        switch (configs[i].blending) {
++        case Tegra::BlendMode::Opaque:
++        default:
++            graphics_pipelines[i] = *opaque_pipeline;
++            break;
++        case Tegra::BlendMode::Premultiplied:
++            graphics_pipelines[i] = *premultiplied_pipeline;
++            break;
++        case Tegra::BlendMode::Coverage:
++            graphics_pipelines[i] = *coverage_pipeline;
++            break;
++        }
++
+         layer_it->ConfigureDraw(&push_constants[i], &descriptor_sets[i], rasterizer, *sampler,
+                                 image_index, configs[i], layout);
+         layer_it++;
+@@ -77,8 +90,8 @@ void WindowAdaptPass::Draw(RasterizerVulkan& rasterizer, Scheduler& scheduler, s
+         BeginRenderPass(cmdbuf, renderpass, host_framebuffer, render_area);
+         cmdbuf.ClearAttachments({clear_attachment}, {clear_rect});
+ 
+-        cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline);
+         for (size_t i = 0; i < layer_count; i++) {
++            cmdbuf.BindPipeline(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipelines[i]);
+             cmdbuf.PushConstants(graphics_pipeline_layout, VK_SHADER_STAGE_VERTEX_BIT,
+                                  push_constants[i]);
+             cmdbuf.BindDescriptorSets(VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline_layout, 0,
+@@ -129,9 +142,13 @@ void WindowAdaptPass::CreateRenderPass(VkFormat frame_format) {
+     render_pass = CreateWrappedRenderPass(device, frame_format, VK_IMAGE_LAYOUT_UNDEFINED);
+ }
+ 
+-void WindowAdaptPass::CreatePipeline() {
+-    pipeline = CreateWrappedPipeline(device, render_pass, pipeline_layout,
+-                                     std::tie(vertex_shader, fragment_shader), false);
++void WindowAdaptPass::CreatePipelines() {
++    opaque_pipeline = CreateWrappedPipeline(device, render_pass, pipeline_layout,
++                                            std::tie(vertex_shader, fragment_shader));
++    premultiplied_pipeline = CreateWrappedPremultipliedBlendingPipeline(
++        device, render_pass, pipeline_layout, std::tie(vertex_shader, fragment_shader));
++    coverage_pipeline = CreateWrappedCoverageBlendingPipeline(
++        device, render_pass, pipeline_layout, std::tie(vertex_shader, fragment_shader));
+ }
+ 
+ } // namespace Vulkan
+diff --git a/src/video_core/renderer_vulkan/present/window_adapt_pass.h b/src/video_core/renderer_vulkan/present/window_adapt_pass.h
+index 0e2edfc312a9..cf667a4fc649 100644
+--- a/src/video_core/renderer_vulkan/present/window_adapt_pass.h
++++ b/src/video_core/renderer_vulkan/present/window_adapt_pass.h
+@@ -42,7 +42,7 @@ class WindowAdaptPass final {
+     void CreatePipelineLayout();
+     void CreateVertexShader();
+     void CreateRenderPass(VkFormat frame_format);
+-    void CreatePipeline();
++    void CreatePipelines();
+ 
+ private:
+     const Device& device;
+@@ -52,7 +52,9 @@ class WindowAdaptPass final {
+     vk::ShaderModule vertex_shader;
+     vk::ShaderModule fragment_shader;
+     vk::RenderPass render_pass;
+-    vk::Pipeline pipeline;
++    vk::Pipeline opaque_pipeline;
++    vk::Pipeline premultiplied_pipeline;
++    vk::Pipeline coverage_pipeline;
+ };
+ 
+ } // namespace Vulkan
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+index 48a105327750..c7c234fd8112 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -101,8 +101,10 @@ RendererVulkan::RendererVulkan(Core::TelemetrySession& telemetry_session_,
+                       surface),
+       blit_swapchain(device_memory, device, memory_allocator, present_manager, scheduler),
+       blit_screenshot(device_memory, device, memory_allocator, present_manager, scheduler),
++      blit_application_layer(device_memory, device, memory_allocator, present_manager, scheduler),
+       rasterizer(render_window, gpu, device_memory, device, memory_allocator, state_tracker,
+-                 scheduler) {
++                 scheduler),
++      application_frame() {
+     if (Settings::values.renderer_force_max_clock.GetValue() && device.ShouldBoostClocks()) {
+         turbo_mode.emplace(instance, dld);
+         scheduler.RegisterOnSubmit([this] { turbo_mode->QueueSubmitted(); });
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.h b/src/video_core/renderer_vulkan/renderer_vulkan.h
+index c6d8a0f21623..ed9c7af7f1fd 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.h
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.h
+@@ -80,8 +80,11 @@ class RendererVulkan final : public VideoCore::RendererBase {
+     PresentManager present_manager;
+     BlitScreen blit_swapchain;
+     BlitScreen blit_screenshot;
++    BlitScreen blit_application_layer;
+     RasterizerVulkan rasterizer;
+     std::optional<TurboMode> turbo_mode;
++
++    Frame application_frame;
+ };
+ 
+ } // namespace Vulkan
+diff --git a/src/video_core/texture_cache/texture_cache.h b/src/video_core/texture_cache/texture_cache.h
+index a20c956ffc04..3a1cc060e78b 100644
+--- a/src/video_core/texture_cache/texture_cache.h
++++ b/src/video_core/texture_cache/texture_cache.h
+@@ -746,7 +746,13 @@ std::pair<typename P::ImageView*, bool> TextureCache<P>::TryFindFramebufferImage
+     }();
+ 
+     const auto GetImageViewForFramebuffer = [&](ImageId image_id) {
+-        const ImageViewInfo info{ImageViewType::e2D, view_format};
++        ImageViewInfo info{ImageViewType::e2D, view_format};
++        if (config.blending == Tegra::BlendMode::Opaque) {
++            info.x_source = static_cast<u8>(SwizzleSource::R);
++            info.y_source = static_cast<u8>(SwizzleSource::G);
++            info.z_source = static_cast<u8>(SwizzleSource::B);
++            info.w_source = static_cast<u8>(SwizzleSource::OneFloat);
++        }
+         return std::make_pair(&slot_image_views[FindOrEmplaceImageView(image_id, info)],
+                               slot_images[image_id].IsRescaled());
+     };
+
+From e2364af390b48d31e5131c47c44fcfde6deb6d40 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Fri, 26 Jan 2024 16:10:21 -0500
+Subject: [PATCH 5/9] nvnflinger/gpu: implement applet capture
+
+---
+ .../hle/service/am/system_buffer_manager.cpp  |   8 +-
+ .../nvnflinger/fb_share_buffer_manager.cpp    |  28 ++++-
+ src/video_core/CMakeLists.txt                 |   1 +
+ src/video_core/capture.h                      |  36 ++++++
+ src/video_core/gpu.cpp                        |  15 +++
+ src/video_core/gpu.h                          |   2 +
+ src/video_core/renderer_base.h                |   3 +
+ .../renderer_null/renderer_null.cpp           |   5 +
+ src/video_core/renderer_null/renderer_null.h  |   2 +
+ .../renderer_opengl/gl_blit_screen.cpp        |   4 +-
+ .../renderer_opengl/gl_blit_screen.h          |   2 +-
+ .../renderer_opengl/present/layer.cpp         |  15 ++-
+ .../renderer_opengl/present/layer.h           |   2 +-
+ .../present/window_adapt_pass.cpp             |   4 +-
+ .../present/window_adapt_pass.h               |   2 +-
+ .../renderer_opengl/renderer_opengl.cpp       |  85 ++++++++++++--
+ .../renderer_opengl/renderer_opengl.h         |   9 ++
+ .../renderer_vulkan/renderer_vulkan.cpp       | 108 ++++++++++++++----
+ .../renderer_vulkan/renderer_vulkan.h         |  12 +-
+ 19 files changed, 288 insertions(+), 55 deletions(-)
+ create mode 100644 src/video_core/capture.h
+
+diff --git a/src/core/hle/service/am/system_buffer_manager.cpp b/src/core/hle/service/am/system_buffer_manager.cpp
+index 3cccc53888c2..7fb9e3a7575b 100644
+--- a/src/core/hle/service/am/system_buffer_manager.cpp
++++ b/src/core/hle/service/am/system_buffer_manager.cpp
+@@ -68,8 +68,12 @@ void SystemBufferManager::SetWindowVisibility(bool visible) {
+ 
+ Result SystemBufferManager::WriteAppletCaptureBuffer(bool* out_was_written,
+                                                      s32* out_fbshare_layer_index) {
+-    // TODO
+-    R_SUCCEED();
++    if (!m_buffer_sharing_enabled) {
++        return VI::ResultPermissionDenied;
++    }
++
++    return m_nvnflinger->GetSystemBufferManager().WriteAppletCaptureBuffer(out_was_written,
++                                                                           out_fbshare_layer_index);
+ }
+ 
+ } // namespace Service::AM
+diff --git a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
+index 6a7da0caed8e..90f7248a02c2 100644
+--- a/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
++++ b/src/core/hle/service/nvnflinger/fb_share_buffer_manager.cpp
+@@ -15,6 +15,7 @@
+ #include "core/hle/service/vi/layer/vi_layer.h"
+ #include "core/hle/service/vi/vi_results.h"
+ #include "video_core/gpu.h"
++#include "video_core/host1x/host1x.h"
+ 
+ namespace Service::Nvnflinger {
+ 
+@@ -414,9 +415,30 @@ Result FbShareBufferManager::GetSharedFrameBufferAcquirableEvent(Kernel::KReadab
+     R_SUCCEED();
+ }
+ 
+-Result FbShareBufferManager::WriteAppletCaptureBuffer(bool* out_was_written,
+-                                                      s32* out_layer_index) {
+-    // TODO
++Result FbShareBufferManager::WriteAppletCaptureBuffer(bool* out_was_written, s32* out_layer_index) {
++    std::vector<u8> capture_buffer(m_system.GPU().GetAppletCaptureBuffer());
++    Common::ScratchBuffer<u32> scratch;
++
++    // TODO: this could be optimized
++    s64 e = -1280 * 768 * 4;
++    for (auto& block : *m_buffer_page_group) {
++        u8* start = m_system.DeviceMemory().GetPointer<u8>(block.GetAddress());
++        u8* end = m_system.DeviceMemory().GetPointer<u8>(block.GetAddress() + block.GetSize());
++
++        for (; start < end; start++) {
++            *start = 0;
++
++            if (e >= 0 && e < static_cast<s64>(capture_buffer.size())) {
++                *start = capture_buffer[e];
++            }
++            e++;
++        }
++
++        m_system.GPU().Host1x().MemoryManager().ApplyOpOnPointer(start, scratch, [&](DAddr addr) {
++            m_system.GPU().InvalidateRegion(addr, end - start);
++        });
++    }
++
+     *out_was_written = true;
+     *out_layer_index = 1;
+     R_SUCCEED();
+diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
+index 16c905db9ca9..b4ec7b25b38d 100644
+--- a/src/video_core/CMakeLists.txt
++++ b/src/video_core/CMakeLists.txt
+@@ -18,6 +18,7 @@ add_library(video_core STATIC
+     buffer_cache/usage_tracker.h
+     buffer_cache/word_manager.h
+     cache_types.h
++    capture.h
+     cdma_pusher.cpp
+     cdma_pusher.h
+     compatible_formats.cpp
+diff --git a/src/video_core/capture.h b/src/video_core/capture.h
+new file mode 100644
+index 000000000000..8db14a8ecfd7
+--- /dev/null
++++ b/src/video_core/capture.h
+@@ -0,0 +1,36 @@
++// SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include "common/alignment.h"
++#include "common/bit_util.h"
++#include "common/common_types.h"
++#include "core/frontend/framebuffer_layout.h"
++#include "video_core/surface.h"
++
++namespace VideoCore::Capture {
++
++constexpr u32 BlockHeight = 4;
++constexpr u32 BlockDepth = 0;
++constexpr u32 BppLog2 = 2;
++
++constexpr auto PixelFormat = Surface::PixelFormat::B8G8R8A8_UNORM;
++
++constexpr auto LinearWidth = Layout::ScreenUndocked::Width;
++constexpr auto LinearHeight = Layout::ScreenUndocked::Height;
++constexpr auto LinearDepth = 1U;
++constexpr auto BytesPerPixel = 4U;
++
++constexpr auto TiledWidth = LinearWidth;
++constexpr auto TiledHeight = Common::AlignUpLog2(LinearHeight, BlockHeight + BlockDepth + BppLog2);
++constexpr auto TiledSize = TiledWidth * TiledHeight * (1 << BppLog2);
++
++constexpr Layout::FramebufferLayout Layout{
++    .width = LinearWidth,
++    .height = LinearHeight,
++    .screen = {0, 0, LinearWidth, LinearHeight},
++    .is_srgb = false,
++};
++
++} // namespace VideoCore::Capture
+diff --git a/src/video_core/gpu.cpp b/src/video_core/gpu.cpp
+index f4a5d831cdeb..8e663f2a8f63 100644
+--- a/src/video_core/gpu.cpp
++++ b/src/video_core/gpu.cpp
+@@ -347,6 +347,17 @@ struct GPU::Impl {
+         WaitForSyncOperation(wait_fence);
+     }
+ 
++    std::vector<u8> GetAppletCaptureBuffer() {
++        std::vector<u8> out;
++
++        const auto wait_fence =
++            RequestSyncOperation([&] { out = renderer->GetAppletCaptureBuffer(); });
++        gpu_thread.TickGPU();
++        WaitForSyncOperation(wait_fence);
++
++        return out;
++    }
++
+     GPU& gpu;
+     Core::System& system;
+     Host1x::Host1x& host1x;
+@@ -505,6 +516,10 @@ void GPU::RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
+     impl->RequestComposite(std::move(layers), std::move(fences));
+ }
+ 
++std::vector<u8> GPU::GetAppletCaptureBuffer() {
++    return impl->GetAppletCaptureBuffer();
++}
++
+ u64 GPU::GetTicks() const {
+     return impl->GetTicks();
+ }
+diff --git a/src/video_core/gpu.h b/src/video_core/gpu.h
+index c4602ca372fb..ad535512c941 100644
+--- a/src/video_core/gpu.h
++++ b/src/video_core/gpu.h
+@@ -215,6 +215,8 @@ class GPU final {
+     void RequestComposite(std::vector<Tegra::FramebufferConfig>&& layers,
+                           std::vector<Service::Nvidia::NvFence>&& fences);
+ 
++    std::vector<u8> GetAppletCaptureBuffer();
++
+     /// Performs any additional setup necessary in order to begin GPU emulation.
+     /// This can be used to launch any necessary threads and register any necessary
+     /// core timing events.
+diff --git a/src/video_core/renderer_base.h b/src/video_core/renderer_base.h
+index 3ad180f67895..67427f937273 100644
+--- a/src/video_core/renderer_base.h
++++ b/src/video_core/renderer_base.h
+@@ -40,6 +40,9 @@ class RendererBase {
+     /// Finalize rendering the guest frame and draw into the presentation texture
+     virtual void Composite(std::span<const Tegra::FramebufferConfig> layers) = 0;
+ 
++    /// Get the tiled applet layer capture buffer
++    virtual std::vector<u8> GetAppletCaptureBuffer() = 0;
++
+     [[nodiscard]] virtual RasterizerInterface* ReadRasterizer() = 0;
+ 
+     [[nodiscard]] virtual std::string GetDeviceVendor() const = 0;
+diff --git a/src/video_core/renderer_null/renderer_null.cpp b/src/video_core/renderer_null/renderer_null.cpp
+index c89daff535cf..e6147d66cc86 100644
+--- a/src/video_core/renderer_null/renderer_null.cpp
++++ b/src/video_core/renderer_null/renderer_null.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "core/frontend/emu_window.h"
+ #include "core/frontend/graphics_context.h"
++#include "video_core/capture.h"
+ #include "video_core/renderer_null/renderer_null.h"
+ 
+ namespace Null {
+@@ -22,4 +23,8 @@ void RendererNull::Composite(std::span<const Tegra::FramebufferConfig> framebuff
+     render_window.OnFrameDisplayed();
+ }
+ 
++std::vector<u8> RendererNull::GetAppletCaptureBuffer() {
++    return std::vector<u8>(VideoCore::Capture::TiledSize);
++}
++
+ } // namespace Null
+diff --git a/src/video_core/renderer_null/renderer_null.h b/src/video_core/renderer_null/renderer_null.h
+index 063b476bb903..34dbe1e4f04c 100644
+--- a/src/video_core/renderer_null/renderer_null.h
++++ b/src/video_core/renderer_null/renderer_null.h
+@@ -19,6 +19,8 @@ class RendererNull final : public VideoCore::RendererBase {
+ 
+     void Composite(std::span<const Tegra::FramebufferConfig> framebuffer) override;
+ 
++    std::vector<u8> GetAppletCaptureBuffer() override;
++
+     VideoCore::RasterizerInterface* ReadRasterizer() override {
+         return &m_rasterizer;
+     }
+diff --git a/src/video_core/renderer_opengl/gl_blit_screen.cpp b/src/video_core/renderer_opengl/gl_blit_screen.cpp
+index 6ba8b214be29..0282905ee2fd 100644
+--- a/src/video_core/renderer_opengl/gl_blit_screen.cpp
++++ b/src/video_core/renderer_opengl/gl_blit_screen.cpp
+@@ -20,7 +20,7 @@ BlitScreen::BlitScreen(RasterizerOpenGL& rasterizer_,
+ BlitScreen::~BlitScreen() = default;
+ 
+ void BlitScreen::DrawScreen(std::span<const Tegra::FramebufferConfig> framebuffers,
+-                            const Layout::FramebufferLayout& layout) {
++                            const Layout::FramebufferLayout& layout, bool invert_y) {
+     // TODO: Signal state tracker about these changes
+     state_tracker.NotifyScreenDrawVertexArray();
+     state_tracker.NotifyPolygonModes();
+@@ -60,7 +60,7 @@ void BlitScreen::DrawScreen(std::span<const Tegra::FramebufferConfig> framebuffe
+     }
+ 
+     CreateWindowAdapt();
+-    window_adapt->DrawToFramebuffer(program_manager, layers, framebuffers, layout);
++    window_adapt->DrawToFramebuffer(program_manager, layers, framebuffers, layout, invert_y);
+ 
+     // TODO
+     // program_manager.RestoreGuestPipeline();
+diff --git a/src/video_core/renderer_opengl/gl_blit_screen.h b/src/video_core/renderer_opengl/gl_blit_screen.h
+index 0c3d838f14f1..4e261d333774 100644
+--- a/src/video_core/renderer_opengl/gl_blit_screen.h
++++ b/src/video_core/renderer_opengl/gl_blit_screen.h
+@@ -51,7 +51,7 @@ class BlitScreen {
+ 
+     /// Draws the emulated screens to the emulator window.
+     void DrawScreen(std::span<const Tegra::FramebufferConfig> framebuffers,
+-                    const Layout::FramebufferLayout& layout);
++                    const Layout::FramebufferLayout& layout, bool invert_y);
+ 
+ private:
+     void CreateWindowAdapt();
+diff --git a/src/video_core/renderer_opengl/present/layer.cpp b/src/video_core/renderer_opengl/present/layer.cpp
+index e3fffaa060e2..3e4377db483c 100644
+--- a/src/video_core/renderer_opengl/present/layer.cpp
++++ b/src/video_core/renderer_opengl/present/layer.cpp
+@@ -34,7 +34,7 @@ GLuint Layer::ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
+                             std::array<ScreenRectVertex, 4>& out_vertices,
+                             ProgramManager& program_manager,
+                             const Tegra::FramebufferConfig& framebuffer,
+-                            const Layout::FramebufferLayout& layout) {
++                            const Layout::FramebufferLayout& layout, bool invert_y) {
+     FramebufferTextureInfo info = PrepareRenderTarget(framebuffer);
+     auto crop = Tegra::NormalizeCrop(framebuffer, info.width, info.height);
+     GLuint texture = info.display_texture;
+@@ -83,10 +83,15 @@ GLuint Layer::ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
+     const auto w = screen.GetWidth();
+     const auto h = screen.GetHeight();
+ 
+-    out_vertices[0] = ScreenRectVertex(x, y, crop.left, crop.top);
+-    out_vertices[1] = ScreenRectVertex(x + w, y, crop.right, crop.top);
+-    out_vertices[2] = ScreenRectVertex(x, y + h, crop.left, crop.bottom);
+-    out_vertices[3] = ScreenRectVertex(x + w, y + h, crop.right, crop.bottom);
++    const auto left = crop.left;
++    const auto right = crop.right;
++    const auto top = invert_y ? crop.bottom : crop.top;
++    const auto bottom = invert_y ? crop.top : crop.bottom;
++
++    out_vertices[0] = ScreenRectVertex(x, y, left, top);
++    out_vertices[1] = ScreenRectVertex(x + w, y, right, top);
++    out_vertices[2] = ScreenRectVertex(x, y + h, left, bottom);
++    out_vertices[3] = ScreenRectVertex(x + w, y + h, right, bottom);
+ 
+     return texture;
+ }
+diff --git a/src/video_core/renderer_opengl/present/layer.h b/src/video_core/renderer_opengl/present/layer.h
+index ef1055abf3ff..77bb97f4fe6e 100644
+--- a/src/video_core/renderer_opengl/present/layer.h
++++ b/src/video_core/renderer_opengl/present/layer.h
+@@ -51,7 +51,7 @@ class Layer {
+                          std::array<ScreenRectVertex, 4>& out_vertices,
+                          ProgramManager& program_manager,
+                          const Tegra::FramebufferConfig& framebuffer,
+-                         const Layout::FramebufferLayout& layout);
++                         const Layout::FramebufferLayout& layout, bool invert_y);
+ 
+ private:
+     /// Loads framebuffer from emulated memory into the active OpenGL texture.
+diff --git a/src/video_core/renderer_opengl/present/window_adapt_pass.cpp b/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
+index 0328abd70824..d8b6a11cb237 100644
+--- a/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
++++ b/src/video_core/renderer_opengl/present/window_adapt_pass.cpp
+@@ -37,7 +37,7 @@ WindowAdaptPass::~WindowAdaptPass() = default;
+ 
+ void WindowAdaptPass::DrawToFramebuffer(ProgramManager& program_manager, std::list<Layer>& layers,
+                                         std::span<const Tegra::FramebufferConfig> framebuffers,
+-                                        const Layout::FramebufferLayout& layout) {
++                                        const Layout::FramebufferLayout& layout, bool invert_y) {
+     GLint old_read_fb;
+     GLint old_draw_fb;
+     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
+@@ -51,7 +51,7 @@ void WindowAdaptPass::DrawToFramebuffer(ProgramManager& program_manager, std::li
+     auto layer_it = layers.begin();
+     for (size_t i = 0; i < layer_count; i++) {
+         textures[i] = layer_it->ConfigureDraw(matrices[i], vertices[i], program_manager,
+-                                              framebuffers[i], layout);
++                                              framebuffers[i], layout, invert_y);
+         layer_it++;
+     }
+ 
+diff --git a/src/video_core/renderer_opengl/present/window_adapt_pass.h b/src/video_core/renderer_opengl/present/window_adapt_pass.h
+index 00975a9c6061..0a8bcef2f5c4 100644
+--- a/src/video_core/renderer_opengl/present/window_adapt_pass.h
++++ b/src/video_core/renderer_opengl/present/window_adapt_pass.h
+@@ -31,7 +31,7 @@ class WindowAdaptPass final {
+ 
+     void DrawToFramebuffer(ProgramManager& program_manager, std::list<Layer>& layers,
+                            std::span<const Tegra::FramebufferConfig> framebuffers,
+-                           const Layout::FramebufferLayout& layout);
++                           const Layout::FramebufferLayout& layout, bool invert_y);
+ 
+ private:
+     const Device& device;
+diff --git a/src/video_core/renderer_opengl/renderer_opengl.cpp b/src/video_core/renderer_opengl/renderer_opengl.cpp
+index e33a32592727..a1a8491e5711 100644
+--- a/src/video_core/renderer_opengl/renderer_opengl.cpp
++++ b/src/video_core/renderer_opengl/renderer_opengl.cpp
+@@ -16,6 +16,7 @@
+ #include "core/core_timing.h"
+ #include "core/frontend/emu_window.h"
+ #include "core/telemetry_session.h"
++#include "video_core/capture.h"
+ #include "video_core/renderer_opengl/gl_blit_screen.h"
+ #include "video_core/renderer_opengl/gl_rasterizer.h"
+ #include "video_core/renderer_opengl/gl_shader_manager.h"
+@@ -121,6 +122,13 @@ RendererOpenGL::RendererOpenGL(Core::TelemetrySession& telemetry_session_,
+     }
+     blit_screen = std::make_unique<BlitScreen>(rasterizer, device_memory, state_tracker,
+                                                program_manager, device);
++    blit_applet = std::make_unique<BlitScreen>(rasterizer, device_memory, state_tracker,
++                                               program_manager, device);
++    capture_framebuffer.Create();
++    capture_renderbuffer.Create();
++    glBindRenderbuffer(GL_RENDERBUFFER, capture_renderbuffer.handle);
++    glRenderbufferStorage(GL_RENDERBUFFER, GL_SRGB8, VideoCore::Capture::LinearWidth,
++                          VideoCore::Capture::LinearHeight);
+ }
+ 
+ RendererOpenGL::~RendererOpenGL() = default;
+@@ -130,10 +138,11 @@ void RendererOpenGL::Composite(std::span<const Tegra::FramebufferConfig> framebu
+         return;
+     }
+ 
++    RenderAppletCaptureLayer(framebuffers);
+     RenderScreenshot(framebuffers);
+ 
+     state_tracker.BindFramebuffer(0);
+-    blit_screen->DrawScreen(framebuffers, emu_window.GetFramebufferLayout());
++    blit_screen->DrawScreen(framebuffers, emu_window.GetFramebufferLayout(), false);
+ 
+     ++m_current_frame;
+ 
+@@ -159,11 +168,8 @@ void RendererOpenGL::AddTelemetryFields() {
+     telemetry_session.AddField(user_system, "GPU_OpenGL_Version", std::string(gl_version));
+ }
+ 
+-void RendererOpenGL::RenderScreenshot(std::span<const Tegra::FramebufferConfig> framebuffers) {
+-    if (!renderer_settings.screenshot_requested) {
+-        return;
+-    }
+-
++void RendererOpenGL::RenderToBuffer(std::span<const Tegra::FramebufferConfig> framebuffers,
++                                    const Layout::FramebufferLayout& layout, void* dst) {
+     GLint old_read_fb;
+     GLint old_draw_fb;
+     glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
+@@ -173,29 +179,86 @@ void RendererOpenGL::RenderScreenshot(std::span<const Tegra::FramebufferConfig>
+     screenshot_framebuffer.Create();
+     glBindFramebuffer(GL_FRAMEBUFFER, screenshot_framebuffer.handle);
+ 
+-    const Layout::FramebufferLayout layout{renderer_settings.screenshot_framebuffer_layout};
+-
+     GLuint renderbuffer;
+     glGenRenderbuffers(1, &renderbuffer);
+     glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+     glRenderbufferStorage(GL_RENDERBUFFER, GL_SRGB8, layout.width, layout.height);
+     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, renderbuffer);
+ 
+-    blit_screen->DrawScreen(framebuffers, layout);
++    blit_screen->DrawScreen(framebuffers, layout, false);
+ 
+     glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+     glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+-    glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV,
+-                 renderer_settings.screenshot_bits);
++    glReadPixels(0, 0, layout.width, layout.height, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, dst);
+ 
+     screenshot_framebuffer.Release();
+     glDeleteRenderbuffers(1, &renderbuffer);
+ 
+     glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
+     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fb);
++}
++
++void RendererOpenGL::RenderScreenshot(std::span<const Tegra::FramebufferConfig> framebuffers) {
++    if (!renderer_settings.screenshot_requested) {
++        return;
++    }
++
++    RenderToBuffer(framebuffers, renderer_settings.screenshot_framebuffer_layout,
++                   renderer_settings.screenshot_bits);
+ 
+     renderer_settings.screenshot_complete_callback(true);
+     renderer_settings.screenshot_requested = false;
+ }
+ 
++void RendererOpenGL::RenderAppletCaptureLayer(
++    std::span<const Tegra::FramebufferConfig> framebuffers) {
++    GLint old_read_fb;
++    GLint old_draw_fb;
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw_fb);
++
++    glBindFramebuffer(GL_FRAMEBUFFER, capture_framebuffer.handle);
++    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
++                              capture_renderbuffer.handle);
++
++    blit_applet->DrawScreen(framebuffers, VideoCore::Capture::Layout, true);
++
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fb);
++}
++
++std::vector<u8> RendererOpenGL::GetAppletCaptureBuffer() {
++    using namespace VideoCore::Capture;
++
++    std::vector<u8> linear(TiledSize);
++    std::vector<u8> out(TiledSize);
++
++    GLint old_read_fb;
++    GLint old_draw_fb;
++    GLint old_pixel_pack_buffer;
++    GLint old_pack_row_length;
++    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read_fb);
++    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw_fb);
++    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &old_pixel_pack_buffer);
++    glGetIntegerv(GL_PACK_ROW_LENGTH, &old_pack_row_length);
++
++    glBindFramebuffer(GL_FRAMEBUFFER, capture_framebuffer.handle);
++    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER,
++                              capture_renderbuffer.handle);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
++    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
++    glReadPixels(0, 0, LinearWidth, LinearHeight, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8_REV,
++                 linear.data());
++
++    glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read_fb);
++    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw_fb);
++    glBindBuffer(GL_PIXEL_PACK_BUFFER, old_pixel_pack_buffer);
++    glPixelStorei(GL_PACK_ROW_LENGTH, old_pack_row_length);
++
++    Tegra::Texture::SwizzleTexture(out, linear, BytesPerPixel, LinearWidth, LinearHeight,
++                                   LinearDepth, BlockHeight, BlockDepth);
++
++    return out;
++}
++
+ } // namespace OpenGL
+diff --git a/src/video_core/renderer_opengl/renderer_opengl.h b/src/video_core/renderer_opengl/renderer_opengl.h
+index c4625c96e203..60d6a1477eff 100644
+--- a/src/video_core/renderer_opengl/renderer_opengl.h
++++ b/src/video_core/renderer_opengl/renderer_opengl.h
+@@ -42,6 +42,8 @@ class RendererOpenGL final : public VideoCore::RendererBase {
+ 
+     void Composite(std::span<const Tegra::FramebufferConfig> framebuffers) override;
+ 
++    std::vector<u8> GetAppletCaptureBuffer() override;
++
+     VideoCore::RasterizerInterface* ReadRasterizer() override {
+         return &rasterizer;
+     }
+@@ -52,7 +54,11 @@ class RendererOpenGL final : public VideoCore::RendererBase {
+ 
+ private:
+     void AddTelemetryFields();
++
++    void RenderToBuffer(std::span<const Tegra::FramebufferConfig> framebuffers,
++                        const Layout::FramebufferLayout& layout, void* dst);
+     void RenderScreenshot(std::span<const Tegra::FramebufferConfig> framebuffers);
++    void RenderAppletCaptureLayer(std::span<const Tegra::FramebufferConfig> framebuffers);
+ 
+     Core::TelemetrySession& telemetry_session;
+     Core::Frontend::EmuWindow& emu_window;
+@@ -64,8 +70,11 @@ class RendererOpenGL final : public VideoCore::RendererBase {
+     ProgramManager program_manager;
+     RasterizerOpenGL rasterizer;
+     OGLFramebuffer screenshot_framebuffer;
++    OGLFramebuffer capture_framebuffer;
++    OGLRenderbuffer capture_renderbuffer;
+ 
+     std::unique_ptr<BlitScreen> blit_screen;
++    std::unique_ptr<BlitScreen> blit_applet;
+ };
+ 
+ } // namespace OpenGL
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+index c7c234fd8112..c148efef2c5f 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -19,6 +19,7 @@
+ #include "core/core_timing.h"
+ #include "core/frontend/graphics_context.h"
+ #include "core/telemetry_session.h"
++#include "video_core/capture.h"
+ #include "video_core/gpu.h"
+ #include "video_core/renderer_vulkan/present/util.h"
+ #include "video_core/renderer_vulkan/renderer_vulkan.h"
+@@ -38,6 +39,20 @@
+ 
+ namespace Vulkan {
+ namespace {
++
++constexpr VkExtent2D CaptureImageSize{
++    .width = VideoCore::Capture::LinearWidth,
++    .height = VideoCore::Capture::LinearHeight,
++};
++
++constexpr VkExtent3D CaptureImageExtent{
++    .width = VideoCore::Capture::LinearWidth,
++    .height = VideoCore::Capture::LinearHeight,
++    .depth = VideoCore::Capture::LinearDepth,
++};
++
++constexpr VkFormat CaptureFormat = VK_FORMAT_A8B8G8R8_UNORM_PACK32;
++
+ std::string GetReadableVersion(u32 version) {
+     return fmt::format("{}.{}.{}", VK_VERSION_MAJOR(version), VK_VERSION_MINOR(version),
+                        VK_VERSION_PATCH(version));
+@@ -100,11 +115,11 @@ RendererVulkan::RendererVulkan(Core::TelemetrySession& telemetry_session_,
+       present_manager(instance, render_window, device, memory_allocator, scheduler, swapchain,
+                       surface),
+       blit_swapchain(device_memory, device, memory_allocator, present_manager, scheduler),
+-      blit_screenshot(device_memory, device, memory_allocator, present_manager, scheduler),
+-      blit_application_layer(device_memory, device, memory_allocator, present_manager, scheduler),
++      blit_capture(device_memory, device, memory_allocator, present_manager, scheduler),
++      blit_applet(device_memory, device, memory_allocator, present_manager, scheduler),
+       rasterizer(render_window, gpu, device_memory, device, memory_allocator, state_tracker,
+                  scheduler),
+-      application_frame() {
++      applet_frame() {
+     if (Settings::values.renderer_force_max_clock.GetValue() && device.ShouldBoostClocks()) {
+         turbo_mode.emplace(instance, dld);
+         scheduler.RegisterOnSubmit([this] { turbo_mode->QueueSubmitted(); });
+@@ -127,6 +142,8 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
+ 
+     SCOPE_EXIT({ render_window.OnFrameDisplayed(); });
+ 
++    RenderAppletCaptureLayer(framebuffers);
++
+     if (!render_window.IsShown()) {
+         return;
+     }
+@@ -169,30 +186,20 @@ void RendererVulkan::Report() const {
+     telemetry_session.AddField(field, "GPU_Vulkan_Extensions", extensions);
+ }
+ 
+-void Vulkan::RendererVulkan::RenderScreenshot(
+-    std::span<const Tegra::FramebufferConfig> framebuffers) {
+-    if (!renderer_settings.screenshot_requested) {
+-        return;
+-    }
+-
+-    constexpr VkFormat ScreenshotFormat{VK_FORMAT_B8G8R8A8_UNORM};
+-    const Layout::FramebufferLayout layout{renderer_settings.screenshot_framebuffer_layout};
+-
++vk::Buffer RendererVulkan::RenderToBuffer(std::span<const Tegra::FramebufferConfig> framebuffers,
++                                          const Layout::FramebufferLayout& layout, VkFormat format,
++                                          VkDeviceSize buffer_size) {
+     auto frame = [&]() {
+         Frame f{};
+-        f.image = CreateWrappedImage(memory_allocator, VkExtent2D{layout.width, layout.height},
+-                                     ScreenshotFormat);
+-        f.image_view = CreateWrappedImageView(device, f.image, ScreenshotFormat);
+-        f.framebuffer = blit_screenshot.CreateFramebuffer(layout, *f.image_view, ScreenshotFormat);
++        f.image =
++            CreateWrappedImage(memory_allocator, VkExtent2D{layout.width, layout.height}, format);
++        f.image_view = CreateWrappedImageView(device, f.image, format);
++        f.framebuffer = blit_capture.CreateFramebuffer(layout, *f.image_view, format);
+         return f;
+     }();
+ 
+-    blit_screenshot.DrawToFrame(rasterizer, &frame, framebuffers, layout, 1,
+-                                VK_FORMAT_B8G8R8A8_UNORM);
+-
+-    const auto dst_buffer = CreateWrappedBuffer(
+-        memory_allocator, static_cast<VkDeviceSize>(layout.width * layout.height * 4),
+-        MemoryUsage::Download);
++    auto dst_buffer = CreateWrappedBuffer(memory_allocator, buffer_size, MemoryUsage::Download);
++    blit_capture.DrawToFrame(rasterizer, &frame, framebuffers, layout, 1, format);
+ 
+     scheduler.RequestOutsideRenderPassOperationContext();
+     scheduler.Record([&](vk::CommandBuffer cmdbuf) {
+@@ -200,15 +207,68 @@ void Vulkan::RendererVulkan::RenderScreenshot(
+                            VkExtent3D{layout.width, layout.height, 1});
+     });
+ 
+-    // Ensure the copy is fully completed before saving the screenshot
++    // Ensure the copy is fully completed before saving the capture
+     scheduler.Finish();
+ 
+-    // Copy backing image data to the QImage screenshot buffer
++    // Copy backing image data to the capture buffer
+     dst_buffer.Invalidate();
++    return dst_buffer;
++}
++
++void RendererVulkan::RenderScreenshot(std::span<const Tegra::FramebufferConfig> framebuffers) {
++    if (!renderer_settings.screenshot_requested) {
++        return;
++    }
++
++    const auto& layout{renderer_settings.screenshot_framebuffer_layout};
++    const auto dst_buffer = RenderToBuffer(framebuffers, layout, VK_FORMAT_B8G8R8A8_UNORM,
++                                           layout.width * layout.height * 4);
++
+     std::memcpy(renderer_settings.screenshot_bits, dst_buffer.Mapped().data(),
+                 dst_buffer.Mapped().size());
+     renderer_settings.screenshot_complete_callback(false);
+     renderer_settings.screenshot_requested = false;
+ }
+ 
++std::vector<u8> RendererVulkan::GetAppletCaptureBuffer() {
++    using namespace VideoCore::Capture;
++
++    std::vector<u8> out(VideoCore::Capture::TiledSize);
++
++    if (!applet_frame.image) {
++        return out;
++    }
++
++    const auto dst_buffer =
++        CreateWrappedBuffer(memory_allocator, VideoCore::Capture::TiledSize, MemoryUsage::Download);
++
++    scheduler.RequestOutsideRenderPassOperationContext();
++    scheduler.Record([&](vk::CommandBuffer cmdbuf) {
++        DownloadColorImage(cmdbuf, *applet_frame.image, *dst_buffer, CaptureImageExtent);
++    });
++
++    // Ensure the copy is fully completed before writing the capture
++    scheduler.Finish();
++
++    // Swizzle image data to the capture buffer
++    dst_buffer.Invalidate();
++    Tegra::Texture::SwizzleTexture(out, dst_buffer.Mapped(), BytesPerPixel, LinearWidth,
++                                   LinearHeight, LinearDepth, BlockHeight, BlockDepth);
++
++    return out;
++}
++
++void RendererVulkan::RenderAppletCaptureLayer(
++    std::span<const Tegra::FramebufferConfig> framebuffers) {
++    if (!applet_frame.image) {
++        applet_frame.image = CreateWrappedImage(memory_allocator, CaptureImageSize, CaptureFormat);
++        applet_frame.image_view = CreateWrappedImageView(device, applet_frame.image, CaptureFormat);
++        applet_frame.framebuffer = blit_applet.CreateFramebuffer(
++            VideoCore::Capture::Layout, *applet_frame.image_view, CaptureFormat);
++    }
++
++    blit_applet.DrawToFrame(rasterizer, &applet_frame, framebuffers, VideoCore::Capture::Layout, 1,
++                            CaptureFormat);
++}
++
+ } // namespace Vulkan
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.h b/src/video_core/renderer_vulkan/renderer_vulkan.h
+index ed9c7af7f1fd..fb9d83412a2b 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.h
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.h
+@@ -48,6 +48,8 @@ class RendererVulkan final : public VideoCore::RendererBase {
+ 
+     void Composite(std::span<const Tegra::FramebufferConfig> framebuffers) override;
+ 
++    std::vector<u8> GetAppletCaptureBuffer() override;
++
+     VideoCore::RasterizerInterface* ReadRasterizer() override {
+         return &rasterizer;
+     }
+@@ -59,7 +61,11 @@ class RendererVulkan final : public VideoCore::RendererBase {
+ private:
+     void Report() const;
+ 
++    vk::Buffer RenderToBuffer(std::span<const Tegra::FramebufferConfig> framebuffers,
++                              const Layout::FramebufferLayout& layout, VkFormat format,
++                              VkDeviceSize buffer_size);
+     void RenderScreenshot(std::span<const Tegra::FramebufferConfig> framebuffers);
++    void RenderAppletCaptureLayer(std::span<const Tegra::FramebufferConfig> framebuffers);
+ 
+     Core::TelemetrySession& telemetry_session;
+     Tegra::MaxwellDeviceMemoryManager& device_memory;
+@@ -79,12 +85,12 @@ class RendererVulkan final : public VideoCore::RendererBase {
+     Swapchain swapchain;
+     PresentManager present_manager;
+     BlitScreen blit_swapchain;
+-    BlitScreen blit_screenshot;
+-    BlitScreen blit_application_layer;
++    BlitScreen blit_capture;
++    BlitScreen blit_applet;
+     RasterizerVulkan rasterizer;
+     std::optional<TurboMode> turbo_mode;
+ 
+-    Frame application_frame;
++    Frame applet_frame;
+ };
+ 
+ } // namespace Vulkan
+
+From 8b1b6e75a48e35a429c0543418e33a18de0957f8 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Sat, 27 Jan 2024 19:10:22 -0500
+Subject: [PATCH 6/9] gpu: dependency-inject scaling/antialiasing filter state
+ for capture layers
+
+---
+ src/video_core/CMakeLists.txt                 |  1 +
+ src/video_core/present.h                      | 37 +++++++++++++++++++
+ .../renderer_opengl/gl_blit_screen.cpp        | 11 +++---
+ .../renderer_opengl/gl_blit_screen.h          |  5 ++-
+ .../renderer_opengl/present/layer.cpp         | 10 +++--
+ .../renderer_opengl/present/layer.h           |  6 ++-
+ .../renderer_opengl/renderer_opengl.cpp       |  8 ++--
+ .../renderer_vulkan/present/layer.cpp         | 11 +++---
+ .../renderer_vulkan/present/layer.h           |  6 ++-
+ .../renderer_vulkan/renderer_vulkan.cpp       | 10 +++--
+ .../renderer_vulkan/vk_blit_screen.cpp        | 14 +++----
+ .../renderer_vulkan/vk_blit_screen.h          |  5 ++-
+ 12 files changed, 93 insertions(+), 31 deletions(-)
+ create mode 100644 src/video_core/present.h
+
+diff --git a/src/video_core/CMakeLists.txt b/src/video_core/CMakeLists.txt
+index b4ec7b25b38d..c934c4d37960 100644
+--- a/src/video_core/CMakeLists.txt
++++ b/src/video_core/CMakeLists.txt
+@@ -102,6 +102,7 @@ add_library(video_core STATIC
+     memory_manager.cpp
+     memory_manager.h
+     precompiled_headers.h
++    present.h
+     pte_kind.h
+     query_cache/bank_base.h
+     query_cache/query_base.h
+diff --git a/src/video_core/present.h b/src/video_core/present.h
+new file mode 100644
+index 000000000000..4fdfcca68655
+--- /dev/null
++++ b/src/video_core/present.h
+@@ -0,0 +1,37 @@
++// SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include "common/settings.h"
++
++static inline Settings::ScalingFilter GetScalingFilter() {
++    return Settings::values.scaling_filter.GetValue();
++}
++
++static inline Settings::AntiAliasing GetAntiAliasing() {
++    return Settings::values.anti_aliasing.GetValue();
++}
++
++static inline Settings::ScalingFilter GetScalingFilterForAppletCapture() {
++    return Settings::ScalingFilter::Bilinear;
++}
++
++static inline Settings::AntiAliasing GetAntiAliasingForAppletCapture() {
++    return Settings::AntiAliasing::None;
++}
++
++struct PresentFilters {
++    Settings::ScalingFilter (*get_scaling_filter)();
++    Settings::AntiAliasing (*get_anti_aliasing)();
++};
++
++constexpr PresentFilters PresentFiltersForDisplay{
++    .get_scaling_filter = &GetScalingFilter,
++    .get_anti_aliasing = &GetAntiAliasing,
++};
++
++constexpr PresentFilters PresentFiltersForAppletCapture{
++    .get_scaling_filter = &GetScalingFilterForAppletCapture,
++    .get_anti_aliasing = &GetAntiAliasingForAppletCapture,
++};
+diff --git a/src/video_core/renderer_opengl/gl_blit_screen.cpp b/src/video_core/renderer_opengl/gl_blit_screen.cpp
+index 0282905ee2fd..9260a4dc435e 100644
+--- a/src/video_core/renderer_opengl/gl_blit_screen.cpp
++++ b/src/video_core/renderer_opengl/gl_blit_screen.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include "common/settings.h"
++#include "video_core/present.h"
+ #include "video_core/renderer_opengl/gl_blit_screen.h"
+ #include "video_core/renderer_opengl/gl_state_tracker.h"
+ #include "video_core/renderer_opengl/present/filters.h"
+@@ -13,9 +14,9 @@ namespace OpenGL {
+ BlitScreen::BlitScreen(RasterizerOpenGL& rasterizer_,
+                        Tegra::MaxwellDeviceMemoryManager& device_memory_,
+                        StateTracker& state_tracker_, ProgramManager& program_manager_,
+-                       Device& device_)
++                       Device& device_, const PresentFilters& filters_)
+     : rasterizer(rasterizer_), device_memory(device_memory_), state_tracker(state_tracker_),
+-      program_manager(program_manager_), device(device_) {}
++      program_manager(program_manager_), device(device_), filters(filters_) {}
+ 
+ BlitScreen::~BlitScreen() = default;
+ 
+@@ -56,7 +57,7 @@ void BlitScreen::DrawScreen(std::span<const Tegra::FramebufferConfig> framebuffe
+     glDepthRangeIndexed(0, 0.0, 0.0);
+ 
+     while (layers.size() < framebuffers.size()) {
+-        layers.emplace_back(rasterizer, device_memory);
++        layers.emplace_back(rasterizer, device_memory, filters);
+     }
+ 
+     CreateWindowAdapt();
+@@ -67,11 +68,11 @@ void BlitScreen::DrawScreen(std::span<const Tegra::FramebufferConfig> framebuffe
+ }
+ 
+ void BlitScreen::CreateWindowAdapt() {
+-    if (window_adapt && Settings::values.scaling_filter.GetValue() == current_window_adapt) {
++    if (window_adapt && filters.get_scaling_filter() == current_window_adapt) {
+         return;
+     }
+ 
+-    current_window_adapt = Settings::values.scaling_filter.GetValue();
++    current_window_adapt = filters.get_scaling_filter();
+     switch (current_window_adapt) {
+     case Settings::ScalingFilter::NearestNeighbor:
+         window_adapt = MakeNearestNeighbor(device);
+diff --git a/src/video_core/renderer_opengl/gl_blit_screen.h b/src/video_core/renderer_opengl/gl_blit_screen.h
+index 4e261d333774..df2da9424932 100644
+--- a/src/video_core/renderer_opengl/gl_blit_screen.h
++++ b/src/video_core/renderer_opengl/gl_blit_screen.h
+@@ -15,6 +15,8 @@ namespace Layout {
+ struct FramebufferLayout;
+ }
+ 
++struct PresentFilters;
++
+ namespace Tegra {
+ struct FramebufferConfig;
+ }
+@@ -46,7 +48,7 @@ class BlitScreen {
+     explicit BlitScreen(RasterizerOpenGL& rasterizer,
+                         Tegra::MaxwellDeviceMemoryManager& device_memory,
+                         StateTracker& state_tracker, ProgramManager& program_manager,
+-                        Device& device);
++                        Device& device, const PresentFilters& filters);
+     ~BlitScreen();
+ 
+     /// Draws the emulated screens to the emulator window.
+@@ -61,6 +63,7 @@ class BlitScreen {
+     StateTracker& state_tracker;
+     ProgramManager& program_manager;
+     Device& device;
++    const PresentFilters& filters;
+ 
+     Settings::ScalingFilter current_window_adapt{};
+     std::unique_ptr<WindowAdaptPass> window_adapt;
+diff --git a/src/video_core/renderer_opengl/present/layer.cpp b/src/video_core/renderer_opengl/present/layer.cpp
+index 3e4377db483c..6c7092d2292b 100644
+--- a/src/video_core/renderer_opengl/present/layer.cpp
++++ b/src/video_core/renderer_opengl/present/layer.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include "video_core/framebuffer_config.h"
++#include "video_core/present.h"
+ #include "video_core/renderer_opengl/gl_blit_screen.h"
+ #include "video_core/renderer_opengl/gl_rasterizer.h"
+ #include "video_core/renderer_opengl/present/fsr.h"
+@@ -14,8 +15,9 @@
+ 
+ namespace OpenGL {
+ 
+-Layer::Layer(RasterizerOpenGL& rasterizer_, Tegra::MaxwellDeviceMemoryManager& device_memory_)
+-    : rasterizer(rasterizer_), device_memory(device_memory_) {
++Layer::Layer(RasterizerOpenGL& rasterizer_, Tegra::MaxwellDeviceMemoryManager& device_memory_,
++             const PresentFilters& filters_)
++    : rasterizer(rasterizer_), device_memory(device_memory_), filters(filters_) {
+     // Allocate textures for the screen
+     framebuffer_texture.resource.Create(GL_TEXTURE_2D);
+ 
+@@ -39,7 +41,7 @@ GLuint Layer::ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
+     auto crop = Tegra::NormalizeCrop(framebuffer, info.width, info.height);
+     GLuint texture = info.display_texture;
+ 
+-    auto anti_aliasing = Settings::values.anti_aliasing.GetValue();
++    auto anti_aliasing = filters.get_anti_aliasing();
+     if (anti_aliasing != Settings::AntiAliasing::None) {
+         glEnablei(GL_SCISSOR_TEST, 0);
+         auto viewport_width = Settings::values.resolution_info.ScaleUp(framebuffer_texture.width);
+@@ -64,7 +66,7 @@ GLuint Layer::ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
+ 
+     glDisablei(GL_SCISSOR_TEST, 0);
+ 
+-    if (Settings::values.scaling_filter.GetValue() == Settings::ScalingFilter::Fsr) {
++    if (filters.get_scaling_filter() == Settings::ScalingFilter::Fsr) {
+         if (!fsr || fsr->NeedsRecreation(layout.screen)) {
+             fsr = std::make_unique<FSR>(layout.screen.GetWidth(), layout.screen.GetHeight());
+         }
+diff --git a/src/video_core/renderer_opengl/present/layer.h b/src/video_core/renderer_opengl/present/layer.h
+index 77bb97f4fe6e..5b15b730fc5f 100644
+--- a/src/video_core/renderer_opengl/present/layer.h
++++ b/src/video_core/renderer_opengl/present/layer.h
+@@ -13,6 +13,8 @@ namespace Layout {
+ struct FramebufferLayout;
+ }
+ 
++struct PresentFilters;
++
+ namespace Service::android {
+ enum class PixelFormat : u32;
+ };
+@@ -44,7 +46,8 @@ struct ScreenRectVertex;
+ 
+ class Layer {
+ public:
+-    explicit Layer(RasterizerOpenGL& rasterizer, Tegra::MaxwellDeviceMemoryManager& device_memory);
++    explicit Layer(RasterizerOpenGL& rasterizer, Tegra::MaxwellDeviceMemoryManager& device_memory,
++                   const PresentFilters& filters);
+     ~Layer();
+ 
+     GLuint ConfigureDraw(std::array<GLfloat, 3 * 2>& out_matrix,
+@@ -65,6 +68,7 @@ class Layer {
+ private:
+     RasterizerOpenGL& rasterizer;
+     Tegra::MaxwellDeviceMemoryManager& device_memory;
++    const PresentFilters& filters;
+ 
+     /// OpenGL framebuffer data
+     std::vector<u8> gl_framebuffer_data;
+diff --git a/src/video_core/renderer_opengl/renderer_opengl.cpp b/src/video_core/renderer_opengl/renderer_opengl.cpp
+index a1a8491e5711..5fb54635d08a 100644
+--- a/src/video_core/renderer_opengl/renderer_opengl.cpp
++++ b/src/video_core/renderer_opengl/renderer_opengl.cpp
+@@ -17,6 +17,7 @@
+ #include "core/frontend/emu_window.h"
+ #include "core/telemetry_session.h"
+ #include "video_core/capture.h"
++#include "video_core/present.h"
+ #include "video_core/renderer_opengl/gl_blit_screen.h"
+ #include "video_core/renderer_opengl/gl_rasterizer.h"
+ #include "video_core/renderer_opengl/gl_shader_manager.h"
+@@ -121,9 +122,10 @@ RendererOpenGL::RendererOpenGL(Core::TelemetrySession& telemetry_session_,
+         glEnableClientState(GL_ELEMENT_ARRAY_UNIFIED_NV);
+     }
+     blit_screen = std::make_unique<BlitScreen>(rasterizer, device_memory, state_tracker,
+-                                               program_manager, device);
+-    blit_applet = std::make_unique<BlitScreen>(rasterizer, device_memory, state_tracker,
+-                                               program_manager, device);
++                                               program_manager, device, PresentFiltersForDisplay);
++    blit_applet =
++        std::make_unique<BlitScreen>(rasterizer, device_memory, state_tracker, program_manager,
++                                     device, PresentFiltersForAppletCapture);
+     capture_framebuffer.Create();
+     capture_renderbuffer.Create();
+     glBindRenderbuffer(GL_RENDERBUFFER, capture_renderbuffer.handle);
+diff --git a/src/video_core/renderer_vulkan/present/layer.cpp b/src/video_core/renderer_vulkan/present/layer.cpp
+index 550955d4daa1..3847a9a130e0 100644
+--- a/src/video_core/renderer_vulkan/present/layer.cpp
++++ b/src/video_core/renderer_vulkan/present/layer.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include "video_core/present.h"
+ #include "video_core/renderer_vulkan/vk_rasterizer.h"
+ 
+ #include "common/settings.h"
+@@ -48,12 +49,12 @@ VkFormat GetFormat(const Tegra::FramebufferConfig& framebuffer) {
+ 
+ Layer::Layer(const Device& device_, MemoryAllocator& memory_allocator_, Scheduler& scheduler_,
+              Tegra::MaxwellDeviceMemoryManager& device_memory_, size_t image_count_,
+-             VkExtent2D output_size, VkDescriptorSetLayout layout)
++             VkExtent2D output_size, VkDescriptorSetLayout layout, const PresentFilters& filters_)
+     : device(device_), memory_allocator(memory_allocator_), scheduler(scheduler_),
+-      device_memory(device_memory_), image_count(image_count_) {
++      device_memory(device_memory_), filters(filters_), image_count(image_count_) {
+     CreateDescriptorPool();
+     CreateDescriptorSets(layout);
+-    if (Settings::values.scaling_filter.GetValue() == Settings::ScalingFilter::Fsr) {
++    if (filters.get_scaling_filter() == Settings::ScalingFilter::Fsr) {
+         CreateFSR(output_size);
+     }
+ }
+@@ -171,11 +172,11 @@ void Layer::RefreshResources(const Tegra::FramebufferConfig& framebuffer) {
+ }
+ 
+ void Layer::SetAntiAliasPass() {
+-    if (anti_alias && anti_alias_setting == Settings::values.anti_aliasing.GetValue()) {
++    if (anti_alias && anti_alias_setting == filters.get_anti_aliasing()) {
+         return;
+     }
+ 
+-    anti_alias_setting = Settings::values.anti_aliasing.GetValue();
++    anti_alias_setting = filters.get_anti_aliasing();
+ 
+     const VkExtent2D render_area{
+         .width = Settings::values.resolution_info.ScaleUp(raw_width),
+diff --git a/src/video_core/renderer_vulkan/present/layer.h b/src/video_core/renderer_vulkan/present/layer.h
+index 88d43fc5f6d9..f5effdcd7f11 100644
+--- a/src/video_core/renderer_vulkan/present/layer.h
++++ b/src/video_core/renderer_vulkan/present/layer.h
+@@ -11,6 +11,8 @@ namespace Layout {
+ struct FramebufferLayout;
+ }
+ 
++struct PresentFilters;
++
+ namespace Tegra {
+ struct FramebufferConfig;
+ }
+@@ -37,7 +39,8 @@ class Layer final {
+ public:
+     explicit Layer(const Device& device, MemoryAllocator& memory_allocator, Scheduler& scheduler,
+                    Tegra::MaxwellDeviceMemoryManager& device_memory, size_t image_count,
+-                   VkExtent2D output_size, VkDescriptorSetLayout layout);
++                   VkExtent2D output_size, VkDescriptorSetLayout layout,
++                   const PresentFilters& filters);
+     ~Layer();
+ 
+     void ConfigureDraw(PresentPushConstants* out_push_constants,
+@@ -71,6 +74,7 @@ class Layer final {
+     MemoryAllocator& memory_allocator;
+     Scheduler& scheduler;
+     Tegra::MaxwellDeviceMemoryManager& device_memory;
++    const PresentFilters& filters;
+     const size_t image_count{};
+     vk::DescriptorPool descriptor_pool{};
+     vk::DescriptorSets descriptor_sets{};
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+index c148efef2c5f..d504171162f8 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -21,6 +21,7 @@
+ #include "core/telemetry_session.h"
+ #include "video_core/capture.h"
+ #include "video_core/gpu.h"
++#include "video_core/present.h"
+ #include "video_core/renderer_vulkan/present/util.h"
+ #include "video_core/renderer_vulkan/renderer_vulkan.h"
+ #include "video_core/renderer_vulkan/vk_blit_screen.h"
+@@ -114,9 +115,12 @@ RendererVulkan::RendererVulkan(Core::TelemetrySession& telemetry_session_,
+                 render_window.GetFramebufferLayout().height),
+       present_manager(instance, render_window, device, memory_allocator, scheduler, swapchain,
+                       surface),
+-      blit_swapchain(device_memory, device, memory_allocator, present_manager, scheduler),
+-      blit_capture(device_memory, device, memory_allocator, present_manager, scheduler),
+-      blit_applet(device_memory, device, memory_allocator, present_manager, scheduler),
++      blit_swapchain(device_memory, device, memory_allocator, present_manager, scheduler,
++                     PresentFiltersForDisplay),
++      blit_capture(device_memory, device, memory_allocator, present_manager, scheduler,
++                   PresentFiltersForDisplay),
++      blit_applet(device_memory, device, memory_allocator, present_manager, scheduler,
++                  PresentFiltersForAppletCapture),
+       rasterizer(render_window, gpu, device_memory, device, memory_allocator, state_tracker,
+                  scheduler),
+       applet_frame() {
+diff --git a/src/video_core/renderer_vulkan/vk_blit_screen.cpp b/src/video_core/renderer_vulkan/vk_blit_screen.cpp
+index 2275fcc46a2d..b7797f83375d 100644
+--- a/src/video_core/renderer_vulkan/vk_blit_screen.cpp
++++ b/src/video_core/renderer_vulkan/vk_blit_screen.cpp
+@@ -2,6 +2,7 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include "video_core/framebuffer_config.h"
++#include "video_core/present.h"
+ #include "video_core/renderer_vulkan/present/filters.h"
+ #include "video_core/renderer_vulkan/present/layer.h"
+ #include "video_core/renderer_vulkan/vk_blit_screen.h"
+@@ -12,9 +13,9 @@ namespace Vulkan {
+ 
+ BlitScreen::BlitScreen(Tegra::MaxwellDeviceMemoryManager& device_memory_, const Device& device_,
+                        MemoryAllocator& memory_allocator_, PresentManager& present_manager_,
+-                       Scheduler& scheduler_)
++                       Scheduler& scheduler_, const PresentFilters& filters_)
+     : device_memory{device_memory_}, device{device_}, memory_allocator{memory_allocator_},
+-      present_manager{present_manager_}, scheduler{scheduler_}, image_count{1},
++      present_manager{present_manager_}, scheduler{scheduler_}, filters{filters_}, image_count{1},
+       swapchain_view_format{VK_FORMAT_B8G8R8A8_UNORM} {}
+ 
+ BlitScreen::~BlitScreen() = default;
+@@ -27,7 +28,7 @@ void BlitScreen::WaitIdle() {
+ 
+ void BlitScreen::SetWindowAdaptPass() {
+     layers.clear();
+-    scaling_filter = Settings::values.scaling_filter.GetValue();
++    scaling_filter = filters.get_scaling_filter();
+ 
+     switch (scaling_filter) {
+     case Settings::ScalingFilter::NearestNeighbor:
+@@ -59,7 +60,7 @@ void BlitScreen::DrawToFrame(RasterizerVulkan& rasterizer, Frame* frame,
+     bool presentation_recreate_required = false;
+ 
+     // Recreate dynamic resources if the adapting filter changed
+-    if (!window_adapt || scaling_filter != Settings::values.scaling_filter.GetValue()) {
++    if (!window_adapt || scaling_filter != filters.get_scaling_filter()) {
+         resource_update_required = true;
+     }
+ 
+@@ -102,7 +103,7 @@ void BlitScreen::DrawToFrame(RasterizerVulkan& rasterizer, Frame* frame,
+ 
+     while (layers.size() < framebuffers.size()) {
+         layers.emplace_back(device, memory_allocator, scheduler, device_memory, image_count,
+-                            window_size, window_adapt->GetDescriptorSetLayout());
++                            window_size, window_adapt->GetDescriptorSetLayout(), filters);
+     }
+ 
+     // Perform the draw
+@@ -119,8 +120,7 @@ vk::Framebuffer BlitScreen::CreateFramebuffer(const Layout::FramebufferLayout& l
+                                               VkFormat current_view_format) {
+     const bool format_updated =
+         std::exchange(swapchain_view_format, current_view_format) != current_view_format;
+-    if (!window_adapt || scaling_filter != Settings::values.scaling_filter.GetValue() ||
+-        format_updated) {
++    if (!window_adapt || scaling_filter != filters.get_scaling_filter() || format_updated) {
+         WaitIdle();
+         SetWindowAdaptPass();
+     }
+diff --git a/src/video_core/renderer_vulkan/vk_blit_screen.h b/src/video_core/renderer_vulkan/vk_blit_screen.h
+index cbdf2d5d0b6b..531c57fc5c49 100644
+--- a/src/video_core/renderer_vulkan/vk_blit_screen.h
++++ b/src/video_core/renderer_vulkan/vk_blit_screen.h
+@@ -16,6 +16,8 @@ namespace Core {
+ class System;
+ }
+ 
++struct PresentFilters;
++
+ namespace Tegra {
+ struct FramebufferConfig;
+ }
+@@ -47,7 +49,7 @@ class BlitScreen {
+ public:
+     explicit BlitScreen(Tegra::MaxwellDeviceMemoryManager& device_memory, const Device& device,
+                         MemoryAllocator& memory_allocator, PresentManager& present_manager,
+-                        Scheduler& scheduler);
++                        Scheduler& scheduler, const PresentFilters& filters);
+     ~BlitScreen();
+ 
+     void DrawToFrame(RasterizerVulkan& rasterizer, Frame* frame,
+@@ -70,6 +72,7 @@ class BlitScreen {
+     MemoryAllocator& memory_allocator;
+     PresentManager& present_manager;
+     Scheduler& scheduler;
++    const PresentFilters& filters;
+     std::size_t image_count{};
+     std::size_t image_index{};
+     VkFormat swapchain_view_format{};
+
+From 678d37bb1b6cc1e38d4f9e26e109b0efadd4b81a Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Fri, 26 Jan 2024 23:28:24 -0500
+Subject: [PATCH 7/9] general: add default configurations for applet mode
+
+---
+ src/common/settings.cpp                       |  3 +
+ src/common/settings.h                         | 32 +++++++
+ src/common/settings_common.h                  |  1 +
+ src/common/settings_enums.h                   |  2 +
+ .../hle/service/am/library_applet_creator.cpp | 51 +++++++++--
+ src/frontend_common/config.cpp                | 18 ++++
+ src/frontend_common/config.h                  |  2 +
+ src/yuzu/CMakeLists.txt                       |  3 +
+ src/yuzu/configuration/configure_applets.cpp  | 86 +++++++++++++++++++
+ src/yuzu/configuration/configure_applets.h    | 48 +++++++++++
+ src/yuzu/configuration/configure_applets.ui   | 65 ++++++++++++++
+ src/yuzu/configuration/configure_dialog.cpp   |  7 +-
+ src/yuzu/configuration/configure_dialog.h     |  2 +
+ src/yuzu/configuration/shared_translation.cpp | 22 +++++
+ 14 files changed, 334 insertions(+), 8 deletions(-)
+ create mode 100644 src/yuzu/configuration/configure_applets.cpp
+ create mode 100644 src/yuzu/configuration/configure_applets.h
+ create mode 100644 src/yuzu/configuration/configure_applets.ui
+
+diff --git a/src/common/settings.cpp b/src/common/settings.cpp
+index 07709d4e5c19..80d388fe88b4 100644
+--- a/src/common/settings.cpp
++++ b/src/common/settings.cpp
+@@ -30,6 +30,7 @@ namespace Settings {
+ #define SETTING(TYPE, RANGED) template class Setting<TYPE, RANGED>
+ #define SWITCHABLE(TYPE, RANGED) template class SwitchableSetting<TYPE, RANGED>
+ 
++SETTING(AppletMode, false);
+ SETTING(AudioEngine, false);
+ SETTING(bool, false);
+ SETTING(int, false);
+@@ -215,6 +216,8 @@ const char* TranslateCategory(Category category) {
+         return "Debugging";
+     case Category::GpuDriver:
+         return "GpuDriver";
++    case Category::LibraryApplet:
++        return "LibraryApplet";
+     case Category::Miscellaneous:
+         return "Miscellaneous";
+     case Category::Network:
+diff --git a/src/common/settings.h b/src/common/settings.h
+index f1b1add56f6a..aa054dc24c18 100644
+--- a/src/common/settings.h
++++ b/src/common/settings.h
+@@ -133,6 +133,38 @@ struct TouchFromButtonMap {
+ struct Values {
+     Linkage linkage{};
+ 
++    // Applet
++    Setting<AppletMode> cabinet_applet_mode{linkage, AppletMode::LLE, "cabinet_applet_mode",
++                                            Category::LibraryApplet};
++    Setting<AppletMode> controller_applet_mode{linkage, AppletMode::HLE, "controller_applet_mode",
++                                               Category::LibraryApplet};
++    Setting<AppletMode> data_erase_applet_mode{linkage, AppletMode::HLE, "data_erase_applet_mode",
++                                               Category::LibraryApplet};
++    Setting<AppletMode> error_applet_mode{linkage, AppletMode::HLE, "error_applet_mode",
++                                          Category::LibraryApplet};
++    Setting<AppletMode> net_connect_applet_mode{linkage, AppletMode::HLE, "net_connect_applet_mode",
++                                                Category::LibraryApplet};
++    Setting<AppletMode> player_select_applet_mode{
++        linkage, AppletMode::HLE, "player_select_applet_mode", Category::LibraryApplet};
++    Setting<AppletMode> swkbd_applet_mode{linkage, AppletMode::LLE, "swkbd_applet_mode",
++                                          Category::LibraryApplet};
++    Setting<AppletMode> mii_edit_applet_mode{linkage, AppletMode::LLE, "mii_edit_applet_mode",
++                                             Category::LibraryApplet};
++    Setting<AppletMode> web_applet_mode{linkage, AppletMode::HLE, "web_applet_mode",
++                                        Category::LibraryApplet};
++    Setting<AppletMode> shop_applet_mode{linkage, AppletMode::HLE, "shop_applet_mode",
++                                         Category::LibraryApplet};
++    Setting<AppletMode> photo_viewer_applet_mode{
++        linkage, AppletMode::LLE, "photo_viewer_applet_mode", Category::LibraryApplet};
++    Setting<AppletMode> offline_web_applet_mode{linkage, AppletMode::LLE, "offline_web_applet_mode",
++                                                Category::LibraryApplet};
++    Setting<AppletMode> login_share_applet_mode{linkage, AppletMode::HLE, "login_share_applet_mode",
++                                                Category::LibraryApplet};
++    Setting<AppletMode> wifi_web_auth_applet_mode{
++        linkage, AppletMode::HLE, "wifi_web_auth_applet_mode", Category::LibraryApplet};
++    Setting<AppletMode> my_page_applet_mode{linkage, AppletMode::LLE, "my_page_applet_mode",
++                                            Category::LibraryApplet};
++
+     // Audio
+     SwitchableSetting<AudioEngine> sink_id{linkage, AudioEngine::Auto, "output_engine",
+                                            Category::Audio, Specialization::RuntimeList};
+diff --git a/src/common/settings_common.h b/src/common/settings_common.h
+index 987489e8a3a4..2df3f08099c8 100644
+--- a/src/common/settings_common.h
++++ b/src/common/settings_common.h
+@@ -44,6 +44,7 @@ enum class Category : u32 {
+     Services,
+     Paths,
+     Linux,
++    LibraryApplet,
+     MaxEnum,
+ };
+ 
+diff --git a/src/common/settings_enums.h b/src/common/settings_enums.h
+index 61703658867f..f42367e67efd 100644
+--- a/src/common/settings_enums.h
++++ b/src/common/settings_enums.h
+@@ -151,6 +151,8 @@ ENUM(AspectRatio, R16_9, R4_3, R21_9, R16_10, Stretch);
+ 
+ ENUM(ConsoleMode, Handheld, Docked);
+ 
++ENUM(AppletMode, HLE, LLE);
++
+ template <typename Type>
+ inline std::string CanonicalizeEnum(Type id) {
+     const auto group = EnumMetadata<Type>::Canonicalizations();
+diff --git a/src/core/hle/service/am/library_applet_creator.cpp b/src/core/hle/service/am/library_applet_creator.cpp
+index ee646bea5511..a883a021e405 100644
+--- a/src/core/hle/service/am/library_applet_creator.cpp
++++ b/src/core/hle/service/am/library_applet_creator.cpp
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include "common/settings.h"
+ #include "core/hle/kernel/k_transfer_memory.h"
+ #include "core/hle/service/am/applet_data_broker.h"
+ #include "core/hle/service/am/applet_manager.h"
+@@ -16,6 +17,34 @@ namespace Service::AM {
+ 
+ namespace {
+ 
++bool ShouldCreateGuestApplet(AppletId applet_id) {
++#define X(Name, name)                                                                              \
++    if (applet_id == AppletId::Name &&                                                             \
++        Settings::values.name##_applet_mode.GetValue() != Settings::AppletMode::LLE) {             \
++        return false;                                                                              \
++    }
++
++    X(Cabinet, cabinet)
++    X(Controller, controller)
++    X(DataErase, data_erase)
++    X(Error, error)
++    X(NetConnect, net_connect)
++    X(ProfileSelect, player_select)
++    X(SoftwareKeyboard, swkbd)
++    X(MiiEdit, mii_edit)
++    X(Web, web)
++    X(Shop, shop)
++    X(PhotoViewer, photo_viewer)
++    X(OfflineWeb, offline_web)
++    X(LoginShare, login_share)
++    X(WebAuth, wifi_web_auth)
++    X(MyPage, my_page)
++
++#undef X
++
++    return true;
++}
++
+ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
+     switch (applet_id) {
+     case AppletId::OverlayDisplay:
+@@ -63,9 +92,10 @@ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
+     }
+ }
+ 
+-[[maybe_unused]] std::shared_ptr<ILibraryAppletAccessor> CreateGuestApplet(
+-    Core::System& system, std::shared_ptr<Applet> caller_applet, AppletId applet_id,
+-    LibraryAppletMode mode) {
++std::shared_ptr<ILibraryAppletAccessor> CreateGuestApplet(Core::System& system,
++                                                          std::shared_ptr<Applet> caller_applet,
++                                                          AppletId applet_id,
++                                                          LibraryAppletMode mode) {
+     const auto program_id = static_cast<u64>(AppletIdToProgramId(applet_id));
+     if (program_id == 0) {
+         // Unknown applet
+@@ -117,9 +147,10 @@ AppletProgramId AppletIdToProgramId(AppletId applet_id) {
+     return std::make_shared<ILibraryAppletAccessor>(system, broker, applet);
+ }
+ 
+-[[maybe_unused]] std::shared_ptr<ILibraryAppletAccessor> CreateFrontendApplet(
+-    Core::System& system, std::shared_ptr<Applet> caller_applet, AppletId applet_id,
+-    LibraryAppletMode mode) {
++std::shared_ptr<ILibraryAppletAccessor> CreateFrontendApplet(Core::System& system,
++                                                             std::shared_ptr<Applet> caller_applet,
++                                                             AppletId applet_id,
++                                                             LibraryAppletMode mode) {
+     const auto program_id = static_cast<u64>(AppletIdToProgramId(applet_id));
+ 
+     auto process = std::make_unique<Process>(system);
+@@ -163,7 +194,13 @@ void ILibraryAppletCreator::CreateLibraryApplet(HLERequestContext& ctx) {
+     LOG_DEBUG(Service_AM, "called with applet_id={:08X}, applet_mode={:08X}", applet_id,
+               applet_mode);
+ 
+-    auto library_applet = CreateFrontendApplet(system, applet, applet_id, applet_mode);
++    std::shared_ptr<ILibraryAppletAccessor> library_applet;
++    if (ShouldCreateGuestApplet(applet_id)) {
++        library_applet = CreateGuestApplet(system, applet, applet_id, applet_mode);
++    }
++    if (!library_applet) {
++        library_applet = CreateFrontendApplet(system, applet, applet_id, applet_mode);
++    }
+     if (!library_applet) {
+         LOG_ERROR(Service_AM, "Applet doesn't exist! applet_id={}", applet_id);
+ 
+diff --git a/src/frontend_common/config.cpp b/src/frontend_common/config.cpp
+index d34624d28483..cbbb07ac7ce0 100644
+--- a/src/frontend_common/config.cpp
++++ b/src/frontend_common/config.cpp
+@@ -401,6 +401,14 @@ void Config::ReadNetworkValues() {
+     EndGroup();
+ }
+ 
++void Config::ReadLibraryAppletValues() {
++    BeginGroup(Settings::TranslateCategory(Settings::Category::LibraryApplet));
++
++    ReadCategory(Settings::Category::LibraryApplet);
++
++    EndGroup();
++}
++
+ void Config::ReadValues() {
+     if (global) {
+         ReadDataStorageValues();
+@@ -410,6 +418,7 @@ void Config::ReadValues() {
+         ReadServiceValues();
+         ReadWebServiceValues();
+         ReadMiscellaneousValues();
++        ReadLibraryAppletValues();
+     }
+     ReadControlValues();
+     ReadCoreValues();
+@@ -511,6 +520,7 @@ void Config::SaveValues() {
+         SaveNetworkValues();
+         SaveWebServiceValues();
+         SaveMiscellaneousValues();
++        SaveLibraryAppletValues();
+     } else {
+         LOG_DEBUG(Config, "Saving only generic configuration values");
+     }
+@@ -691,6 +701,14 @@ void Config::SaveWebServiceValues() {
+     EndGroup();
+ }
+ 
++void Config::SaveLibraryAppletValues() {
++    BeginGroup(Settings::TranslateCategory(Settings::Category::LibraryApplet));
++
++    WriteCategory(Settings::Category::LibraryApplet);
++
++    EndGroup();
++}
++
+ bool Config::ReadBooleanSetting(const std::string& key, const std::optional<bool> default_value) {
+     std::string full_key = GetFullKey(key, false);
+     if (!default_value.has_value()) {
+diff --git a/src/frontend_common/config.h b/src/frontend_common/config.h
+index 4ecb97044c94..8b0599cc33e5 100644
+--- a/src/frontend_common/config.h
++++ b/src/frontend_common/config.h
+@@ -88,6 +88,7 @@ class Config {
+     void ReadSystemValues();
+     void ReadWebServiceValues();
+     void ReadNetworkValues();
++    void ReadLibraryAppletValues();
+ 
+     // Read platform specific sections
+     virtual void ReadHidbusValues() = 0;
+@@ -121,6 +122,7 @@ class Config {
+     void SaveScreenshotValues();
+     void SaveSystemValues();
+     void SaveWebServiceValues();
++    void SaveLibraryAppletValues();
+ 
+     // Save platform specific sections
+     virtual void SaveHidbusValues() = 0;
+diff --git a/src/yuzu/CMakeLists.txt b/src/yuzu/CMakeLists.txt
+index 76f06da12988..0259a8c29373 100644
+--- a/src/yuzu/CMakeLists.txt
++++ b/src/yuzu/CMakeLists.txt
+@@ -41,6 +41,9 @@ add_executable(yuzu
+     configuration/configuration_shared.cpp
+     configuration/configuration_shared.h
+     configuration/configure.ui
++    configuration/configure_applets.cpp
++    configuration/configure_applets.h
++    configuration/configure_applets.ui
+     configuration/configure_audio.cpp
+     configuration/configure_audio.h
+     configuration/configure_audio.ui
+diff --git a/src/yuzu/configuration/configure_applets.cpp b/src/yuzu/configuration/configure_applets.cpp
+new file mode 100644
+index 000000000000..513ecb548e7c
+--- /dev/null
++++ b/src/yuzu/configuration/configure_applets.cpp
+@@ -0,0 +1,86 @@
++// SPDX-FileCopyrightText: 2024 yuzu Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#include "common/settings.h"
++#include "core/core.h"
++#include "ui_configure_applets.h"
++#include "yuzu/configuration/configuration_shared.h"
++#include "yuzu/configuration/configure_applets.h"
++#include "yuzu/configuration/shared_widget.h"
++
++ConfigureApplets::ConfigureApplets(Core::System& system_,
++                                   std::shared_ptr<std::vector<ConfigurationShared::Tab*>> group_,
++                                   const ConfigurationShared::Builder& builder, QWidget* parent)
++    : Tab(group_, parent), ui{std::make_unique<Ui::ConfigureApplets>()}, system{system_} {
++    ui->setupUi(this);
++
++    Setup(builder);
++
++    SetConfiguration();
++}
++
++ConfigureApplets::~ConfigureApplets() = default;
++
++void ConfigureApplets::changeEvent(QEvent* event) {
++    if (event->type() == QEvent::LanguageChange) {
++        RetranslateUI();
++    }
++
++    QWidget::changeEvent(event);
++}
++
++void ConfigureApplets::RetranslateUI() {
++    ui->retranslateUi(this);
++}
++
++void ConfigureApplets::Setup(const ConfigurationShared::Builder& builder) {
++    auto& library_applets_layout = *ui->group_library_applet_modes->layout();
++    std::map<u32, QWidget*> applets_hold{};
++
++    std::vector<Settings::BasicSetting*> settings;
++    auto push = [&settings](auto& list) {
++        for (auto setting : list) {
++            settings.push_back(setting);
++        }
++    };
++
++    push(Settings::values.linkage.by_category[Settings::Category::LibraryApplet]);
++
++    for (auto setting : settings) {
++        ConfigurationShared::Widget* widget = builder.BuildWidget(setting, apply_funcs);
++
++        if (widget == nullptr) {
++            continue;
++        }
++        if (!widget->Valid()) {
++            widget->deleteLater();
++            continue;
++        }
++
++        // Untested applets
++        if (setting->Id() == Settings::values.data_erase_applet_mode.Id() ||
++            setting->Id() == Settings::values.error_applet_mode.Id() ||
++            setting->Id() == Settings::values.net_connect_applet_mode.Id() ||
++            setting->Id() == Settings::values.web_applet_mode.Id() ||
++            setting->Id() == Settings::values.shop_applet_mode.Id() ||
++            setting->Id() == Settings::values.login_share_applet_mode.Id() ||
++            setting->Id() == Settings::values.wifi_web_auth_applet_mode.Id() ||
++            setting->Id() == Settings::values.my_page_applet_mode.Id()) {
++            widget->setHidden(true);
++        }
++
++        applets_hold.emplace(setting->Id(), widget);
++    }
++    for (const auto& [label, widget] : applets_hold) {
++        library_applets_layout.addWidget(widget);
++    }
++}
++
++void ConfigureApplets::SetConfiguration() {}
++
++void ConfigureApplets::ApplyConfiguration() {
++    const bool powered_on = system.IsPoweredOn();
++    for (const auto& func : apply_funcs) {
++        func(powered_on);
++    }
++}
+diff --git a/src/yuzu/configuration/configure_applets.h b/src/yuzu/configuration/configure_applets.h
+new file mode 100644
+index 000000000000..54f494d2f1a0
+--- /dev/null
++++ b/src/yuzu/configuration/configure_applets.h
+@@ -0,0 +1,48 @@
++// SPDX-FileCopyrightText: 2024 yuzu Emulator Project
++// SPDX-License-Identifier: GPL-2.0-or-later
++
++#pragma once
++
++#include <QWidget>
++#include "yuzu/configuration/configuration_shared.h"
++
++class QCheckBox;
++class QLineEdit;
++class QComboBox;
++class QDateTimeEdit;
++namespace Core {
++class System;
++}
++
++namespace Ui {
++class ConfigureApplets;
++}
++
++namespace ConfigurationShared {
++class Builder;
++}
++
++class ConfigureApplets : public ConfigurationShared::Tab {
++public:
++    explicit ConfigureApplets(Core::System& system_,
++                              std::shared_ptr<std::vector<ConfigurationShared::Tab*>> group,
++                              const ConfigurationShared::Builder& builder,
++                              QWidget* parent = nullptr);
++    ~ConfigureApplets() override;
++
++    void ApplyConfiguration() override;
++    void SetConfiguration() override;
++
++private:
++    void changeEvent(QEvent* event) override;
++    void RetranslateUI();
++
++    void Setup(const ConfigurationShared::Builder& builder);
++
++    std::vector<std::function<void(bool)>> apply_funcs{};
++
++    std::unique_ptr<Ui::ConfigureApplets> ui;
++    bool enabled = false;
++
++    Core::System& system;
++};
+diff --git a/src/yuzu/configuration/configure_applets.ui b/src/yuzu/configuration/configure_applets.ui
+new file mode 100644
+index 000000000000..6f2ca66bd6c2
+--- /dev/null
++++ b/src/yuzu/configuration/configure_applets.ui
+@@ -0,0 +1,65 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<ui version="4.0">
++ <class>ConfigureApplets</class>
++ <widget class="QWidget" name="ConfigureApplets">
++  <property name="geometry">
++   <rect>
++    <x>0</x>
++    <y>0</y>
++    <width>605</width>
++    <height>300</height>
++   </rect>
++  </property>
++  <property name="windowTitle">
++   <string>Form</string>
++  </property>
++  <property name="accessibleName">
++   <string>Applets</string>
++  </property>
++  <layout class="QVBoxLayout" name="verticalLayout_1">
++   <item>
++    <layout class="QVBoxLayout" name="verticalLayout">
++     <item>
++      <widget class="QGroupBox" name="group_library_applet_modes">
++       <property name="title">
++        <string>Applet mode preference</string>
++       </property>
++       <layout class="QVBoxLayout">
++        <item>
++         <widget class="QWidget" name="applets_widget" native="true">
++          <layout class="QVBoxLayout" name="verticalLayout_3">
++           <property name="leftMargin">
++            <number>0</number>
++           </property>
++           <property name="topMargin">
++            <number>0</number>
++           </property>
++           <property name="rightMargin">
++            <number>0</number>
++           </property>
++          </layout>
++         </widget>
++        </item>
++       </layout>
++      </widget>
++     </item>
++    </layout>
++   </item>
++   <item>
++    <spacer name="verticalSpacer">
++     <property name="orientation">
++      <enum>Qt::Vertical</enum>
++     </property>
++     <property name="sizeHint" stdset="0">
++      <size>
++       <width>20</width>
++       <height>40</height>
++      </size>
++     </property>
++    </spacer>
++   </item>
++  </layout>
++ </widget>
++ <resources/>
++ <connections/>
++</ui>
+diff --git a/src/yuzu/configuration/configure_dialog.cpp b/src/yuzu/configuration/configure_dialog.cpp
+index aab54a1ccbdf..37f23388e6b7 100644
+--- a/src/yuzu/configuration/configure_dialog.cpp
++++ b/src/yuzu/configuration/configure_dialog.cpp
+@@ -8,6 +8,7 @@
+ #include "core/core.h"
+ #include "ui_configure.h"
+ #include "vk_device_info.h"
++#include "yuzu/configuration/configure_applets.h"
+ #include "yuzu/configuration/configure_audio.h"
+ #include "yuzu/configuration/configure_cpu.h"
+ #include "yuzu/configuration/configure_debug_tab.h"
+@@ -34,6 +35,7 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
+     : QDialog(parent), ui{std::make_unique<Ui::ConfigureDialog>()},
+       registry(registry_), system{system_}, builder{std::make_unique<ConfigurationShared::Builder>(
+                                                 this, !system_.IsPoweredOn())},
++      applets_tab{std::make_unique<ConfigureApplets>(system_, nullptr, *builder, this)},
+       audio_tab{std::make_unique<ConfigureAudio>(system_, nullptr, *builder, this)},
+       cpu_tab{std::make_unique<ConfigureCpu>(system_, nullptr, *builder, this)},
+       debug_tab_tab{std::make_unique<ConfigureDebugTab>(system_, this)},
+@@ -58,6 +60,7 @@ ConfigureDialog::ConfigureDialog(QWidget* parent, HotkeyRegistry& registry_,
+ 
+     ui->setupUi(this);
+ 
++    ui->tabWidget->addTab(applets_tab.get(), tr("Applets"));
+     ui->tabWidget->addTab(audio_tab.get(), tr("Audio"));
+     ui->tabWidget->addTab(cpu_tab.get(), tr("CPU"));
+     ui->tabWidget->addTab(debug_tab_tab.get(), tr("Debug"));
+@@ -124,6 +127,7 @@ void ConfigureDialog::ApplyConfiguration() {
+     debug_tab_tab->ApplyConfiguration();
+     web_tab->ApplyConfiguration();
+     network_tab->ApplyConfiguration();
++    applets_tab->ApplyConfiguration();
+     system.ApplySettings();
+     Settings::LogSettings();
+ }
+@@ -161,7 +165,8 @@ void ConfigureDialog::PopulateSelectionList() {
+         {{tr("General"),
+           {general_tab.get(), hotkeys_tab.get(), ui_tab.get(), web_tab.get(), debug_tab_tab.get()}},
+          {tr("System"),
+-          {system_tab.get(), profile_tab.get(), network_tab.get(), filesystem_tab.get()}},
++          {system_tab.get(), profile_tab.get(), network_tab.get(), filesystem_tab.get(),
++           applets_tab.get()}},
+          {tr("CPU"), {cpu_tab.get()}},
+          {tr("Graphics"), {graphics_tab.get(), graphics_advanced_tab.get()}},
+          {tr("Audio"), {audio_tab.get()}},
+diff --git a/src/yuzu/configuration/configure_dialog.h b/src/yuzu/configuration/configure_dialog.h
+index b28ce288c873..d0a24a07b389 100644
+--- a/src/yuzu/configuration/configure_dialog.h
++++ b/src/yuzu/configuration/configure_dialog.h
+@@ -15,6 +15,7 @@ namespace Core {
+ class System;
+ }
+ 
++class ConfigureApplets;
+ class ConfigureAudio;
+ class ConfigureCpu;
+ class ConfigureDebugTab;
+@@ -75,6 +76,7 @@ private slots:
+     std::unique_ptr<ConfigurationShared::Builder> builder;
+     std::vector<ConfigurationShared::Tab*> tab_group;
+ 
++    std::unique_ptr<ConfigureApplets> applets_tab;
+     std::unique_ptr<ConfigureAudio> audio_tab;
+     std::unique_ptr<ConfigureCpu> cpu_tab;
+     std::unique_ptr<ConfigureDebugTab> debug_tab_tab;
+diff --git a/src/yuzu/configuration/shared_translation.cpp b/src/yuzu/configuration/shared_translation.cpp
+index ed9c7d859516..ce65b2bf16c1 100644
+--- a/src/yuzu/configuration/shared_translation.cpp
++++ b/src/yuzu/configuration/shared_translation.cpp
+@@ -26,6 +26,23 @@ std::unique_ptr<TranslationMap> InitializeTranslations(QWidget* parent) {
+ 
+     // A setting can be ignored by giving it a blank name
+ 
++    // Applets
++    INSERT(Settings, cabinet_applet_mode, tr("Amiibo editor"), QStringLiteral());
++    INSERT(Settings, controller_applet_mode, tr("Controller configuration"), QStringLiteral());
++    INSERT(Settings, data_erase_applet_mode, tr("Data erase"), QStringLiteral());
++    INSERT(Settings, error_applet_mode, tr("Error"), QStringLiteral());
++    INSERT(Settings, net_connect_applet_mode, tr("Net connect"), QStringLiteral());
++    INSERT(Settings, player_select_applet_mode, tr("Player select"), QStringLiteral());
++    INSERT(Settings, swkbd_applet_mode, tr("Software keyboard"), QStringLiteral());
++    INSERT(Settings, mii_edit_applet_mode, tr("Mii Edit"), QStringLiteral());
++    INSERT(Settings, web_applet_mode, tr("Online web"), QStringLiteral());
++    INSERT(Settings, shop_applet_mode, tr("Shop"), QStringLiteral());
++    INSERT(Settings, photo_viewer_applet_mode, tr("Photo viewer"), QStringLiteral());
++    INSERT(Settings, offline_web_applet_mode, tr("Offline web"), QStringLiteral());
++    INSERT(Settings, login_share_applet_mode, tr("Login share"), QStringLiteral());
++    INSERT(Settings, wifi_web_auth_applet_mode, tr("Wifi web auth"), QStringLiteral());
++    INSERT(Settings, my_page_applet_mode, tr("My page"), QStringLiteral());
++
+     // Audio
+     INSERT(Settings, sink_id, tr("Output Engine:"), QStringLiteral());
+     INSERT(Settings, audio_output_device_id, tr("Output Device:"), QStringLiteral());
+@@ -203,6 +220,11 @@ std::unique_ptr<ComboboxTranslationMap> ComboboxEnumeration(QWidget* parent) {
+ #define PAIR(ENUM, VALUE, TRANSLATION) {static_cast<u32>(Settings::ENUM::VALUE), (TRANSLATION)}
+ 
+     // Intentionally skipping VSyncMode to let the UI fill that one out
++    translations->insert({Settings::EnumMetadata<Settings::AppletMode>::Index(),
++                          {
++                              PAIR(AppletMode, HLE, tr("Custom frontend")),
++                              PAIR(AppletMode, LLE, tr("Real applet")),
++                          }});
+ 
+     translations->insert({Settings::EnumMetadata<Settings::AstcDecodeMode>::Index(),
+                           {
+
+From d47bbbc325798e497a763d94f15f4726e096ff62 Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Sat, 3 Feb 2024 00:48:35 -0500
+Subject: [PATCH 8/9] am: stub SetMediaPlaybackState for self controller
+
+---
+ src/core/hle/service/am/self_controller.cpp | 15 ++++++++++++++-
+ src/core/hle/service/am/self_controller.h   |  2 ++
+ 2 files changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/src/core/hle/service/am/self_controller.cpp b/src/core/hle/service/am/self_controller.cpp
+index b92663b2b0a6..65e249c0c06c 100644
+--- a/src/core/hle/service/am/self_controller.cpp
++++ b/src/core/hle/service/am/self_controller.cpp
+@@ -1,10 +1,13 @@
+ // SPDX-FileCopyrightText: Copyright 2024 yuzu Emulator Project
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
++#include "common/logging/log.h"
++#include "core/hle/result.h"
+ #include "core/hle/service/am/am_results.h"
+ #include "core/hle/service/am/frontend/applets.h"
+ #include "core/hle/service/am/self_controller.h"
+ #include "core/hle/service/caps/caps_su.h"
++#include "core/hle/service/hle_ipc.h"
+ #include "core/hle/service/ipc_helpers.h"
+ #include "core/hle/service/nvnflinger/fb_share_buffer_manager.h"
+ #include "core/hle/service/nvnflinger/nvnflinger.h"
+@@ -47,7 +50,7 @@ ISelfController::ISelfController(Core::System& system_, std::shared_ptr<Applet>
+         {50, &ISelfController::SetHandlesRequestToDisplay, "SetHandlesRequestToDisplay"},
+         {51, &ISelfController::ApproveToDisplay, "ApproveToDisplay"},
+         {60, nullptr, "OverrideAutoSleepTimeAndDimmingTime"},
+-        {61, nullptr, "SetMediaPlaybackState"},
++        {61, &ISelfController::SetMediaPlaybackState, "SetMediaPlaybackState"},
+         {62, &ISelfController::SetIdleTimeDetectionExtension, "SetIdleTimeDetectionExtension"},
+         {63, &ISelfController::GetIdleTimeDetectionExtension, "GetIdleTimeDetectionExtension"},
+         {64, nullptr, "SetInputDetectionSourceSet"},
+@@ -324,6 +327,16 @@ void ISelfController::ApproveToDisplay(HLERequestContext& ctx) {
+     rb.Push(ResultSuccess);
+ }
+ 
++void ISelfController::SetMediaPlaybackState(HLERequestContext& ctx) {
++    IPC::RequestParser rp{ctx};
++    const u8 state = rp.Pop<u8>();
++
++    LOG_WARNING(Service_AM, "(STUBBED) called, state={}", state);
++
++    IPC::ResponseBuilder rb{ctx, 2};
++    rb.Push(ResultSuccess);
++}
++
+ void ISelfController::SetIdleTimeDetectionExtension(HLERequestContext& ctx) {
+     IPC::RequestParser rp{ctx};
+ 
+diff --git a/src/core/hle/service/am/self_controller.h b/src/core/hle/service/am/self_controller.h
+index a63bc2e74dcf..ab21a1881df9 100644
+--- a/src/core/hle/service/am/self_controller.h
++++ b/src/core/hle/service/am/self_controller.h
+@@ -3,6 +3,7 @@
+ 
+ #pragma once
+ 
++#include "core/hle/service/hle_ipc.h"
+ #include "core/hle/service/kernel_helpers.h"
+ #include "core/hle/service/service.h"
+ 
+@@ -38,6 +39,7 @@ class ISelfController final : public ServiceFramework<ISelfController> {
+     void CreateManagedDisplaySeparableLayer(HLERequestContext& ctx);
+     void SetHandlesRequestToDisplay(HLERequestContext& ctx);
+     void ApproveToDisplay(HLERequestContext& ctx);
++    void SetMediaPlaybackState(HLERequestContext& ctx);
+     void SetIdleTimeDetectionExtension(HLERequestContext& ctx);
+     void GetIdleTimeDetectionExtension(HLERequestContext& ctx);
+     void ReportUserIsActive(HLERequestContext& ctx);
+
+From cd3de08483ff275cab67824c92e021e67397965e Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Sun, 4 Feb 2024 16:05:44 -0500
+Subject: [PATCH 9/9] am: fix focus states and display of indirect keyboard
+
+---
+ .../hle/service/am/library_applet_creator.cpp  | 18 ++++++------------
+ .../hle/service/am/system_buffer_manager.cpp   |  3 ++-
+ src/core/hle/service/am/window_controller.cpp  |  4 ++--
+ 3 files changed, 10 insertions(+), 15 deletions(-)
+
+diff --git a/src/core/hle/service/am/library_applet_creator.cpp b/src/core/hle/service/am/library_applet_creator.cpp
+index a883a021e405..c48ed29bcb61 100644
+--- a/src/core/hle/service/am/library_applet_creator.cpp
++++ b/src/core/hle/service/am/library_applet_creator.cpp
+@@ -118,23 +118,17 @@ std::shared_ptr<ILibraryAppletAccessor> CreateGuestApplet(Core::System& system,
+     switch (mode) {
+     case LibraryAppletMode::AllForeground:
+     case LibraryAppletMode::NoUi:
+-        applet->focus_state = FocusState::InFocus;
++    case LibraryAppletMode::PartialForeground:
++    case LibraryAppletMode::PartialForegroundIndirectDisplay:
+         applet->hid_registration.EnableAppletToGetInput(true);
++        applet->focus_state = FocusState::InFocus;
+         applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoForeground);
+-        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::FocusStateChanged);
+         break;
+     case LibraryAppletMode::AllForegroundInitiallyHidden:
+-        applet->system_buffer_manager.SetWindowVisibility(false);
+-        applet->focus_state = FocusState::NotInFocus;
+         applet->hid_registration.EnableAppletToGetInput(false);
+-        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::FocusStateChanged);
+-        break;
+-    case LibraryAppletMode::PartialForeground:
+-    case LibraryAppletMode::PartialForegroundIndirectDisplay:
+-    default:
+-        applet->focus_state = FocusState::Background;
+-        applet->hid_registration.EnableAppletToGetInput(true);
+-        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::FocusStateChanged);
++        applet->focus_state = FocusState::NotInFocus;
++        applet->system_buffer_manager.SetWindowVisibility(false);
++        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoBackground);
+         break;
+     }
+ 
+diff --git a/src/core/hle/service/am/system_buffer_manager.cpp b/src/core/hle/service/am/system_buffer_manager.cpp
+index 7fb9e3a7575b..48923fe41a38 100644
+--- a/src/core/hle/service/am/system_buffer_manager.cpp
++++ b/src/core/hle/service/am/system_buffer_manager.cpp
+@@ -38,7 +38,8 @@ bool SystemBufferManager::Initialize(Nvnflinger::Nvnflinger* nvnflinger, Kernel:
+     }
+ 
+     Nvnflinger::LayerBlending blending = Nvnflinger::LayerBlending::None;
+-    if (mode == LibraryAppletMode::PartialForeground) {
++    if (mode == LibraryAppletMode::PartialForeground ||
++        mode == LibraryAppletMode::PartialForegroundIndirectDisplay) {
+         blending = Nvnflinger::LayerBlending::Coverage;
+     }
+ 
+diff --git a/src/core/hle/service/am/window_controller.cpp b/src/core/hle/service/am/window_controller.cpp
+index f00957f83080..c07ef228b84e 100644
+--- a/src/core/hle/service/am/window_controller.cpp
++++ b/src/core/hle/service/am/window_controller.cpp
+@@ -62,12 +62,12 @@ void IWindowController::SetAppletWindowVisibility(HLERequestContext& ctx) {
+     applet->hid_registration.EnableAppletToGetInput(visible);
+ 
+     if (visible) {
+-        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoForeground);
+         applet->focus_state = FocusState::InFocus;
++        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoForeground);
+     } else {
+         applet->focus_state = FocusState::NotInFocus;
++        applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::ChangeIntoBackground);
+     }
+-    applet->message_queue.PushMessage(AppletMessageQueue::AppletMessage::FocusStateChanged);
+ 
+     IPC::ResponseBuilder rb{ctx, 2};
+     rb.Push(ResultSuccess);
