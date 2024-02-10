@@ -3,6 +3,3 @@ virtual/jre:7
 dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =dev-lang/python-3.12*
-=cross-i686-w64-mingw32/binutils-2.38-r1
-=cross-x86_64-w64-mingw32/binutils-2.38-r1
-=dev-util/meson-1.2.2
