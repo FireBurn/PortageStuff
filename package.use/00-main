@@ -157,6 +157,6 @@ media-libs/freetype			-harfbuzz
 >=dev-qt/qttools-6.6.1			qdbus
 >=dev-qt/qtbase-6.6.1-r1		accessibility
 >=dev-qt/qttools-6.6.1			designer
-x11-misc/sddm				-X
+x11-misc/sddm				-X -qt5
 app-editors/vim				-X
 >=app-crypt/gpgme-1.23.2		python
