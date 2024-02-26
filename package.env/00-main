@@ -56,6 +56,7 @@ media-libs/mesa				clango3lto.conf
 media-libs/x264                         o3.conf
 #media-video/ffmpeg			clango3.conf
 #media-video/mpv				o3.conf
+media-video/qmplay2			clango3lto.conf
 net-libs/libssh2			clango3.conf
 net-libs/nodejs				clango3lto.conf
 net-libs/webkit-gtk			o3.conf

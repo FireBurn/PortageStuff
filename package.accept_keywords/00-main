@@ -11,3 +11,6 @@ app-emulation/vkd3d-proton		**
 =virtual/rust-1.70.0			**
 =dev-lang/rust-1.70.0			**
 x11-misc/sddm				**
+media-video/qmplay2			**
+<app-office/libreoffice-24.2.9999	**
+<app-office/libreoffice-l10n-24.2.9999	**

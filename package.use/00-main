@@ -16,7 +16,7 @@ app-emulation/wine-gecko		abi_x86_32
 app-emulation/wine-staging		mingw -wow64 abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-misc/mime-types			nginx
-app-office/libreoffice			clang gtk gtk3 java kde
+app-office/libreoffice			clang -gtk -gtk3 java kde -qt5
 cross-i686-w64-mingw32/binutils		-default-gold
 cross-i686-w64-mingw32/gcc		libssp zstd -fortran -hardened -pie -sanitize -vtv
 cross-i686-w64-mingw32/mingw64-runtime	libraries tools
@@ -46,7 +46,7 @@ dev-qt/qtsql				-mysql
 dev-qt/qtwidgets			-gtk
 dev-util/apitrace			system-snappy
 # move dev-util/cmake dev-build/cmake
-dev-build/cmake				qt5 -qt4
+dev-build/cmake				-qt5 -qt4
 dev-util/glslang			abi_x86_32
 dev-util/spirv-tools			abi_x86_32
 dev-util/vulkan-tools			cube -wayland
@@ -93,6 +93,7 @@ net-fs/cifs-utils			-acl
 net-fs/samba				client gnutls winbind
 net-irc/konversation			-crypt
 net-libs/gnutls				pkcs11
+net-libs/libproxy			-kde
 net-libs/libpsl				-idn
 net-libs/mbedtls			cmac
 net-libs/nodejs				inspector lto
@@ -131,7 +132,7 @@ virtual/opengl				abi_x86_32
 virtual/pkgconfig			abi_x86_32
 virtual/wine				staging abi_x86_32 -d3d9
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
-www-client/chromium			custom-cflags gtk4 hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone
+www-client/chromium			custom-cflags gtk4 hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 -qt6
 www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			egl gles2
