@@ -1,0 +1,35 @@
+From 93e22ae6074db8775d1546d686b303381f826a2d Mon Sep 17 00:00:00 2001
+From: Liam <byteslice@airmail.cc>
+Date: Mon, 26 Feb 2024 21:09:48 -0500
+Subject: [PATCH] renderer_vulkan: fallback to D32 for missing D24X8
+
+---
+ src/video_core/vulkan_common/vulkan_device.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/video_core/vulkan_common/vulkan_device.cpp b/src/video_core/vulkan_common/vulkan_device.cpp
+index b94924a580c3..9e01155b1276 100644
+--- a/src/video_core/vulkan_common/vulkan_device.cpp
++++ b/src/video_core/vulkan_common/vulkan_device.cpp
+@@ -40,6 +40,12 @@ constexpr std::array DEPTH24_UNORM_STENCIL8_UINT{
+     VK_FORMAT_UNDEFINED,
+ };
+ 
++constexpr std::array DEPTH24_UNORM_DONTCARE8{
++    VK_FORMAT_D32_SFLOAT,
++    VK_FORMAT_D16_UNORM,
++    VK_FORMAT_UNDEFINED,
++};
++
+ constexpr std::array DEPTH16_UNORM_STENCIL8_UINT{
+     VK_FORMAT_D24_UNORM_S8_UINT,
+     VK_FORMAT_D32_SFLOAT_S8_UINT,
+@@ -95,6 +101,8 @@ constexpr const VkFormat* GetFormatAlternatives(VkFormat format) {
+         return Alternatives::STENCIL8_UINT.data();
+     case VK_FORMAT_D24_UNORM_S8_UINT:
+         return Alternatives::DEPTH24_UNORM_STENCIL8_UINT.data();
++    case VK_FORMAT_X8_D24_UNORM_PACK32:
++        return Alternatives::DEPTH24_UNORM_DONTCARE8.data();
+     case VK_FORMAT_D16_UNORM_S8_UINT:
+         return Alternatives::DEPTH16_UNORM_STENCIL8_UINT.data();
+     case VK_FORMAT_B5G6R5_UNORM_PACK16:
