@@ -156,7 +156,7 @@ x11-base/xwayland			libei
 dev-libs/icu				abi_x86_32
 media-libs/freetype			-harfbuzz
 >=dev-qt/qttools-6.6.1			qdbus
->=dev-qt/qtbase-6.6.1-r1		accessibility
+>=dev-qt/qtbase-6.6.1-r1		accessibility libproxy
 >=dev-qt/qttools-6.6.1			designer
 x11-misc/sddm				-X -qt5
 app-editors/vim				-X
