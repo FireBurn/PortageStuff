@@ -44,6 +44,7 @@ games-emulation/yuzu                    clango3lto.conf
 #kde-apps/dolphin			debug.conf
 #kde-apps/kio-extras			debug.conf
 kde*/*					clango3lto.conf
+kde-misc/kdiff3				debug.conf
 #kde-frameworks/kio			debug.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 media-libs/dav1d			o3.conf
