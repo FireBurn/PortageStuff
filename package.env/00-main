@@ -12,7 +12,7 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 dev-java/openjdk			o3.conf
-dev-lang/rust				clango3lto.conf
+dev-lang/rust				clango3ltov3.conf
 dev-lang/spidermonkey			o3.conf
 dev-libs/double-conversion		clango3lto.conf
 dev-libs/gjs				o3.conf
@@ -39,7 +39,7 @@ dev-debug/lldb				clango3lto.conf
 dev-util/rocminfo                       clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
 dev-util/valgrind			o3.conf
-games-emulation/yuzu                    clango3lto.conf
+games-emulation/yuzu                    clango3ltov3.conf
 #games-emulation/yuzu			o2.conf
 #kde-apps/dolphin			debug.conf
 #kde-apps/kio-extras			debug.conf
@@ -64,14 +64,14 @@ sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
 sys-boot/gnu-efi			o3.conf
 sys-boot/grub				o3.conf
-sys-devel/clang				clango3lto.conf
+sys-devel/clang				clango3ltov3.conf
 #sys-devel/clang				debug.conf
 #sys-devel/clang				o3.conf
 sys-devel/gcc				o3.conf
-sys-devel/lld				clango3lto.conf
+sys-devel/lld				clango3ltov3.conf
 #sys-devel/lld				debug.conf
 #sys-devel/lld				o3.conf
-sys-devel/llvm				clango3lto.conf
+sys-devel/llvm				clango3ltov3.conf
 #sys-devel/llvm				debug.conf
 #sys-devel/llvm				o3.conf
 sys-devel/llvm-roc                      clango3.conf
