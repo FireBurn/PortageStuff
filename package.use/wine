@@ -1244,3 +1244,10 @@
 # required by @selected
 # required by @world (argument)
 >=sys-libs/gpm-1.20.7-r5 abi_x86_32
+# required by dev-qt/qtwayland-6.6.2-r1::gentoo
+# required by kde-plasma/kwin-9999::kde
+# required by kde-plasma/plasma-desktop-9999::kde
+# required by kde-plasma/plasma-meta-9999-r1::FireBurn
+# required by @selected
+# required by @world (argument)
+>=dev-qt/qtbase-6.6.2 -accessibility
