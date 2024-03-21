@@ -27,7 +27,7 @@ dev-db/mariadb				embedded
 dev-db/sqlite				secure-delete
 dev-java/icedtea			sunec
 dev-lang/python				sqlite
-dev-lang/rust				cargo -lto
+dev-lang/rust				cargo
 dev-libs/boost				context python
 dev-libs/elfutils			abi_x86_32
 dev-libs/expat				abi_x86_32

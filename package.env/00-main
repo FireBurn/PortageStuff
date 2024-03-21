@@ -12,7 +12,7 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 dev-java/openjdk			o3.conf
-dev-lang/rust				clango3.conf
+dev-lang/rust				clango3lto.conf
 dev-lang/spidermonkey			o3.conf
 dev-libs/double-conversion		clango3lto.conf
 dev-libs/gjs				o3.conf
@@ -83,6 +83,7 @@ sys-libs/libomp				o3.conf
 #www-client/chromium			clangdebug.conf
 www-client/chromium			clango3lto.conf
 #www-client/chromium			o3.conf
+www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 #x11-base/xorg-server			debug.conf
 #x11-drivers/xf86-video-intel		debug.conf
