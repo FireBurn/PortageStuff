@@ -1,1 +1,1 @@
-../../usr/portage/profiles/default/linux/amd64/17.1/desktop/plasma/systemd/merged-usr
+../../usr/portage/profiles/default/linux/amd64/23.0/desktop/plasma/systemd
