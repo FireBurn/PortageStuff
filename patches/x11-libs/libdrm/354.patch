@@ -1,0 +1,48 @@
+From c2e849e107d462a2a1b53470fc0703c4f44f6578 Mon Sep 17 00:00:00 2001
+From: Pierre-Eric Pelloux-Prayer <pierre-eric.pelloux-prayer@amd.com>
+Date: Tue, 26 Mar 2024 14:25:16 +0100
+Subject: [PATCH] amdgpu: fix deinit logic
+
+The devices weren't removed from dev_list.
+
+Instead of just fixing the issue by adding:
+
+   if (*node) *node = dev->next;
+
+after the while loop, use this opportunity to use a clearer
+control flow.
+
+Fixes: 7275ef8e ("amdgpu: add amdgpu_device_initialize2")
+---
+ amdgpu/amdgpu_device.c | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/amdgpu/amdgpu_device.c b/amdgpu/amdgpu_device.c
+index 97dbfb44..34463b53 100644
+--- a/amdgpu/amdgpu_device.c
++++ b/amdgpu/amdgpu_device.c
+@@ -95,11 +95,17 @@ static int amdgpu_get_auth(int fd, int *auth)
+ 
+ static void amdgpu_device_free_internal(amdgpu_device_handle dev)
+ {
+-	amdgpu_device_handle *node = &dev_list;
+-
+ 	/* Remove dev from dev_list, if it was added there. */
+-	while (*node != dev && *node && (*node)->next)
+-		node = &(*node)->next;
++	if (dev == dev_list) {
++		dev_list = dev->next;
++	} else {
++		for (amdgpu_device_handle node = dev_list; node; node = node->next) {
++			if (node->next == dev) {
++				node->next = dev->next;
++				break;
++			}
++		}
++	}
+ 
+ 	close(dev->fd);
+ 	if ((dev->flink_fd >= 0) && (dev->fd != dev->flink_fd))
+-- 
+GitLab
+
