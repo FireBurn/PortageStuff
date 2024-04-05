@@ -13,3 +13,4 @@ kde-apps/dolphin **
 dev-libs/plasma-wayland-protocols **
 media-libs/phonon **
 kde-misc/kdiff3 **
+media-libs/pulseaudio-qt **
