@@ -1,0 +1,32 @@
+From c852d7f47cbf99767fe52cf393fe3d7896a77592 Mon Sep 17 00:00:00 2001
+From: Joshua Goins <josh@redstrate.com>
+Date: Sat, 6 Apr 2024 10:23:50 -0400
+Subject: [PATCH] DisabledActionNotifier: Prevent null dereference
+
+This prevents a crash on startup where it tries to delete a null
+QShortcut because it didn't check if the QShortcut actually exists in
+the QHash.
+
+BUG: 485089
+---
+ src/disabledactionnotifier.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/disabledactionnotifier.cpp b/src/disabledactionnotifier.cpp
+index 844e66228..a24bccedc 100644
+--- a/src/disabledactionnotifier.cpp
++++ b/src/disabledactionnotifier.cpp
+@@ -24,8 +24,8 @@ void DisabledActionNotifier::setDisabledReason(QAction *action, QStringView reas
+     QShortcut *shortcut = new QShortcut(action->shortcut(), parent());
+     m_shortcuts.insert(action, shortcut);
+ 
+-    connect(action, &QAction::enabledChanged, this, [this, action](bool enabled) {
+-        if (enabled) {
++    connect(action, &QAction::enabledChanged, shortcut, [this, action](bool enabled) {
++        if (enabled && m_shortcuts.contains(action)) {
+             m_shortcuts.take(action)->deleteLater();
+         }
+     });
+-- 
+2.44.0
+
