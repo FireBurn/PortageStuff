@@ -71,3 +71,16 @@ index b5b477ad..5847de71 100644
  
  #if defined(__MINGW32__) || defined(__MINGW64__)
  #define MINGW
+diff --git a/src/fileaccess.cpp b/src/fileaccess.cpp
+index fd465ca5..98c2b232 100644
+--- a/src/fileaccess.cpp
++++ b/src/fileaccess.cpp
+@@ -862,8 +862,6 @@ bool FileAccess::writeFile(const void* pSrcBuffer, qint64 length)
+         bool success = mJobHandler->put(pSrcBuffer, length, true /*overwrite*/);
+         close();
+ 
+-        assert(!realFile->isOpen() && !tmpFile->isOpen());
+-
+         return success;
+     }
+     close();
