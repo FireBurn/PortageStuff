@@ -4,3 +4,4 @@ dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =dev-lang/python-3.12*
 dev-qt/qtcore:5
+=dev-build/ninja-1.12.0
