@@ -162,3 +162,5 @@ media-libs/freetype			-harfbuzz
 x11-misc/sddm				-X -qt5
 app-editors/vim				-X
 >=app-crypt/gpgme-1.23.2		python
+media-libs/gst-plugins-base		-gles2
+media-plugins/gst-plugins-vaapi		-gles2
