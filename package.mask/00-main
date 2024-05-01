@@ -1,16 +1,3 @@
-virtual/jdk:7
-virtual/jre:7
-dev-java/icedtea:7
 =x11-libs/gtk+-2.24.32-r666
 =dev-lang/python-3.12*
 dev-qt/qtcore:5
-=dev-build/ninja-1.12.0
-=dev-util/vulkan-headers-1.3.280.0
-=dev-util/spirv-headers-1.3.280.0
-=dev-util/spirv-tools-1.3.280.0
-=dev-util/glslang-1.3.280.0
-=dev-util/vulkan-utility-libraries-1.3.280.0
-=media-libs/vulkan-layers-1.3.280.0
-=media-libs/vulkan-loader-1.3.280.0
-=dev-util/volk-1.3.280.0
-=dev-util/vulkan-tools-1.3.280.0
