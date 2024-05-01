@@ -93,3 +93,4 @@ net-irc/konversation			clango3lto.conf
 net-libs/libktorrent			clango3lto.conf
 net-p2p/ktorrent			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
+media-video/qmplay2			clangdebug.conf
