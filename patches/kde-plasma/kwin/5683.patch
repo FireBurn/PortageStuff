@@ -1,0 +1,163 @@
+From 9403d5c57806c756cd51186764a02d3b770f285f Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Wed, 1 May 2024 21:24:37 +0200
+Subject: [PATCH 1/2] waylandserver: set render backend for linuxdrmsyncobj
+ directly
+
+The code would previously never set the render backend, causing the use of explicit sync
+to fail
+
+BUG: 486391
+---
+ src/platformsupport/scenes/opengl/abstract_egl_backend.cpp | 4 ----
+ src/wayland_server.cpp                                     | 4 ++++
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp b/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
+index a60ba104d07..bdc0d918500 100644
+--- a/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
++++ b/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
+@@ -192,11 +192,7 @@ void AbstractEglBackend::initWayland()
+         LinuxDmaBufV1ClientBufferIntegration *dmabuf = waylandServer()->linuxDmabuf();
+         dmabuf->setRenderBackend(this);
+         dmabuf->setSupportedFormatsWithModifiers(m_tranches);
+-        if (auto syncObj = waylandServer()->linuxSyncObj()) {
+-            syncObj->setRenderBackend(this);
+-        }
+     }
+-
+     waylandServer()->setRenderBackend(this);
+ }
+ 
+diff --git a/src/wayland_server.cpp b/src/wayland_server.cpp
+index 36c02cd3eb1..eefdde86ff1 100644
+--- a/src/wayland_server.cpp
++++ b/src/wayland_server.cpp
+@@ -855,6 +855,10 @@ void WaylandServer::setRenderBackend(RenderBackend *backend)
+         }
+     } else if (m_linuxDrmSyncObj) {
+         m_linuxDrmSyncObj->remove();
++        m_linuxDrmSyncObj = nullptr;
++    }
++    if (m_linuxDrmSyncObj) {
++        m_linuxDrmSyncObj->setRenderBackend(backend);
+     }
+ }
+ 
+-- 
+GitLab
+
+
+From f3a9bc102dc7ba342e2be0d88ea52fce2fd6cd30 Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Wed, 1 May 2024 21:32:33 +0200
+Subject: [PATCH 2/2] wayland/linuxdrmsyncobjv1: distinguish between client
+ side and kwin side failure
+
+If the client tries to set acquire and release points, and KWin just can't use them
+for whatever reason, sending a protocol error is the wrong thing to do
+
+CCBUG: 486391
+---
+ src/wayland/linux_drm_syncobj_v1.cpp | 14 +++++++++-----
+ src/wayland/surface.cpp              | 10 ++++++++--
+ src/wayland/surface_p.h              |  2 ++
+ 3 files changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/src/wayland/linux_drm_syncobj_v1.cpp b/src/wayland/linux_drm_syncobj_v1.cpp
+index 589ccd78c3b..bac436f6df4 100644
+--- a/src/wayland/linux_drm_syncobj_v1.cpp
++++ b/src/wayland/linux_drm_syncobj_v1.cpp
+@@ -120,6 +120,8 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_acquire_point
+         wl_resource_post_error(resource->handle, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_ERROR_NO_SURFACE, "Surface got destroyed already");
+         return;
+     }
++    const auto priv = SurfaceInterfacePrivate::get(m_surface);
++    priv->pending->acquirePointIsSet = true;
+     const auto timeline = resource_cast<LinuxDrmSyncObjTimelineV1 *>(timeline_resource);
+     if (!timeline->timeline()) {
+         // in the normal case this should never happen, but if it does,
+@@ -127,7 +129,6 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_acquire_point
+         return;
+     }
+     const uint64_t point = (uint64_t(point_hi) << 32) | point_lo;
+-    const auto priv = SurfaceInterfacePrivate::get(m_surface);
+     priv->pending->acquirePoint.timeline = timeline->timeline();
+     priv->pending->acquirePoint.point = point;
+ }
+@@ -139,13 +140,15 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_release_point
+         return;
+     }
+     const auto timeline = resource_cast<LinuxDrmSyncObjTimelineV1 *>(timeline_resource);
++    const auto priv = SurfaceInterfacePrivate::get(m_surface);
++    priv->pending->releasePointIsSet = true;
+     if (!timeline->timeline()) {
+         // in the normal case this should never happen, but if it does,
+         // there's nothing we can do about it without killing the client
+         return;
+     }
+     const uint64_t point = (uint64_t(point_hi) << 32) | point_lo;
+-    SurfaceInterfacePrivate::get(m_surface)->pending->releasePoint = std::make_unique<SyncReleasePoint>(timeline->timeline(), point);
++    priv->pending->releasePoint = std::make_unique<SyncReleasePoint>(timeline->timeline(), point);
+ }
+ 
+ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_destroy_resource(Resource *resource)
+@@ -164,15 +167,16 @@ bool LinuxDrmSyncObjSurfaceV1::maybeEmitProtocolErrors()
+     if (!priv->pending->bufferIsSet && !priv->pending->acquirePoint.timeline && !priv->pending->releasePoint) {
+         return false;
+     }
+-    if (!priv->pending->acquirePoint.timeline) {
++    if (!priv->pending->acquirePointIsSet) {
+         wl_resource_post_error(resource()->handle, error_no_acquire_point, "explicit sync is used, but no acquire point is set");
+         return true;
+     }
+-    if (!priv->pending->releasePoint) {
++    if (!priv->pending->releasePointIsSet) {
+         wl_resource_post_error(resource()->handle, error_no_release_point, "explicit sync is used, but no release point is set");
+         return true;
+     }
+-    if (priv->pending->acquirePoint.timeline.get() == priv->pending->releasePoint->timeline()
++    if (priv->pending->releasePoint
++        && priv->pending->acquirePoint.timeline.get() == priv->pending->releasePoint->timeline()
+         && priv->pending->acquirePoint.point >= priv->pending->releasePoint->timelinePoint()) {
+         wl_resource_post_error(resource()->handle, error_conflicting_points, "acquire and release points are on the same timeline and acquire >= release");
+         return true;
+diff --git a/src/wayland/surface.cpp b/src/wayland/surface.cpp
+index c41fa51679b..d5bda1dc1b8 100644
+--- a/src/wayland/surface.cpp
++++ b/src/wayland/surface.cpp
+@@ -525,10 +525,16 @@ void SurfaceState::mergeInto(SurfaceState *target)
+         target->offset = offset;
+         target->damage = damage;
+         target->bufferDamage = bufferDamage;
+-        target->acquirePoint.timeline = std::exchange(acquirePoint.timeline, nullptr);
++        target->bufferIsSet = true;
++    }
++    if (acquirePointIsSet) {
++        target->acquirePoint.timeline = acquirePoint.timeline;
+         target->acquirePoint.point = acquirePoint.point;
++        target->acquirePointIsSet = true;
++    }
++    if (releasePointIsSet) {
+         target->releasePoint = std::move(releasePoint);
+-        target->bufferIsSet = true;
++        target->releasePointIsSet = true;
+     }
+     if (viewport.sourceGeometryIsSet) {
+         target->viewport.sourceGeometry = viewport.sourceGeometry;
+diff --git a/src/wayland/surface_p.h b/src/wayland/surface_p.h
+index 657d7c51c06..ed3b758a229 100644
+--- a/src/wayland/surface_p.h
++++ b/src/wayland/surface_p.h
+@@ -59,6 +59,8 @@ struct SurfaceState
+     bool contentTypeIsSet = false;
+     bool presentationModeHintIsSet = false;
+     bool colorDescriptionIsSet = false;
++    bool releasePointIsSet = false;
++    bool acquirePointIsSet = false;
+     qint32 bufferScale = 1;
+     OutputTransform bufferTransform = OutputTransform::Normal;
+     wl_list frameCallbacks;
+-- 
+GitLab
+
