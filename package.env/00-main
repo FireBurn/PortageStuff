@@ -59,7 +59,8 @@ media-libs/x264                         o3.conf
 #media-video/mpv				o3.conf
 media-video/qmplay2			clango3lto.conf
 net-libs/libssh2			clango3.conf
-net-libs/nodejs				clango3lto.conf
+#net-libs/nodejs				clango3lto.conf
+net-libs/nodejs				o3.conf
 net-libs/webkit-gtk			o3.conf
 sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
