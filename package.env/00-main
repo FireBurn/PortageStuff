@@ -44,6 +44,8 @@ games-emulation/suyu			clangandroid.conf
 #kde-apps/dolphin			clangdebug.conf
 #kde-apps/kio-extras			debug.conf
 kde*/*					clango3lto.conf
+kde-frameworks/breeze-icons		clango3.conf
+#kde-frameworks/kiconthemes		clango3.conf
 kde-misc/kdiff3				clangdebug.conf
 #kde-frameworks/kio			debug.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
