@@ -1,7 +1,7 @@
-From 9403d5c57806c756cd51186764a02d3b770f285f Mon Sep 17 00:00:00 2001
+From 77b498167790bb650640eaeb0b018a68cfaf7804 Mon Sep 17 00:00:00 2001
 From: Xaver Hugl <xaver.hugl@gmail.com>
 Date: Wed, 1 May 2024 21:24:37 +0200
-Subject: [PATCH 1/2] waylandserver: set render backend for linuxdrmsyncobj
+Subject: [PATCH 1/4] waylandserver: set render backend for linuxdrmsyncobj
  directly
 
 The code would previously never set the render backend, causing the use of explicit sync
@@ -14,7 +14,7 @@ BUG: 486391
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp b/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
-index a60ba104d07..bdc0d918500 100644
+index 560a680eab0..9ab2024924a 100644
 --- a/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
 +++ b/src/platformsupport/scenes/opengl/abstract_egl_backend.cpp
 @@ -192,11 +192,7 @@ void AbstractEglBackend::initWayland()
@@ -48,10 +48,10 @@ index 36c02cd3eb1..eefdde86ff1 100644
 GitLab
 
 
-From f3a9bc102dc7ba342e2be0d88ea52fce2fd6cd30 Mon Sep 17 00:00:00 2001
+From 43ebe2ae7f9953474cfe9b17dbf6ba078a1b1f21 Mon Sep 17 00:00:00 2001
 From: Xaver Hugl <xaver.hugl@gmail.com>
 Date: Wed, 1 May 2024 21:32:33 +0200
-Subject: [PATCH 2/2] wayland/linuxdrmsyncobjv1: distinguish between client
+Subject: [PATCH 2/4] wayland/linuxdrmsyncobjv1: distinguish between client
  side and kwin side failure
 
 If the client tries to set acquire and release points, and KWin just can't use them
@@ -155,6 +155,445 @@ index 657d7c51c06..ed3b758a229 100644
      bool colorDescriptionIsSet = false;
 +    bool releasePointIsSet = false;
 +    bool acquirePointIsSet = false;
+     qint32 bufferScale = 1;
+     OutputTransform bufferTransform = OutputTransform::Normal;
+     wl_list frameCallbacks;
+-- 
+GitLab
+
+
+From ca9e3a4c343039b3faa7ddc8614f9399566ad3ce Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Tue, 7 May 2024 16:03:14 +0200
+Subject: [PATCH 3/4] wayland: port linux drm syncobj from RenderBackend to
+ DrmDevice
+
+---
+ src/backends/drm/drm_egl_backend.cpp | 15 ---------------
+ src/backends/drm/drm_egl_backend.h   |  3 ---
+ src/backends/drm/drm_gpu.cpp         |  8 --------
+ src/backends/drm/drm_gpu.h           |  2 --
+ src/core/drmdevice.cpp               |  7 +++++++
+ src/core/drmdevice.h                 |  2 ++
+ src/core/renderbackend.cpp           | 10 ----------
+ src/core/renderbackend.h             |  3 ---
+ src/wayland/linux_drm_syncobj_v1.cpp | 18 +++++++-----------
+ src/wayland/linux_drm_syncobj_v1.h   |  6 +++---
+ src/wayland_server.cpp               |  8 +++-----
+ 11 files changed, 22 insertions(+), 60 deletions(-)
+
+diff --git a/src/backends/drm/drm_egl_backend.cpp b/src/backends/drm/drm_egl_backend.cpp
+index d8d55923b16..369009f8b6e 100644
+--- a/src/backends/drm/drm_egl_backend.cpp
++++ b/src/backends/drm/drm_egl_backend.cpp
+@@ -181,21 +181,6 @@ DrmGpu *EglGbmBackend::gpu() const
+     return m_backend->primaryGpu();
+ }
+ 
+-bool EglGbmBackend::supportsTimelines() const
+-{
+-    return m_backend->primaryGpu()->syncObjTimelinesSupported();
+-}
+-
+-std::unique_ptr<SyncTimeline> EglGbmBackend::importTimeline(FileDescriptor &&syncObjFd)
+-{
+-    uint32_t handle = 0;
+-    if (drmSyncobjFDToHandle(m_backend->primaryGpu()->fd(), syncObjFd.get(), &handle) != 0) {
+-        qCWarning(KWIN_DRM) << "importing syncobj timeline failed!" << strerror(errno);
+-        return nullptr;
+-    }
+-    return std::make_unique<SyncTimeline>(m_backend->primaryGpu()->fd(), handle);
+-}
+-
+ } // namespace KWin
+ 
+ #include "moc_drm_egl_backend.cpp"
+diff --git a/src/backends/drm/drm_egl_backend.h b/src/backends/drm/drm_egl_backend.h
+index 69afe521bbc..dab2ccb9216 100644
+--- a/src/backends/drm/drm_egl_backend.h
++++ b/src/backends/drm/drm_egl_backend.h
+@@ -61,9 +61,6 @@ public:
+     EglDisplay *displayForGpu(DrmGpu *gpu);
+     std::shared_ptr<EglContext> contextForGpu(DrmGpu *gpu);
+ 
+-    bool supportsTimelines() const override;
+-    std::unique_ptr<SyncTimeline> importTimeline(FileDescriptor &&syncObjFd) override;
+-
+ private:
+     bool initializeEgl();
+     bool initRenderingContext();
+diff --git a/src/backends/drm/drm_gpu.cpp b/src/backends/drm/drm_gpu.cpp
+index a5f4fb0cedb..2bd7251acb5 100644
+--- a/src/backends/drm/drm_gpu.cpp
++++ b/src/backends/drm/drm_gpu.cpp
+@@ -75,9 +75,6 @@ DrmGpu::DrmGpu(DrmBackend *backend, int fd, std::unique_ptr<DrmDevice> &&device)
+     m_addFB2ModifiersSupported = drmGetCap(fd, DRM_CAP_ADDFB2_MODIFIERS, &capability) == 0 && capability == 1;
+     qCDebug(KWIN_DRM) << "drmModeAddFB2WithModifiers is" << (m_addFB2ModifiersSupported ? "supported" : "not supported") << "on GPU" << this;
+ 
+-    m_supportsSyncTimelines = drmGetCap(fd, DRM_CAP_SYNCOBJ_TIMELINE, &capability) == 0 && capability == 1;
+-    qCDebug(KWIN_DRM) << "sync obj timelines are" << (m_supportsSyncTimelines ? "supported" : "not supported") << "on GPU" << this;
+-
+     // find out what driver this kms device is using
+     DrmUniquePtr<drmVersion> version(drmGetVersion(fd));
+     m_isI915 = strstr(version->name, "i915");
+@@ -678,11 +675,6 @@ bool DrmGpu::asyncPageflipSupported() const
+     return m_asyncPageflipSupported;
+ }
+ 
+-bool DrmGpu::syncObjTimelinesSupported() const
+-{
+-    return m_supportsSyncTimelines;
+-}
+-
+ bool DrmGpu::isI915() const
+ {
+     return m_isI915;
+diff --git a/src/backends/drm/drm_gpu.h b/src/backends/drm/drm_gpu.h
+index fd2d1c67fad..323ac6bac83 100644
+--- a/src/backends/drm/drm_gpu.h
++++ b/src/backends/drm/drm_gpu.h
+@@ -75,7 +75,6 @@ public:
+     bool atomicModeSetting() const;
+     bool addFB2ModifiersSupported() const;
+     bool asyncPageflipSupported() const;
+-    bool syncObjTimelinesSupported() const;
+     bool isI915() const;
+     bool isNVidia() const;
+     bool isAmdgpu() const;
+@@ -145,7 +144,6 @@ private:
+     bool m_isRemoved = false;
+     bool m_isActive = true;
+     bool m_forceModeset = false;
+-    bool m_supportsSyncTimelines = false;
+     clockid_t m_presentationClock;
+     std::unique_ptr<EglDisplay> m_eglDisplay;
+     DrmBackend *const m_platform;
+diff --git a/src/core/drmdevice.cpp b/src/core/drmdevice.cpp
+index 6bc48d8e080..81dce17174d 100644
+--- a/src/core/drmdevice.cpp
++++ b/src/core/drmdevice.cpp
+@@ -25,6 +25,8 @@ DrmDevice::DrmDevice(const QString &path, dev_t id, FileDescriptor &&fd, gbm_dev
+     , m_gbmDevice(gbmDevice)
+     , m_allocator(std::make_unique<GbmGraphicsBufferAllocator>(gbmDevice))
+ {
++    uint64_t value = 0;
++    m_supportsSyncObjTimelines = drmGetCap(m_fd.get(), DRM_CAP_SYNCOBJ_TIMELINE, &value) == 0 && value != 0;
+ }
+ 
+ DrmDevice::~DrmDevice()
+@@ -57,6 +59,11 @@ int DrmDevice::fileDescriptor() const
+     return m_fd.get();
+ }
+ 
++bool DrmDevice::supportsSyncObjTimelines() const
++{
++    return m_supportsSyncObjTimelines;
++}
++
+ std::unique_ptr<DrmDevice> DrmDevice::open(const QString &path)
+ {
+     return openWithAuthentication(path, -1);
+diff --git a/src/core/drmdevice.h b/src/core/drmdevice.h
+index f56bbe4a01d..252796449ef 100644
+--- a/src/core/drmdevice.h
++++ b/src/core/drmdevice.h
+@@ -30,6 +30,7 @@ public:
+     gbm_device *gbmDevice() const;
+     GraphicsBufferAllocator *allocator() const;
+     int fileDescriptor() const;
++    bool supportsSyncObjTimelines() const;
+ 
+     static std::unique_ptr<DrmDevice> open(const QString &path);
+     static std::unique_ptr<DrmDevice> openWithAuthentication(const QString &path, int authenticatedFd);
+@@ -42,6 +43,7 @@ private:
+     const FileDescriptor m_fd;
+     gbm_device *const m_gbmDevice;
+     const std::unique_ptr<GraphicsBufferAllocator> m_allocator;
++    bool m_supportsSyncObjTimelines;
+ };
+ 
+ }
+diff --git a/src/core/renderbackend.cpp b/src/core/renderbackend.cpp
+index a34f9be11c1..0575a2d20e3 100644
+--- a/src/core/renderbackend.cpp
++++ b/src/core/renderbackend.cpp
+@@ -140,16 +140,6 @@ std::unique_ptr<SurfaceTexture> RenderBackend::createSurfaceTextureWayland(Surfa
+     return nullptr;
+ }
+ 
+-bool RenderBackend::supportsTimelines() const
+-{
+-    return false;
+-}
+-
+-std::unique_ptr<SyncTimeline> RenderBackend::importTimeline(FileDescriptor &&syncObjFd)
+-{
+-    return nullptr;
+-}
+-
+ } // namespace KWin
+ 
+ #include "moc_renderbackend.cpp"
+diff --git a/src/core/renderbackend.h b/src/core/renderbackend.h
+index 700f516fb89..6c61890e39b 100644
+--- a/src/core/renderbackend.h
++++ b/src/core/renderbackend.h
+@@ -120,9 +120,6 @@ public:
+ 
+     virtual std::unique_ptr<SurfaceTexture> createSurfaceTextureX11(SurfacePixmapX11 *pixmap);
+     virtual std::unique_ptr<SurfaceTexture> createSurfaceTextureWayland(SurfacePixmap *pixmap);
+-
+-    virtual bool supportsTimelines() const;
+-    virtual std::unique_ptr<SyncTimeline> importTimeline(FileDescriptor &&syncObjFd);
+ };
+ 
+ } // namespace KWin
+diff --git a/src/wayland/linux_drm_syncobj_v1.cpp b/src/wayland/linux_drm_syncobj_v1.cpp
+index bac436f6df4..baa242d6395 100644
+--- a/src/wayland/linux_drm_syncobj_v1.cpp
++++ b/src/wayland/linux_drm_syncobj_v1.cpp
+@@ -7,6 +7,7 @@
+     SPDX-License-Identifier: GPL-2.0-or-later
+ */
+ #include "linux_drm_syncobj_v1.h"
++#include "core/drmdevice.h"
+ #include "core/syncobjtimeline.h"
+ #include "display.h"
+ #include "linux_drm_syncobj_v1_p.h"
+@@ -22,9 +23,10 @@ namespace KWin
+ 
+ static constexpr uint32_t s_version = 1;
+ 
+-LinuxDrmSyncObjV1Interface::LinuxDrmSyncObjV1Interface(Display *display, QObject *parent)
++LinuxDrmSyncObjV1Interface::LinuxDrmSyncObjV1Interface(Display *display, QObject *parent, DrmDevice *drmDevice)
+     : QObject(parent)
+     , QtWaylandServer::wp_linux_drm_syncobj_manager_v1(*display, s_version)
++    , m_drmDevice(drmDevice)
+ {
+ }
+ 
+@@ -42,23 +44,17 @@ void LinuxDrmSyncObjV1Interface::wp_linux_drm_syncobj_manager_v1_get_surface(Res
+ void LinuxDrmSyncObjV1Interface::wp_linux_drm_syncobj_manager_v1_import_timeline(Resource *resource, uint32_t id, int32_t rawFd)
+ {
+     FileDescriptor fd(rawFd);
+-    // TODO add a GPU abstraction, instead of using the render backend
+-    if (!m_renderBackend || isGlobalRemoved()) {
++    if (isGlobalRemoved()) {
+         // to not crash the client, create an inert timeline
+         new LinuxDrmSyncObjTimelineV1(resource->client(), id, nullptr);
+         return;
+     }
+-    auto timeline = m_renderBackend->importTimeline(std::move(fd));
+-    if (!timeline) {
++    uint32_t handle = 0;
++    if (drmSyncobjFDToHandle(m_drmDevice->fileDescriptor(), fd.get(), &handle) != 0) {
+         wl_resource_post_error(resource->handle, WP_LINUX_DRM_SYNCOBJ_MANAGER_V1_ERROR_INVALID_TIMELINE, "Importing timeline failed");
+         return;
+     }
+-    new LinuxDrmSyncObjTimelineV1(resource->client(), id, std::move(timeline));
+-}
+-
+-void LinuxDrmSyncObjV1Interface::setRenderBackend(RenderBackend *backend)
+-{
+-    m_renderBackend = backend;
++    new LinuxDrmSyncObjTimelineV1(resource->client(), id, std::make_unique<SyncTimeline>(m_drmDevice->fileDescriptor(), handle));
+ }
+ 
+ void LinuxDrmSyncObjV1Interface::wp_linux_drm_syncobj_manager_v1_destroy(Resource *resource)
+diff --git a/src/wayland/linux_drm_syncobj_v1.h b/src/wayland/linux_drm_syncobj_v1.h
+index ff6ddbe0340..2a81eb05f1b 100644
+--- a/src/wayland/linux_drm_syncobj_v1.h
++++ b/src/wayland/linux_drm_syncobj_v1.h
+@@ -21,14 +21,14 @@ class Display;
+ class SurfaceInterface;
+ class RenderBackend;
+ class SyncTimeline;
++class DrmDevice;
+ 
+ class KWIN_EXPORT LinuxDrmSyncObjV1Interface : public QObject, private QtWaylandServer::wp_linux_drm_syncobj_manager_v1
+ {
+     Q_OBJECT
+ public:
+-    explicit LinuxDrmSyncObjV1Interface(Display *display, QObject *parent = nullptr);
++    explicit LinuxDrmSyncObjV1Interface(Display *display, QObject *parent, DrmDevice *drmDevice);
+ 
+-    void setRenderBackend(RenderBackend *backend);
+     void remove();
+ 
+ private:
+@@ -37,7 +37,7 @@ private:
+     void wp_linux_drm_syncobj_manager_v1_destroy(Resource *resource) override;
+     void wp_linux_drm_syncobj_manager_v1_destroy_global() override;
+ 
+-    QPointer<RenderBackend> m_renderBackend;
++    DrmDevice *const m_drmDevice;
+ };
+ 
+ class LinuxDrmSyncObjSurfaceV1 : private QtWaylandServer::wp_linux_drm_syncobj_surface_v1
+diff --git a/src/wayland_server.cpp b/src/wayland_server.cpp
+index eefdde86ff1..e8c1c29c9ab 100644
+--- a/src/wayland_server.cpp
++++ b/src/wayland_server.cpp
+@@ -11,6 +11,7 @@
+ #include "config-kwin.h"
+ 
+ #include "backends/drm/drm_backend.h"
++#include "core/drmdevice.h"
+ #include "core/output.h"
+ #include "core/outputbackend.h"
+ #include "idle_inhibition.h"
+@@ -840,7 +841,7 @@ LinuxDrmSyncObjV1Interface *WaylandServer::linuxSyncObj() const
+ 
+ void WaylandServer::setRenderBackend(RenderBackend *backend)
+ {
+-    if (backend->supportsTimelines()) {
++    if (backend->drmDevice()->supportsSyncObjTimelines()) {
+         // ensure the DRM_IOCTL_SYNCOBJ_EVENTFD ioctl is supported
+         const auto linuxVersion = linuxKernelVersion();
+         if (linuxVersion.majorVersion() < 6 && linuxVersion.minorVersion() < 6) {
+@@ -851,15 +852,12 @@ void WaylandServer::setRenderBackend(RenderBackend *backend)
+             return;
+         }
+         if (!m_linuxDrmSyncObj) {
+-            m_linuxDrmSyncObj = new LinuxDrmSyncObjV1Interface(m_display, m_display);
++            m_linuxDrmSyncObj = new LinuxDrmSyncObjV1Interface(m_display, m_display, backend->drmDevice());
+         }
+     } else if (m_linuxDrmSyncObj) {
+         m_linuxDrmSyncObj->remove();
+         m_linuxDrmSyncObj = nullptr;
+     }
+-    if (m_linuxDrmSyncObj) {
+-        m_linuxDrmSyncObj->setRenderBackend(backend);
+-    }
+ }
+ 
+ #if KWIN_BUILD_SCREENLOCKER
+-- 
+GitLab
+
+
+From 08c63112971728a869850556a45107d72731a6df Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Tue, 7 May 2024 16:11:30 +0200
+Subject: [PATCH 4/4] wayland: move syncobj error handling entirely into
+ LinuxDrmSyncObjSurfaceV1
+
+---
+ src/wayland/linux_drm_syncobj_v1.cpp | 17 ++++++++++-------
+ src/wayland/linux_drm_syncobj_v1.h   |  2 ++
+ src/wayland/surface.cpp              |  6 ------
+ src/wayland/surface_p.h              |  2 --
+ 4 files changed, 12 insertions(+), 15 deletions(-)
+
+diff --git a/src/wayland/linux_drm_syncobj_v1.cpp b/src/wayland/linux_drm_syncobj_v1.cpp
+index baa242d6395..5f2419d541b 100644
+--- a/src/wayland/linux_drm_syncobj_v1.cpp
++++ b/src/wayland/linux_drm_syncobj_v1.cpp
+@@ -116,8 +116,7 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_acquire_point
+         wl_resource_post_error(resource->handle, WP_LINUX_DRM_SYNCOBJ_SURFACE_V1_ERROR_NO_SURFACE, "Surface got destroyed already");
+         return;
+     }
+-    const auto priv = SurfaceInterfacePrivate::get(m_surface);
+-    priv->pending->acquirePointIsSet = true;
++    m_acquirePointSet = true;
+     const auto timeline = resource_cast<LinuxDrmSyncObjTimelineV1 *>(timeline_resource);
+     if (!timeline->timeline()) {
+         // in the normal case this should never happen, but if it does,
+@@ -125,6 +124,7 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_acquire_point
+         return;
+     }
+     const uint64_t point = (uint64_t(point_hi) << 32) | point_lo;
++    const auto priv = SurfaceInterfacePrivate::get(m_surface);
+     priv->pending->acquirePoint.timeline = timeline->timeline();
+     priv->pending->acquirePoint.point = point;
+ }
+@@ -136,15 +136,14 @@ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_set_release_point
+         return;
+     }
+     const auto timeline = resource_cast<LinuxDrmSyncObjTimelineV1 *>(timeline_resource);
+-    const auto priv = SurfaceInterfacePrivate::get(m_surface);
+-    priv->pending->releasePointIsSet = true;
++    m_releasePointSet = true;
+     if (!timeline->timeline()) {
+         // in the normal case this should never happen, but if it does,
+         // there's nothing we can do about it without killing the client
+         return;
+     }
+     const uint64_t point = (uint64_t(point_hi) << 32) | point_lo;
+-    priv->pending->releasePoint = std::make_unique<SyncReleasePoint>(timeline->timeline(), point);
++    SurfaceInterfacePrivate::get(m_surface)->pending->releasePoint = std::make_unique<SyncReleasePoint>(timeline->timeline(), point);
+ }
+ 
+ void LinuxDrmSyncObjSurfaceV1::wp_linux_drm_syncobj_surface_v1_destroy_resource(Resource *resource)
+@@ -161,13 +160,15 @@ bool LinuxDrmSyncObjSurfaceV1::maybeEmitProtocolErrors()
+ {
+     const auto priv = SurfaceInterfacePrivate::get(m_surface);
+     if (!priv->pending->bufferIsSet && !priv->pending->acquirePoint.timeline && !priv->pending->releasePoint) {
++        m_acquirePointSet = false;
++        m_releasePointSet = false;
+         return false;
+     }
+-    if (!priv->pending->acquirePointIsSet) {
++    if (!m_acquirePointSet) {
+         wl_resource_post_error(resource()->handle, error_no_acquire_point, "explicit sync is used, but no acquire point is set");
+         return true;
+     }
+-    if (!priv->pending->releasePointIsSet) {
++    if (!m_releasePointSet) {
+         wl_resource_post_error(resource()->handle, error_no_release_point, "explicit sync is used, but no release point is set");
+         return true;
+     }
+@@ -185,6 +186,8 @@ bool LinuxDrmSyncObjSurfaceV1::maybeEmitProtocolErrors()
+         wl_resource_post_error(resource()->handle, error_unsupported_buffer, "only linux dmabuf buffers are allowed to use explicit sync");
+         return true;
+     }
++    m_acquirePointSet = false;
++    m_releasePointSet = false;
+     return false;
+ }
+ }
+diff --git a/src/wayland/linux_drm_syncobj_v1.h b/src/wayland/linux_drm_syncobj_v1.h
+index 2a81eb05f1b..de5b7e1001f 100644
+--- a/src/wayland/linux_drm_syncobj_v1.h
++++ b/src/wayland/linux_drm_syncobj_v1.h
+@@ -59,5 +59,7 @@ private:
+     void wp_linux_drm_syncobj_surface_v1_destroy(Resource *resource) override;
+ 
+     const QPointer<SurfaceInterface> m_surface;
++    bool m_acquirePointSet = false;
++    bool m_releasePointSet = false;
+ };
+ }
+diff --git a/src/wayland/surface.cpp b/src/wayland/surface.cpp
+index d5bda1dc1b8..17d84615071 100644
+--- a/src/wayland/surface.cpp
++++ b/src/wayland/surface.cpp
+@@ -526,15 +526,9 @@ void SurfaceState::mergeInto(SurfaceState *target)
+         target->damage = damage;
+         target->bufferDamage = bufferDamage;
+         target->bufferIsSet = true;
+-    }
+-    if (acquirePointIsSet) {
+         target->acquirePoint.timeline = acquirePoint.timeline;
+         target->acquirePoint.point = acquirePoint.point;
+-        target->acquirePointIsSet = true;
+-    }
+-    if (releasePointIsSet) {
+         target->releasePoint = std::move(releasePoint);
+-        target->releasePointIsSet = true;
+     }
+     if (viewport.sourceGeometryIsSet) {
+         target->viewport.sourceGeometry = viewport.sourceGeometry;
+diff --git a/src/wayland/surface_p.h b/src/wayland/surface_p.h
+index ed3b758a229..657d7c51c06 100644
+--- a/src/wayland/surface_p.h
++++ b/src/wayland/surface_p.h
+@@ -59,8 +59,6 @@ struct SurfaceState
+     bool contentTypeIsSet = false;
+     bool presentationModeHintIsSet = false;
+     bool colorDescriptionIsSet = false;
+-    bool releasePointIsSet = false;
+-    bool acquirePointIsSet = false;
      qint32 bufferScale = 1;
      OutputTransform bufferTransform = OutputTransform::Normal;
      wl_list frameCallbacks;
