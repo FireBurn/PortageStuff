@@ -1,5 +1,18 @@
+From 7cc529fa45faf0ff609bc59402df3af203e96553 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sat, 18 May 2024 11:15:22 +0100
+Subject: [PATCH 1/2] radeonsi,aco: Run ac_nir_lower_global_access pass
+
+This allows rusticl to run under radeonsi when using ACO
+
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/11179
+---
+ src/gallium/drivers/radeonsi/si_shader.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
 diff --git a/src/gallium/drivers/radeonsi/si_shader.c b/src/gallium/drivers/radeonsi/si_shader.c
-index 706477451e0..011d50193a2 100644
+index c92ae2a9baf..93ffe1edcff 100644
 --- a/src/gallium/drivers/radeonsi/si_shader.c
 +++ b/src/gallium/drivers/radeonsi/si_shader.c
 @@ -2385,6 +2385,8 @@ struct nir_shader *si_get_nir_shader(struct si_shader *shader,
@@ -11,3 +24,6 @@ index 706477451e0..011d50193a2 100644
     /* Loop unrolling caused by uniform inlining can help eliminate indirect indexing, so
      * this should be done after that.
      */
+-- 
+2.45.1
+
