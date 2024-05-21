@@ -24,3 +24,5 @@ dev-libs/rocm-opencl-runtime
 dev-util/rocminfo
 dev-util/hip
 dev-util/hipcc
+~app-office/libreoffice-24.2.3.2
+~app-office/libreoffice-l10n-24.2.3.2
