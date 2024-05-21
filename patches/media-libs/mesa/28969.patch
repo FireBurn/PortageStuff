@@ -1,4 +1,4 @@
-From 2cd36da22d448e2a76d7856a1d70a239818c6caf Mon Sep 17 00:00:00 2001
+From ff46a2e5d7cdc085b0b6b561b4fb0aa0b79ac14d Mon Sep 17 00:00:00 2001
 From: Mike Blumenkrantz <michael.blumenkrantz@gmail.com>
 Date: Mon, 29 Apr 2024 10:52:25 -0400
 Subject: [PATCH] build/amd: add amd-use-llvm build option
@@ -26,10 +26,11 @@ decreases by 5-10ms
  src/gallium/drivers/radeonsi/si_shader.c          |  6 +++---
  src/gallium/drivers/radeonsi/si_state_shaders.cpp |  2 +-
  src/gallium/meson.build                           |  2 +-
- 17 files changed, 50 insertions(+), 35 deletions(-)
+ src/gallium/targets/pipe-loader/meson.build       |  2 +-
+ 18 files changed, 51 insertions(+), 36 deletions(-)
 
 diff --git a/meson.build b/meson.build
-index 072dd7bcb21..b2721a60f54 100644
+index 072dd7bcb214c..b2721a60f541a 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -1742,6 +1742,7 @@ if draw_with_llvm
@@ -63,7 +64,7 @@ index 072dd7bcb21..b2721a60f54 100644
  with_opencl_spirv = (_opencl != 'disabled' and get_option('opencl-spirv')) or with_clc
  if with_opencl_spirv
 diff --git a/meson_options.txt b/meson_options.txt
-index 7c021c14cfe..b2678c1d4fe 100644
+index 7c021c14cfe3a..b2678c1d4fe0c 100644
 --- a/meson_options.txt
 +++ b/meson_options.txt
 @@ -423,6 +423,14 @@ option(
@@ -82,7 +83,7 @@ index 7c021c14cfe..b2678c1d4fe 100644
    'valgrind',
    type : 'feature',
 diff --git a/src/amd/compiler/aco_interface.cpp b/src/amd/compiler/aco_interface.cpp
-index a1d747c71f6..0119551a20b 100644
+index a1d747c71f6c7..0119551a20b43 100644
 --- a/src/amd/compiler/aco_interface.cpp
 +++ b/src/amd/compiler/aco_interface.cpp
 @@ -73,7 +73,7 @@ get_disasm_string(Program* program, std::vector<uint32_t>& code, unsigned exec_s
@@ -95,7 +96,7 @@ index a1d747c71f6..0119551a20b 100644
  #endif
                         ", falling back to print_program.\n\n");
 diff --git a/src/amd/compiler/aco_print_asm.cpp b/src/amd/compiler/aco_print_asm.cpp
-index e590cdf698c..d21acd47623 100644
+index e590cdf698cc2..d21acd476230d 100644
 --- a/src/amd/compiler/aco_print_asm.cpp
 +++ b/src/amd/compiler/aco_print_asm.cpp
 @@ -8,7 +8,7 @@
@@ -143,7 +144,7 @@ index e590cdf698c..d21acd47623 100644
        return print_asm_llvm(program, binary, exec_size, output);
     }
 diff --git a/src/amd/meson.build b/src/amd/meson.build
-index 4c0bd4abc5d..5e4e3f6e566 100644
+index 4c0bd4abc5d4a..5e4e3f6e56654 100644
 --- a/src/amd/meson.build
 +++ b/src/amd/meson.build
 @@ -23,7 +23,7 @@ inc_amd = include_directories('.')
@@ -156,7 +157,7 @@ index 4c0bd4abc5d..5e4e3f6e566 100644
    else
      libamd_common_llvm = []
 diff --git a/src/amd/vulkan/meson.build b/src/amd/vulkan/meson.build
-index 1269087b706..a9412c76625 100644
+index 1269087b706c8..a9412c76625a6 100644
 --- a/src/amd/vulkan/meson.build
 +++ b/src/amd/vulkan/meson.build
 @@ -182,7 +182,7 @@ if not with_platform_windows
@@ -169,7 +170,7 @@ index 1269087b706..a9412c76625 100644
      'radv_llvm_helper.cpp',
      'radv_llvm_helper.h',
 diff --git a/src/amd/vulkan/nir/radv_nir_rt_common.c b/src/amd/vulkan/nir/radv_nir_rt_common.c
-index c6fe6c91129..60683550d98 100644
+index c6fe6c911293f..60683550d98c4 100644
 --- a/src/amd/vulkan/nir/radv_nir_rt_common.c
 +++ b/src/amd/vulkan/nir/radv_nir_rt_common.c
 @@ -8,7 +8,7 @@
@@ -182,7 +183,7 @@ index c6fe6c91129..60683550d98 100644
  #endif
  
 diff --git a/src/amd/vulkan/radv_device.c b/src/amd/vulkan/radv_device.c
-index 2e2451812ad..a058948fa83 100644
+index 2e2451812ad8b..a058948fa83e0 100644
 --- a/src/amd/vulkan/radv_device.c
 +++ b/src/amd/vulkan/radv_device.c
 @@ -70,7 +70,7 @@ typedef void *drmDevicePtr;
@@ -195,7 +196,7 @@ index 2e2451812ad..a058948fa83 100644
  #endif
  
 diff --git a/src/amd/vulkan/radv_physical_device.c b/src/amd/vulkan/radv_physical_device.c
-index 3abff010426..ad55f4224d2 100644
+index 3abff01042662..ad55f4224d2f9 100644
 --- a/src/amd/vulkan/radv_physical_device.c
 +++ b/src/amd/vulkan/radv_physical_device.c
 @@ -41,7 +41,7 @@ typedef void *drmDevicePtr;
@@ -235,7 +236,7 @@ index 3abff010426..ad55f4224d2 100644
        fprintf(stderr, "ERROR: LLVM compiler backend selected for radv, but LLVM support was not "
                        "enabled at build time.\n");
 diff --git a/src/amd/vulkan/radv_shader.c b/src/amd/vulkan/radv_shader.c
-index fa9cee8f845..a1a178bb7c6 100644
+index fa9cee8f845aa..a1a178bb7c618 100644
 --- a/src/amd/vulkan/radv_shader.c
 +++ b/src/amd/vulkan/radv_shader.c
 @@ -43,7 +43,7 @@
@@ -293,7 +294,7 @@ index fa9cee8f845..a1a178bb7c6 100644
        ac_init_llvm_once();
  #endif
 diff --git a/src/gallium/drivers/r600/r600_pipe_common.c b/src/gallium/drivers/r600/r600_pipe_common.c
-index 14d1aa6cf5a..aaa171a07ed 100644
+index 14d1aa6cf5a2c..aaa171a07edd6 100644
 --- a/src/gallium/drivers/r600/r600_pipe_common.c
 +++ b/src/gallium/drivers/r600/r600_pipe_common.c
 @@ -23,7 +23,7 @@
@@ -315,7 +316,7 @@ index 14d1aa6cf5a..aaa171a07ed 100644
  #endif
  		 ")",
 diff --git a/src/gallium/drivers/radeonsi/meson.build b/src/gallium/drivers/radeonsi/meson.build
-index f0443006c82..4e1ce732172 100644
+index f0443006c82d5..4e1ce73217227 100644
 --- a/src/gallium/drivers/radeonsi/meson.build
 +++ b/src/gallium/drivers/radeonsi/meson.build
 @@ -130,7 +130,7 @@ files_libradeonsi += ['si_perfetto.cpp', 'si_perfetto.h']
@@ -328,7 +329,7 @@ index f0443006c82..4e1ce732172 100644
      'si_shader_llvm.c',
      'si_shader_llvm.h',
 diff --git a/src/gallium/drivers/radeonsi/si_get.c b/src/gallium/drivers/radeonsi/si_get.c
-index f795c31935d..bafc44ed53b 100644
+index f795c31935d6c..bafc44ed53b97 100644
 --- a/src/gallium/drivers/radeonsi/si_get.c
 +++ b/src/gallium/drivers/radeonsi/si_get.c
 @@ -1338,7 +1338,7 @@ static void si_init_renderer_string(struct si_screen *sscreen)
@@ -341,7 +342,7 @@ index f795c31935d..bafc44ed53b 100644
  #endif
        "ACO";
 diff --git a/src/gallium/drivers/radeonsi/si_pipe.c b/src/gallium/drivers/radeonsi/si_pipe.c
-index d4ddaa0f073..be309e4311d 100644
+index d4ddaa0f07391..be309e4311dc4 100644
 --- a/src/gallium/drivers/radeonsi/si_pipe.c
 +++ b/src/gallium/drivers/radeonsi/si_pipe.c
 @@ -27,7 +27,7 @@
@@ -399,7 +400,7 @@ index d4ddaa0f073..be309e4311d 100644
      * and LLVM must call it first because its atexit handler executes C++ destructors,
      * which must be done after our compiler threads using LLVM in u_queue are finished
 diff --git a/src/gallium/drivers/radeonsi/si_shader.c b/src/gallium/drivers/radeonsi/si_shader.c
-index c92ae2a9baf..706477451e0 100644
+index c92ae2a9bafca..706477451e078 100644
 --- a/src/gallium/drivers/radeonsi/si_shader.c
 +++ b/src/gallium/drivers/radeonsi/si_shader.c
 @@ -2632,7 +2632,7 @@ si_nir_generate_gs_copy_shader(struct si_screen *sscreen,
@@ -430,7 +431,7 @@ index c92ae2a9baf..706477451e0 100644
  #endif
        si_aco_build_shader_part(sscreen, stage, prolog, debug, name, result);
 diff --git a/src/gallium/drivers/radeonsi/si_state_shaders.cpp b/src/gallium/drivers/radeonsi/si_state_shaders.cpp
-index 058a269526f..0d36c93ce39 100644
+index 058a269526f83..0d36c93ce3954 100644
 --- a/src/gallium/drivers/radeonsi/si_state_shaders.cpp
 +++ b/src/gallium/drivers/radeonsi/si_state_shaders.cpp
 @@ -4,7 +4,7 @@
@@ -443,7 +444,7 @@ index 058a269526f..0d36c93ce39 100644
  #endif
  
 diff --git a/src/gallium/meson.build b/src/gallium/meson.build
-index 5014bdbd700..c820f288ab0 100644
+index 5014bdbd700ab..c820f288ab072 100644
 --- a/src/gallium/meson.build
 +++ b/src/gallium/meson.build
 @@ -25,7 +25,7 @@ foreach d : [[with_gallium_r300 or with_gallium_radeonsi or with_gallium_r600, '
@@ -455,6 +456,19 @@ index 5014bdbd700..c820f288ab0 100644
    if d[0]
      sym_config.set(d[1], d[1] + ';')
    else
+diff --git a/src/gallium/targets/pipe-loader/meson.build b/src/gallium/targets/pipe-loader/meson.build
+index 943faec469d0f..ec0e3aa9cde92 100644
+--- a/src/gallium/targets/pipe-loader/meson.build
++++ b/src/gallium/targets/pipe-loader/meson.build
+@@ -71,7 +71,7 @@ foreach x : pipe_loaders
+ 
+   foreach d : [[x[1] in ['r300', 'r600', 'radeonsi'], 'radeon_drm_winsys_create'],
+                [x[1] == 'radeonsi', 'amdgpu_winsys_create'],
+-               [x[1] == 'radeonsi' and with_llvm, 'ac_init_shared_llvm_once'],
++               [x[1] == 'radeonsi' and amd_with_llvm, 'ac_init_shared_llvm_once'],
+                [x[1] != 'swrast', 'driver_descriptor'],
+                [x[1] == 'swrast', 'swrast_driver_descriptor']]
+     if d[0]
 -- 
-2.45.1
+GitLab
 
