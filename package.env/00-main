@@ -31,6 +31,7 @@ dev-libs/rocm-opencl-runtime		clangdebug.conf
 dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 dev-qt/*				clango3lto.conf
+dev-qt/qtbase				clangdebug.conf
 dev-qt/qtscript				o3.conf
 dev-util/clinfo                         clango3.conf
 dev-util/directx-headers		clango3.conf
