@@ -31,7 +31,6 @@ dev-libs/rocm-opencl-runtime		clangdebug.conf
 dev-libs/rocr-runtime                   clango3.conf
 dev-libs/roct-thunk-interface           clango3.conf
 dev-qt/*				clango3lto.conf
-dev-qt/qtbase				clangdebug.conf
 dev-qt/qtscript				o3.conf
 dev-util/clinfo                         clango3.conf
 dev-util/directx-headers		clango3.conf
@@ -47,7 +46,6 @@ games-emulation/suyu			clangandroid.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf
 #kde-frameworks/kiconthemes		clango3.conf
-kde-misc/kdiff3				clangdebug.conf
 #kde-frameworks/kio			debug.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 media-libs/dav1d			o3.conf
@@ -96,4 +94,3 @@ net-irc/konversation			clango3lto.conf
 net-libs/libktorrent			clango3lto.conf
 net-p2p/ktorrent			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
-media-video/qmplay2			clangdebug.conf
