@@ -1,17 +1,9 @@
 media-libs/mesa				**
 media-libs/vulkan-demos			**
-x11-libs/libvdpau-va-gl			**
-x11-drivers/xf86-video-amdgpu		**
-x11-drivers/xf86-video-intel		**
 =x11-libs/libdrm-9999			**
 app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
-=app-office/libreoffice-7.5.2.2		**
-=app-office/libreoffice-l10n-7.5*	**
-=virtual/rust-1.70.0			**
-=dev-lang/rust-1.70.0			**
 x11-misc/sddm				**
-media-video/qmplay2			**
 <app-office/libreoffice-24.2.9999	**
 <app-office/libreoffice-l10n-24.2.9999	**
 dev-lang/rust				**
