@@ -3,8 +3,6 @@ media-libs/vulkan-demos			**
 =x11-libs/libdrm-9999			**
 app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
-x11-misc/sddm				**
 <app-office/libreoffice-24.2.9999	**
 <app-office/libreoffice-l10n-24.2.9999	**
-dev-lang/rust				**
 kde-misc/kdiff3				**
