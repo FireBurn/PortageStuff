@@ -42,6 +42,7 @@ dev-util/valgrind			o3.conf
 games-emulation/yuzu                    clangandroid.conf
 #games-emulation/yuzu			o3.conf
 games-emulation/suyu			clangandroid.conf
+games-emulation/torzu			o3.conf
 #kde-apps/dolphin			clangdebug.conf
 #kde-apps/kio-extras			debug.conf
 kde*/*					clango3lto.conf
