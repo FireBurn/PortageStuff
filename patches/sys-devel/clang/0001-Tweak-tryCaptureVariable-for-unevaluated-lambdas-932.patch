@@ -1,4 +1,4 @@
-From cc31b329df3bca8a5ccfb20e54b17280d1d121c1 Mon Sep 17 00:00:00 2001
+From 12d020ef228cba4070a6ba3db1082dfdea40adc1 Mon Sep 17 00:00:00 2001
 From: Younan Zhang <zyn7109@gmail.com>
 Date: Tue, 4 Jun 2024 12:44:01 +0800
 Subject: [PATCH] Tweak tryCaptureVariable for unevaluated lambdas (#93206)
@@ -17,54 +17,18 @@ Fixes #89496
 Fixes #90669
 Fixes #91633
 ---
- clang/docs/ReleaseNotes.rst               | 14 +++--
+ clang/docs/ReleaseNotes.rst               |  2 +
  clang/include/clang/AST/DeclBase.h        |  4 ++
  clang/lib/Parse/ParseExprCXX.cpp          |  5 +-
  clang/lib/Sema/SemaExpr.cpp               | 10 +++
  clang/lib/Sema/SemaLambda.cpp             | 29 ++++++---
  clang/test/SemaCXX/lambda-unevaluated.cpp | 75 +++++++++++++++++++++++
- 6 files changed, 121 insertions(+), 16 deletions(-)
+ 6 files changed, 115 insertions(+), 10 deletions(-)
 
 diff --git a/clang/docs/ReleaseNotes.rst b/clang/docs/ReleaseNotes.rst
-index e533ecfd5aeb..b8b427e6e0b3 100644
+index e533ecfd5aeb..523cf23c09cb 100644
 --- a/clang/docs/ReleaseNotes.rst
 +++ b/clang/docs/ReleaseNotes.rst
-@@ -531,18 +531,18 @@ Improvements to Clang's diagnostics
- 
-   .. code-block:: c++
- 
--     static_assert("A\n"[1] == U'🌍');
-+     static_assert("A\n"[1] == U'�');
- 
-   *BEFORE*:
- 
-   .. code-block:: text
- 
-     source:1:15: error: static assertion failed due to requirement '"A\n"[1] == U'\U0001f30d''
--    1 | static_assert("A\n"[1] == U'🌍');
-+    1 | static_assert("A\n"[1] == U'�');
-       |               ^~~~~~~~~~~~~~~~~
-     source:1:24: note: expression evaluates to ''
-     ' == 127757'
--    1 | static_assert("A\n"[1] == U'🌍');
-+    1 | static_assert("A\n"[1] == U'�');
-       |               ~~~~~~~~~^~~~~~~~
- 
-   *AFTER*:
-@@ -550,10 +550,10 @@ Improvements to Clang's diagnostics
-   .. code-block:: text
- 
-     source:1:15: error: static assertion failed due to requirement '"A\n"[1] == U'\U0001f30d''
--    1 | static_assert("A\n"[1] == U'🌍');
-+    1 | static_assert("A\n"[1] == U'�');
-       |               ^~~~~~~~~~~~~~~~~
--    source:1:24: note: expression evaluates to ''\n' (0x0A, 10) == U'🌍' (0x1F30D, 127757)'
--    1 | static_assert("A\n"[1] == U'🌍');
-+    source:1:24: note: expression evaluates to ''\n' (0x0A, 10) == U'�' (0x1F30D, 127757)'
-+    1 | static_assert("A\n"[1] == U'�');
-       |               ~~~~~~~~~^~~~~~~~
- - Clang now always diagnoses when using non-standard layout types in ``offsetof`` .
-   (`#64619 <https://github.com/llvm/llvm-project/issues/64619>`_)
 @@ -1118,6 +1118,8 @@ Bug Fixes to C++ Support
  - Fixed a regression in CTAD that a friend declaration that befriends itself may cause
    incorrect constraint substitution.
