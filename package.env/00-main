@@ -40,7 +40,7 @@ dev-util/rocminfo                       clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
 dev-util/valgrind			o3.conf
 #games-emulation/yuzu                    clangandroid.conf
-games-emulation/yuzu			o3.conf
+games-emulation/yuzu			clango3lto.conf
 games-emulation/suyu			clangandroid.conf
 games-emulation/torzu			o3.conf
 #kde-apps/dolphin			clangdebug.conf

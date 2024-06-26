@@ -1,0 +1,262 @@
+From cc31b329df3bca8a5ccfb20e54b17280d1d121c1 Mon Sep 17 00:00:00 2001
+From: Younan Zhang <zyn7109@gmail.com>
+Date: Tue, 4 Jun 2024 12:44:01 +0800
+Subject: [PATCH] Tweak tryCaptureVariable for unevaluated lambdas (#93206)
+
+This patch picks up #78598 with the hope that we can address such
+crashes in `tryCaptureVariable()` for unevaluated lambdas.
+
+In addition to `tryCaptureVariable()`, this also contains several other
+fixes on e.g. lambda parsing/dependencies.
+
+Fixes #63845
+Fixes #67260
+Fixes #69307
+Fixes #88081
+Fixes #89496
+Fixes #90669
+Fixes #91633
+---
+ clang/docs/ReleaseNotes.rst               | 14 +++--
+ clang/include/clang/AST/DeclBase.h        |  4 ++
+ clang/lib/Parse/ParseExprCXX.cpp          |  5 +-
+ clang/lib/Sema/SemaExpr.cpp               | 10 +++
+ clang/lib/Sema/SemaLambda.cpp             | 29 ++++++---
+ clang/test/SemaCXX/lambda-unevaluated.cpp | 75 +++++++++++++++++++++++
+ 6 files changed, 121 insertions(+), 16 deletions(-)
+
+diff --git a/clang/docs/ReleaseNotes.rst b/clang/docs/ReleaseNotes.rst
+index e533ecfd5aeb..b8b427e6e0b3 100644
+--- a/clang/docs/ReleaseNotes.rst
++++ b/clang/docs/ReleaseNotes.rst
+@@ -531,18 +531,18 @@ Improvements to Clang's diagnostics
+ 
+   .. code-block:: c++
+ 
+-     static_assert("A\n"[1] == U'🌍');
++     static_assert("A\n"[1] == U'�');
+ 
+   *BEFORE*:
+ 
+   .. code-block:: text
+ 
+     source:1:15: error: static assertion failed due to requirement '"A\n"[1] == U'\U0001f30d''
+-    1 | static_assert("A\n"[1] == U'🌍');
++    1 | static_assert("A\n"[1] == U'�');
+       |               ^~~~~~~~~~~~~~~~~
+     source:1:24: note: expression evaluates to ''
+     ' == 127757'
+-    1 | static_assert("A\n"[1] == U'🌍');
++    1 | static_assert("A\n"[1] == U'�');
+       |               ~~~~~~~~~^~~~~~~~
+ 
+   *AFTER*:
+@@ -550,10 +550,10 @@ Improvements to Clang's diagnostics
+   .. code-block:: text
+ 
+     source:1:15: error: static assertion failed due to requirement '"A\n"[1] == U'\U0001f30d''
+-    1 | static_assert("A\n"[1] == U'🌍');
++    1 | static_assert("A\n"[1] == U'�');
+       |               ^~~~~~~~~~~~~~~~~
+-    source:1:24: note: expression evaluates to ''\n' (0x0A, 10) == U'🌍' (0x1F30D, 127757)'
+-    1 | static_assert("A\n"[1] == U'🌍');
++    source:1:24: note: expression evaluates to ''\n' (0x0A, 10) == U'�' (0x1F30D, 127757)'
++    1 | static_assert("A\n"[1] == U'�');
+       |               ~~~~~~~~~^~~~~~~~
+ - Clang now always diagnoses when using non-standard layout types in ``offsetof`` .
+   (`#64619 <https://github.com/llvm/llvm-project/issues/64619>`_)
+@@ -1118,6 +1118,8 @@ Bug Fixes to C++ Support
+ - Fixed a regression in CTAD that a friend declaration that befriends itself may cause
+   incorrect constraint substitution.
+   (`#86769 <https://github.com/llvm/llvm-project/issues/86769>`_)
++- Fixed several bugs in capturing variables within unevaluated contexts. (#GH63845), (#GH67260), (#GH69307),
++  (#GH88081), (#GH89496), (#GH90669) and (#GH91633).
+ 
+ Bug Fixes to AST Handling
+ ^^^^^^^^^^^^^^^^^^^^^^^^^
+diff --git a/clang/include/clang/AST/DeclBase.h b/clang/include/clang/AST/DeclBase.h
+index eb7a1a320600..328ed94ccc1f 100644
+--- a/clang/include/clang/AST/DeclBase.h
++++ b/clang/include/clang/AST/DeclBase.h
+@@ -2157,6 +2157,10 @@ public:
+            getDeclKind() <= Decl::lastRecord;
+   }
+ 
++  bool isRequiresExprBody() const {
++    return getDeclKind() == Decl::RequiresExprBody;
++  }
++
+   bool isNamespace() const { return getDeclKind() == Decl::Namespace; }
+ 
+   bool isStdNamespace() const;
+diff --git a/clang/lib/Parse/ParseExprCXX.cpp b/clang/lib/Parse/ParseExprCXX.cpp
+index d61f414406f0..49c64ae7abaa 100644
+--- a/clang/lib/Parse/ParseExprCXX.cpp
++++ b/clang/lib/Parse/ParseExprCXX.cpp
+@@ -1496,7 +1496,10 @@ ExprResult Parser::ParseLambdaExpressionAfterIntroducer(
+                       TrailingReturnTypeLoc, &DS),
+                   std::move(Attributes), DeclEndLoc);
+ 
+-    Actions.ActOnLambdaClosureQualifiers(Intro, MutableLoc);
++    // We have called ActOnLambdaClosureQualifiers for parentheses-less cases
++    // above.
++    if (HasParentheses)
++      Actions.ActOnLambdaClosureQualifiers(Intro, MutableLoc);
+ 
+     if (HasParentheses && Tok.is(tok::kw_requires))
+       ParseTrailingRequiresClause(D);
+diff --git a/clang/lib/Sema/SemaExpr.cpp b/clang/lib/Sema/SemaExpr.cpp
+index 4cce0abc2315..c5ef1f1e510e 100644
+--- a/clang/lib/Sema/SemaExpr.cpp
++++ b/clang/lib/Sema/SemaExpr.cpp
+@@ -19715,6 +19715,10 @@ bool Sema::tryCaptureVariable(
+   DeclContext *VarDC = Var->getDeclContext();
+   DeclContext *DC = CurContext;
+ 
++  // Skip past RequiresExprBodys because they don't constitute function scopes.
++  while (DC->isRequiresExprBody())
++    DC = DC->getParent();
++
+   // tryCaptureVariable is called every time a DeclRef is formed,
+   // it can therefore have non-negigible impact on performances.
+   // For local variables and when there is no capturing scope,
+@@ -19722,6 +19726,12 @@ bool Sema::tryCaptureVariable(
+   if (CapturingFunctionScopes == 0 && (!BuildAndDiagnose || VarDC == DC))
+     return true;
+ 
++  // Exception: Function parameters are not tied to the function's DeclContext
++  // until we enter the function definition. Capturing them anyway would result
++  // in an out-of-bounds error while traversing DC and its parents.
++  if (isa<ParmVarDecl>(Var) && !VarDC->isFunctionOrMethod())
++    return true;
++
+   const auto *VD = dyn_cast<VarDecl>(Var);
+   if (VD) {
+     if (VD->isInitCapture())
+diff --git a/clang/lib/Sema/SemaLambda.cpp b/clang/lib/Sema/SemaLambda.cpp
+index 5b95bae567b7..ddb18679993b 100644
+--- a/clang/lib/Sema/SemaLambda.cpp
++++ b/clang/lib/Sema/SemaLambda.cpp
+@@ -1034,16 +1034,27 @@ void Sema::ActOnLambdaExpressionAfterIntroducer(LambdaIntroducer &Intro,
+   // be dependent, because there are template parameters in scope.
+   CXXRecordDecl::LambdaDependencyKind LambdaDependencyKind =
+       CXXRecordDecl::LDK_Unknown;
+-  if (LSI->NumExplicitTemplateParams > 0) {
+-    Scope *TemplateParamScope = CurScope->getTemplateParamParent();
+-    assert(TemplateParamScope &&
+-           "Lambda with explicit template param list should establish a "
+-           "template param scope");
+-    assert(TemplateParamScope->getParent());
+-    if (TemplateParamScope->getParent()->getTemplateParamParent() != nullptr)
+-      LambdaDependencyKind = CXXRecordDecl::LDK_AlwaysDependent;
+-  } else if (CurScope->getTemplateParamParent() != nullptr) {
++  if (CurScope->getTemplateParamParent() != nullptr) {
+     LambdaDependencyKind = CXXRecordDecl::LDK_AlwaysDependent;
++  } else if (Scope *P = CurScope->getParent()) {
++    // Given a lambda defined inside a requires expression,
++    //
++    // struct S {
++    //   S(auto var) requires requires { [&] -> decltype(var) { }; }
++    //   {}
++    // };
++    //
++    // The parameter var is not injected into the function Decl at the point of
++    // parsing lambda. In such scenarios, perceiving it as dependent could
++    // result in the constraint being evaluated, which matches what GCC does.
++    while (P->getEntity() && P->getEntity()->isRequiresExprBody())
++      P = P->getParent();
++    if (P->isFunctionDeclarationScope() &&
++        llvm::any_of(P->decls(), [](Decl *D) {
++          return isa<ParmVarDecl>(D) &&
++                 cast<ParmVarDecl>(D)->getType()->isTemplateTypeParmType();
++        }))
++      LambdaDependencyKind = CXXRecordDecl::LDK_AlwaysDependent;
+   }
+ 
+   CXXRecordDecl *Class = createLambdaClosureType(
+diff --git a/clang/test/SemaCXX/lambda-unevaluated.cpp b/clang/test/SemaCXX/lambda-unevaluated.cpp
+index 10d4c2228ec9..39ee89bc797f 100644
+--- a/clang/test/SemaCXX/lambda-unevaluated.cpp
++++ b/clang/test/SemaCXX/lambda-unevaluated.cpp
+@@ -189,3 +189,78 @@ void recursive() {
+ 
+ }
+ }
++
++// GH63845: Test if we have skipped past RequiresExprBodyDecls in tryCaptureVariable().
++namespace GH63845 {
++
++template <bool> struct A {};
++
++struct true_type {
++  constexpr operator bool() noexcept { return true; }
++};
++
++constexpr bool foo() {
++  true_type x{};
++  return requires { typename A<x>; };
++}
++
++static_assert(foo());
++
++} // namespace GH63845
++
++// GH69307: Test if we can correctly handle param decls that have yet to get into the function scope.
++namespace GH69307 {
++
++constexpr auto ICE() {
++  constexpr auto b = 1;
++  return [=](auto c) -> int
++           requires requires { b + c; }
++  { return 1; };
++};
++
++constexpr auto Ret = ICE()(1);
++
++} // namespace GH69307
++
++// GH88081: Test if we evaluate the requires expression with lambda captures properly.
++namespace GH88081 {
++
++// Test that ActOnLambdaClosureQualifiers() is called only once.
++void foo(auto value)
++  requires requires { [&] -> decltype(value) {}; }
++  // expected-error@-1 {{non-local lambda expression cannot have a capture-default}}
++{}
++
++struct S { //#S
++  S(auto value) //#S-ctor
++  requires requires { [&] -> decltype(value) { return 2; }; } {} // #S-requires
++
++  static auto foo(auto value) -> decltype([&]() -> decltype(value) {}()) { return {}; } // #S-foo
++
++  // FIXME: 'value' does not constitute an ODR use here. Add a diagnostic for it.
++  static auto bar(auto value) -> decltype([&] { return value; }()) {
++    return "a"; // #bar-body
++  }
++};
++
++S s("a"); // #use
++// expected-error@#S-requires {{cannot initialize return object of type 'decltype(value)' (aka 'const char *') with an rvalue of type 'int'}}
++// expected-error@#use {{no matching constructor}}
++// expected-note@#S-requires {{substituting into a lambda expression here}}
++// expected-note@#S-requires {{substituting template arguments into constraint expression here}}
++// expected-note@#S-requires {{in instantiation of requirement here}}
++// expected-note@#use {{checking constraint satisfaction for template 'S<const char *>' required here}}
++// expected-note@#use {{requested here}}
++// expected-note-re@#S 2{{candidate constructor {{.*}} not viable}}
++// expected-note@#S-ctor {{constraints not satisfied}}
++// expected-note-re@#S-requires {{because {{.*}} would be invalid}}
++
++void func() {
++  S::foo(42);
++  S::bar("str");
++  S::bar(0.618);
++  // expected-error-re@#bar-body {{cannot initialize return object of type {{.*}} (aka 'double') with an lvalue of type 'const char[2]'}}
++  // expected-note@-2 {{requested here}}
++}
++
++} // namespace GH88081
+-- 
+2.45.2
+
