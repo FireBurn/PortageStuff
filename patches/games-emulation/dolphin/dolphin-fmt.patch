@@ -1,0 +1,23 @@
+diff '--color=auto' -ur dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Common/Logging/Log.h /home/fireburn/dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Common/Logging/Log.h
+--- dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Common/Logging/Log.h	2023-11-17 17:18:16.000000000 +0000
++++ /home/fireburn/dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Common/Logging/Log.h	2024-07-01 17:39:57.654531160 +0100
+@@ -5,6 +5,7 @@
+ 
+ #include <cstddef>
+ #include <fmt/format.h>
++#include <fmt/ranges.h>
+ #include <string_view>
+ #include "Common/FormatUtil.h"
+ 
+diff '--color=auto' -ur dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Core/HW/EXI/EXI_Device.h /home/fireburn/dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Core/HW/EXI/EXI_Device.h
+--- dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Core/HW/EXI/EXI_Device.h	2023-11-17 17:18:16.000000000 +0000
++++ /home/fireburn/dolphin-dc0814ae4622313d513468bdc377ee9c031de199/Source/Core/Core/HW/EXI/EXI_Device.h	2024-07-01 17:43:31.772090703 +0100
+@@ -110,7 +110,7 @@
+   constexpr formatter() : EnumFormatter(names) {}
+ 
+   template <typename FormatContext>
+-  auto format(const ExpansionInterface::EXIDeviceType& e, FormatContext& ctx)
++  auto format(const ExpansionInterface::EXIDeviceType& e, FormatContext& ctx) const
+   {
+     if (e != ExpansionInterface::EXIDeviceType::None)
+     {

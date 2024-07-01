@@ -1,0 +1,72 @@
+diff '--color=auto' -ur Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/Cemu/Logging/CemuLogging.h /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/Cemu/Logging/CemuLogging.h
+--- Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/Cemu/Logging/CemuLogging.h	2024-01-19 03:58:08.000000000 +0000
++++ /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/Cemu/Logging/CemuLogging.h	2024-07-01 18:32:17.904297629 +0100
+@@ -84,7 +84,7 @@
+ 	else
+ 	{
+ 		const auto format_view = fmt::basic_string_view<T>(formatStr);
+-		const auto text = fmt::vformat(format_view, fmt::make_format_args<fmt::buffer_context<T>>(args...));
++		const auto text = fmt::vformat(format_view, fmt::make_format_args<fmt::buffered_context<T>>(args...));
+ 		cemuLog_log(type, std::basic_string_view(text.data(), text.size()));
+ 	}
+ 	return true;
+diff '--color=auto' -ur Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/config/CemuConfig.h /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/config/CemuConfig.h
+--- Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/config/CemuConfig.h	2024-01-19 03:58:08.000000000 +0000
++++ /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/config/CemuConfig.h	2024-07-01 18:32:17.907297645 +0100
+@@ -192,7 +192,7 @@
+ template <>
+ struct fmt::formatter<PrecompiledShaderOption> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(const PrecompiledShaderOption c, FormatContext &ctx) {
++	auto format(const PrecompiledShaderOption c, FormatContext &ctx) const {
+ 		string_view name;
+ 		switch (c)
+ 		{
+@@ -207,7 +207,7 @@
+ template <>
+ struct fmt::formatter<AccurateShaderMulOption> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(const AccurateShaderMulOption c, FormatContext &ctx) {
++	auto format(const AccurateShaderMulOption c, FormatContext &ctx) const {
+ 		string_view name;
+ 		switch (c)
+ 		{
+@@ -221,7 +221,7 @@
+ template <>
+ struct fmt::formatter<CPUMode> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(const CPUMode c, FormatContext &ctx) {
++	auto format(const CPUMode c, FormatContext &ctx) const {
+ 		string_view name;
+ 		switch (c)
+ 		{
+@@ -238,7 +238,7 @@
+ template <>
+ struct fmt::formatter<CPUModeLegacy> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(const CPUModeLegacy c, FormatContext &ctx) {
++	auto format(const CPUModeLegacy c, FormatContext &ctx) const {
+ 		string_view name;
+ 		switch (c)
+ 		{
+@@ -255,7 +255,7 @@
+ template <>
+ struct fmt::formatter<CafeConsoleRegion> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(const CafeConsoleRegion v, FormatContext &ctx) {
++	auto format(const CafeConsoleRegion v, FormatContext &ctx) const {
+ 		string_view name;
+ 		switch (v)
+ 		{
+diff '--color=auto' -ur Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/input/emulated/EmulatedController.h /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/input/emulated/EmulatedController.h
+--- Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/input/emulated/EmulatedController.h	2024-01-19 03:58:08.000000000 +0000
++++ /home/fireburn/Cemu-72aacbdcecc064ea7c3b158c433e4803496ac296/src/input/emulated/EmulatedController.h	2024-07-01 18:32:17.911297666 +0100
+@@ -126,7 +126,7 @@
+ template <>
+ struct fmt::formatter<EmulatedController::Type> : formatter<string_view> {
+ 	template <typename FormatContext>
+-	auto format(EmulatedController::Type v, FormatContext& ctx) {
++	auto format(EmulatedController::Type v, FormatContext& ctx) const {
+ 		switch (v)
+ 		{
+ 		case EmulatedController::Type::VPAD: return formatter<string_view>::format("Wii U Gamepad", ctx);
