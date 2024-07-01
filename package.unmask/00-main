@@ -4,7 +4,6 @@ media-libs/mesa
 #x11-base/xorg-drivers
 x11-drivers/xf86-video-intel
 <net-libs/nodejs-99
-<dev-libs/libfmt-999
 #<dev-libs/openssl-1.2
 #<media-video/ffmpeg-9999
 =dev-java/javatoolkit-0.6.0
