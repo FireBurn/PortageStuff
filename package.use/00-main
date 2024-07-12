@@ -8,7 +8,7 @@ app-arch/zstd				abi_x86_32
 app-benchmarks/luxmark			scenes
 app-crypt/gpgme				python
 app-crypt/libsecret			-introspection -vala
-app-crypt/pinentry			gnome-keyring
+app-crypt/pinentry			-gtk
 app-editors/vim				-X
 app-emulation/dxvk			abi_x86_32
 app-emulation/gallium-nine-standalone	abi_x86_32
@@ -143,7 +143,7 @@ virtual/pkgconfig			abi_x86_32
 virtual/rust				profiler
 virtual/wine				staging abi_x86_32 -d3d9
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
-www-client/chromium			custom-cflags gtk4 hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 -qt6
+www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
 www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			egl gles2
