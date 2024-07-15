@@ -15,7 +15,8 @@ app-emulation/gallium-nine-standalone	abi_x86_32
 app-emulation/vkd3d			abi_x86_32
 app-emulation/vkd3d-proton		abi_x86_32
 app-emulation/wine-gecko		abi_x86_32
-app-emulation/wine-staging		mingw -wow64 abi_x86_32
+app-emulation/wine-proton		mingw wow64 -abi_x86_32
+app-emulation/wine-staging		mingw wow64 -abi_x86_32
 app-emulation/winetricks		kde -gtk
 app-misc/mime-types			nginx
 app-office/libreoffice			clang -gtk -gtk3 java kde -qt5
