@@ -142,7 +142,7 @@ virtual/notification-daemon		kde
 virtual/opengl				abi_x86_32
 virtual/pkgconfig			abi_x86_32
 virtual/rust				profiler
-virtual/wine				staging abi_x86_32 -d3d9
+virtual/wine				proton -abi_x86_32 -d3d9
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
 www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
 www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X
