@@ -77,7 +77,7 @@ net-libs/libproxy			-kde
 net-libs/libpsl				-idn
 net-libs/mbedtls			cmac
 net-libs/nodejs				inspector lto
-net-misc/curl				-threads
+net-misc/curl				curl_quic_openssl -threads
 net-misc/networkmanager			gnutls modemmanager -nss
 net-misc/networkmanager-openconnect	-gtk
 net-misc/openssh			-ldap
