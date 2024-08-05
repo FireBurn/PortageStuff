@@ -3,6 +3,7 @@ media-libs/vulkan-demos			**
 =x11-libs/libdrm-9999			**
 app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
+=app-emulation/wine-proton-9.0.9999	**
 <app-office/libreoffice-24.2.9999	**
 <app-office/libreoffice-l10n-24.2.9999	**
 kde-misc/kdiff3				**
