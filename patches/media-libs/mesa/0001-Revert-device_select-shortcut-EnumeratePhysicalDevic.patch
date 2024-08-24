@@ -1,0 +1,40 @@
+From a5f43fd8a27335c998bab5abd10f6c3a39de41ea Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 23 Aug 2024 17:13:21 +0100
+Subject: [PATCH] Revert "device_select: shortcut EnumeratePhysicalDevice* for
+ count-only calls"
+
+This reverts commit 86bb1036e2e40777a5cc913b15a093e4650d8cc3.
+---
+ src/vulkan/device-select-layer/device_select_layer.c | 8 --------
+ 1 file changed, 8 deletions(-)
+
+diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
+index 29c2a3127df..7c646274b68 100644
+--- a/src/vulkan/device-select-layer/device_select_layer.c
++++ b/src/vulkan/device-select-layer/device_select_layer.c
+@@ -557,10 +557,6 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
+    if (info->zink && info->xwayland)
+       return info->EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
+    VkResult result = info->EnumeratePhysicalDevices(instance, &physical_device_count, NULL);
+-   if (!pPhysicalDevices) {
+-      *pPhysicalDeviceCount = physical_device_count;
+-      return result;
+-   }
+    VK_OUTARRAY_MAKE_TYPED(VkPhysicalDevice, out, pPhysicalDevices, pPhysicalDeviceCount);
+    if (result != VK_SUCCESS)
+       return result;
+@@ -646,10 +642,6 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
+    if (info->zink && info->xwayland)
+       return info->EnumeratePhysicalDeviceGroups(instance, pPhysicalDeviceGroupCount, pPhysicalDeviceGroups);
+    VkResult result = info->EnumeratePhysicalDeviceGroups(instance, &physical_device_group_count, NULL);
+-   if (!pPhysicalDeviceGroups) {
+-      *pPhysicalDeviceGroupCount = physical_device_group_count;
+-      return result;
+-   }
+    VK_OUTARRAY_MAKE_TYPED(VkPhysicalDeviceGroupProperties, out, pPhysicalDeviceGroups, pPhysicalDeviceGroupCount);
+ 
+    if (result != VK_SUCCESS)
+-- 
+2.46.0
+
