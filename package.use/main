@@ -27,7 +27,8 @@ dev-qt/qtbase				libproxy -accessibility
 dev-qt/qtsql				-mysql
 dev-qt/qttools				designer qdbus
 dev-qt/qtwidgets			-gtk
-dev-util/apitrace			system-snappy
+# move dev-util/apitrace dev-debug/apitrace
+dev-debug/apitrace			system-snappy
 dev-util/vulkan-tools			cube -X
 dev-vcs/git				tk
 dev-vcs/subversion			perl -kwallet
