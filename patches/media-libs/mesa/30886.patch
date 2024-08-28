@@ -1,0 +1,30 @@
+From 5e263aecacf9cf34dbf4c44bdbcc2a43447dd11e Mon Sep 17 00:00:00 2001
+From: Konstantin Seurer <konstantin.seurer@gmail.com>
+Date: Wed, 28 Aug 2024 10:06:31 +0200
+Subject: [PATCH] radv: Workaround apps using ray tracing when it is
+ unsupported
+
+Emitting bvh64_intersect_ray_amd will crash the compiler on pre-GFX10_3
+hardware.
+
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/11786
+---
+ src/amd/vulkan/nir/radv_nir_rt_common.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/amd/vulkan/nir/radv_nir_rt_common.c b/src/amd/vulkan/nir/radv_nir_rt_common.c
+index 2b80d2574c33c..37b934d0f7ad9 100644
+--- a/src/amd/vulkan/nir/radv_nir_rt_common.c
++++ b/src/amd/vulkan/nir/radv_nir_rt_common.c
+@@ -553,7 +553,7 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
+       nir_def *global_bvh_node = nir_iadd(b, nir_load_deref(b, args->vars.bvh_base), nir_u2u64(b, bvh_node));
+ 
+       nir_def *intrinsic_result = NULL;
+-      if (!radv_emulate_rt(pdev)) {
++      if (pdev->info.gfx_level >= GFX10_3 && !radv_emulate_rt(pdev)) {
+          intrinsic_result =
+             nir_bvh64_intersect_ray_amd(b, 32, desc, nir_unpack_64_2x32(b, global_bvh_node),
+                                         nir_load_deref(b, args->vars.tmax), nir_load_deref(b, args->vars.origin),
+-- 
+GitLab
+
