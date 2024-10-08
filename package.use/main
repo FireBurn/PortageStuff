@@ -42,6 +42,7 @@ gnome-base/gvfs				cdda
 gnome-extra/evolution-data-server	vala
 kde-apps/kio-extras			mtp samba
 kde-plasma/plasma-desktop		gtk2 legacy-systray -X
+kde-plasma/plasma-meta			-browser-integration -crypt -cups -firewall -xwayland
 kde-plasma/powerdevil			brightness-control
 media-gfx/exiv2				xmp
 media-gfx/graphviz			python
