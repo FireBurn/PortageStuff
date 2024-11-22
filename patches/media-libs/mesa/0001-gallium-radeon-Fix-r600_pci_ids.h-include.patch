@@ -1,0 +1,29 @@
+From f9ca25cd8da59ba558a68b1b41e6de9604e6640c Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 22 Nov 2024 09:16:45 +0000
+Subject: [PATCH] gallium/radeon: Fix r600_pci_ids.h include
+
+The new location is pci_ids/r600_pci_ids.h
+
+Fixes: 1299f5c50a49 ("gallium/radeon: import libdrm_radeon source code, drop the dependency")
+Signed-of-by: Mike Lothian <mike@fireburn.co.uk>
+---
+ src/gallium/winsys/radeon/drm/radeon_surface.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/gallium/winsys/radeon/drm/radeon_surface.c b/src/gallium/winsys/radeon/drm/radeon_surface.c
+index e451e7123dd..9a24ca85fdd 100644
+--- a/src/gallium/winsys/radeon/drm/radeon_surface.c
++++ b/src/gallium/winsys/radeon/drm/radeon_surface.c
+@@ -131,7 +131,7 @@ static int radeon_get_family(struct radeon_surface_manager *surf_man)
+ {
+     switch (surf_man->device_id) {
+ #define CHIPSET(pci_id, name, fam) case pci_id: surf_man->family = CHIP_##fam; break;
+-#include "r600_pci_ids.h"
++#include "pci_ids/r600_pci_ids.h"
+ #undef CHIPSET
+     default:
+         return -EINVAL;
+-- 
+2.47.0
+
