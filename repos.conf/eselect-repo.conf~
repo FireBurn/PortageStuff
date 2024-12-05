@@ -33,7 +33,3 @@ location = /var/db/repos/qt
 sync-type = git
 sync-uri = https://github.com/gentoo-mirror/qt.git
 
-[gnome-next]
-location = /var/db/repos/gnome-next
-sync-type = git
-sync-uri = https://github.com/gentoo-mirror/gnome-next.git
