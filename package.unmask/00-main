@@ -1,0 +1,25 @@
+app-eselect/eselect-opengl
+dev-qt/*
+media-libs/mesa
+#x11-base/xorg-drivers
+#x11-base/xorg-server
+x11-misc/sddm
+x11-drivers/xf86-video-intel
+=dev-java/javatoolkit-0.6.0
+www-client/chromium
+www-plugins/chrome-binary-plugins
+dev-util/spirv-llvm-translator
+=virtual/rust-1.70.0
+=dev-lang/rust-1.70.0
+# move dev-util/rocm-cmake dev-build/rocm-cmake
+dev-build/rocm-cmake
+dev-libs/roct-thunk-interface
+dev-libs/rocm-device-libs
+dev-libs/rocm-comgr
+dev-libs/rocr-runtime
+dev-libs/rocm-opencl-runtime
+dev-util/rocminfo
+dev-util/hip
+dev-util/hipcc
+<app-office/libreoffice-9999
+<app-office/libreoffice-l10n-9999

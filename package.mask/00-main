@@ -1,0 +1,10 @@
+virtual/jdk:7
+virtual/jre:7
+dev-java/icedtea:7
+=dev-lang/python-3.10*
+=dev-lang/python-3.11*
+=dev-lang/python-3.13*
+=cross-i686-w64-mingw32/binutils-2.38-r1
+=cross-x86_64-w64-mingw32/binutils-2.38-r1
+=dev-build/ninja-1.12.0
+=app-office/libreoffice-24.2.4.2-r1

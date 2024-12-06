@@ -1,0 +1,12 @@
+--- a/src/cmdline/cmd_parser_goption.c	2023-11-24 18:26:46.785686420 +0000
++++ b/src/cmdline/cmd_parser_goption.c	2023-11-24 18:27:04.529612139 +0000
+@@ -841,8 +841,8 @@
+    gboolean enable_usb_flag = DEFAULT_ENABLE_USB;
+    const char * enable_usb_expl  = (enable_usb_flag) ? "Detect USB devices (default)" : "Detect USB devices";
+    const char * disable_usb_expl = (enable_usb_flag) ? "Ignore USB devices" : "Ignore USB devices (default)";
+-   gchar**  ignored_vid_pid  = NULL;
+ #endif
++   gchar**  ignored_vid_pid  = NULL;
+    gboolean timeout_i2c_io_flag = false;
+    gboolean reduce_sleeps_specified = false;
+    gboolean deferred_sleep_flag = false;

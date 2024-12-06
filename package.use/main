@@ -1,0 +1,117 @@
+app-accessibility/speech-dispatcher	python
+app-admin/logstash-bin			all-plugins
+app-arch/p7zip				-kde -wxwidgets
+app-benchmarks/luxmark			scenes
+app-crypt/gpgme				python
+app-crypt/libsecret			-introspection -vala
+app-crypt/pinentry			-gtk
+app-editors/vim				-X
+app-misc/mime-types			nginx
+app-office/libreoffice			clang -gtk -gtk3 java kde -qt5
+dev-build/cmake				-qt5 -qt4
+dev-db/mariadb				embedded
+dev-db/sqlite				secure-delete
+dev-java/icedtea			sunec
+dev-lang/python				sqlite
+dev-lang/rust				cargo profiler
+dev-libs/boost				context python
+dev-libs/folks				eds
+dev-libs/libdbusmenu			gtk3
+dev-libs/libgdata			gnome-online-accounts vala
+dev-libs/libical			vala
+dev-libs/libpcre2			pcre32 -recursion-limit
+dev-libs/modsecurity			fuzzyhash geoip2 json lmdb lua pcre2
+dev-libs/weston				gles2 wayland-compositor xwayland fullscreen
+dev-libs/xmlsec				nss -gnutls -openssl
+dev-qt/qtbase				libproxy -accessibility
+dev-qt/qtsql				-mysql
+dev-qt/qttools				designer qdbus
+dev-qt/qtwidgets			-gtk
+dev-util/apitrace			system-snappy
+dev-util/vulkan-tools			cube -X
+dev-vcs/git				tk
+dev-vcs/subversion			perl -kwallet
+games-emulation/cemu			sdl
+games-emulation/dolphin			-wxwidgets
+games-emulation/yuzu			sdl
+games-fps/worldofpadman			maps
+games-util/steam-client-meta		flash steamfonts trayicon
+games-util/steam-launcher		steamruntime desktop-portal trayicon
+gnome-base/gvfs				cdda
+gnome-extra/evolution-data-server	vala
+gui-wm/gamescope			libei
+kde-apps/kio-extras			mtp samba
+kde-plasma/plasma-desktop		gtk2 legacy-systray -X
+kde-plasma/plasma-meta			-browser-integration -crypt -cups -firewall -xwayland
+kde-plasma/powerdevil			brightness-control
+media-gfx/exiv2				xmp
+media-gfx/graphviz			python
+media-gfx/pstoedit			plotutils
+media-libs/cogl				gles2
+media-libs/embree			clang raymask -ispc
+media-libs/freetype			-harfbuzz
+media-libs/gegl				jpeg2k raw
+media-libs/gst-plugins-base		-gles2
+media-libs/libmediaart			-qt5
+media-libs/libpng			-apng
+media-libs/libsdl2			gles2 haptic
+media-libs/libva			utils
+media-libs/libvpx			svc
+media-libs/mesa				proprietary-codecs -amd-llvm -llvm -video_cards_intel -video_cards_iris -video_cards_i965 -video_cards_radeon
+media-libs/phonon			gstreamer minimal
+media-libs/vulkan-loader		demos layers
+media-libs/x264				-opencl
+media-plugins/alsa-plugins		-pulseaudio
+media-plugins/grilo-plugins		tracker
+media-plugins/gst-plugins-vaapi		-gles2
+media-sound/pulseaudio			gnome -alsa-plugin -daemon
+media-video/ffmpeg			amr chromium fdk libdrm x265 -opencl
+media-video/mpv				samba
+media-video/pipewire			extra sound-server
+media-video/smplayer			-qt4
+media-video/vlc				-qt4
+net-dns/dnsmasq				-lua
+net-fs/cifs-utils			-acl
+net-fs/samba				client gnutls winbind
+net-irc/konversation			-crypt
+net-libs/gnutls				pkcs11
+net-libs/libproxy			-kde
+net-libs/libpsl				-idn
+net-libs/mbedtls			cmac
+net-libs/nodejs				inspector lto
+net-misc/curl				curl_quic_openssl -threads
+net-misc/networkmanager			gnutls modemmanager -nss
+net-misc/networkmanager-openconnect	-gtk
+net-misc/openssh			-ldap
+net-nds/openldap			-gnutls
+net-p2p/ktorrent			-kross -rss -webengine
+net-p2p/transmission			-gtk -qt4
+net-proxy/haproxy			lua -slz
+net-wireless/crda			gcrypt
+net-wireless/wpa_supplicant		-gnutls tkip wep
+sys-apps/fwupd				fastboot flashrom gnutls nvme synaptics tpm uefi
+sys-apps/pciutils			-zlib
+sys-apps/systemd			elfutils sysv-utils -gcrypt
+sys-boot/gnu-efi			-custom-cflags
+sys-devel/gcc				zstd
+sys-devel/llvm				-ncurses
+sys-fs/cryptsetup			-gcrypt
+sys-fs/ntfs3g				-crypt
+sys-libs/ncurses			tinfo
+sys-libs/ntdb				python
+sys-libs/talloc				python
+sys-libs/tdb				python
+sys-libs/tevent				python
+virtual/mysql				embedded
+virtual/notification-daemon		kde
+virtual/rust				profiler
+www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
+www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
+www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X
+www-servers/apache			apache2_modules_auth_digest
+x11-apps/mesa-progs			egl gles2
+x11-base/xorg-drivers			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel -video_cards_i965
+x11-base/xwayland			libei
+x11-libs/wxGTK				-gstreamer
+x11-misc/sddm				-X -qt5
+x11-wm/mutter				gles2

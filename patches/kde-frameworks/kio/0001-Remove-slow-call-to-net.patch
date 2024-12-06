@@ -1,0 +1,36 @@
+From a5e79944661fce72144f04a39b081976ff5d7095 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 14 Apr 2023 16:25:24 +0100
+Subject: [PATCH] Remove slow call to 'net'
+
+
+diff --git a/src/core/ksambashare.cpp b/src/core/ksambashare.cpp
+index 9e315e4..4c290fa 100644
+--- a/src/core/ksambashare.cpp
++++ b/src/core/ksambashare.cpp
+@@ -203,21 +203,8 @@ QByteArray KSambaSharePrivate::getNetUserShareInfo()
+         QStringLiteral("info"),
+     };
+ 
+-    runProcess(QStringLiteral("net"), args, stdOut, stdErr);
+ 
+-    if (!stdErr.isEmpty()) {
+-        if (stdErr.contains("You do not have permission to create a usershare")) {
+-            skipUserShare = true;
+-        } else if (stdErr.contains("usershares are currently disabled")) {
+-            skipUserShare = true;
+-        } else {
+-            // TODO: parse and process other error messages.
+-            // create a parser for the error output and
+-            // send error message somewhere
+-            qCDebug(KIO_CORE) << "We got some errors while running 'net usershare info'";
+-            qCDebug(KIO_CORE) << stdErr;
+-        }
+-    }
++    skipUserShare = true;
+ 
+     return stdOut;
+ }
+-- 
+2.40.0
+

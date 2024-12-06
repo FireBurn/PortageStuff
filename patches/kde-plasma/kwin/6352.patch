@@ -1,0 +1,660 @@
+From 5425d007068435697091f83d9b932e939387ab1d Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Wed, 4 Sep 2024 19:54:52 +0200
+Subject: [PATCH 1/3] opengl: make rgb vs yuv decoding a shader trait
+
+It makes it easier to avoid problems like uniforms lingering around and affecting
+the rest of the program when the shader is used
+---
+ src/opengl/glshadermanager.cpp    | 18 +++++++++---------
+ src/opengl/glshadermanager.h      |  1 +
+ src/scene/itemrenderer_opengl.cpp | 16 +++++++++++++---
+ 3 files changed, 23 insertions(+), 12 deletions(-)
+
+diff --git a/src/opengl/glshadermanager.cpp b/src/opengl/glshadermanager.cpp
+index e2f68eb7787..98792dad313 100644
+--- a/src/opengl/glshadermanager.cpp
++++ b/src/opengl/glshadermanager.cpp
+@@ -65,7 +65,7 @@ QByteArray ShaderManager::generateVertexSource(ShaderTraits traits) const
+     }
+ 
+     stream << attribute << " vec4 position;\n";
+-    if (traits & (ShaderTrait::MapTexture | ShaderTrait::MapExternalTexture)) {
++    if (traits & (ShaderTrait::MapTexture | ShaderTrait::MapExternalTexture | ShaderTrait::MapYUVTexture)) {
+         stream << attribute << " vec4 texcoord;\n\n";
+         stream << varying << " vec2 texcoord0;\n\n";
+     } else {
+@@ -75,7 +75,7 @@ QByteArray ShaderManager::generateVertexSource(ShaderTraits traits) const
+     stream << "uniform mat4 modelViewProjectionMatrix;\n\n";
+ 
+     stream << "void main()\n{\n";
+-    if (traits & (ShaderTrait::MapTexture | ShaderTrait::MapExternalTexture)) {
++    if (traits & (ShaderTrait::MapTexture | ShaderTrait::MapExternalTexture | ShaderTrait::MapYUVTexture)) {
+         stream << "    texcoord0 = texcoord.st;\n";
+     }
+ 
+@@ -122,9 +122,11 @@ QByteArray ShaderManager::generateFragmentSource(ShaderTraits traits) const
+     }
+ 
+     if (traits & ShaderTrait::MapTexture) {
++        stream << "uniform sampler2D sampler;\n";
++        stream << varying << " vec2 texcoord0;\n";
++    } else if (traits & ShaderTrait::MapYUVTexture) {
+         stream << "uniform sampler2D sampler;\n";
+         stream << "uniform sampler2D sampler1;\n";
+-        stream << "uniform int converter;\n";
+         stream << varying << " vec2 texcoord0;\n";
+     } else if (traits & ShaderTrait::MapExternalTexture) {
+         stream << "#extension GL_OES_EGL_image_external : require\n\n";
+@@ -147,7 +149,7 @@ QByteArray ShaderManager::generateFragmentSource(ShaderTraits traits) const
+         stream << "\nout vec4 " << output << ";\n";
+     }
+ 
+-    if (traits & ShaderTrait::MapTexture) {
++    if (traits & ShaderTrait::MapYUVTexture) {
+         // limited range BT601 in -> full range BT709 out
+         stream << "vec4 transformY_UV(sampler2D tex0, sampler2D tex1, vec2 texcoord0) {\n";
+         stream << "    float y = 1.16438356 * (" << textureLookup << "(tex0, texcoord0).x - 0.0625);\n";
+@@ -164,11 +166,9 @@ QByteArray ShaderManager::generateFragmentSource(ShaderTraits traits) const
+     stream << "\nvoid main(void)\n{\n";
+     stream << "    vec4 result;\n";
+     if (traits & ShaderTrait::MapTexture) {
+-        stream << "    if (converter == 0) {\n";
+-        stream << "        result = " << textureLookup << "(sampler, texcoord0);\n";
+-        stream << "    } else {\n";
+-        stream << "        result = transformY_UV(sampler, sampler1, texcoord0);\n";
+-        stream << "    }\n";
++        stream << "    result = " << textureLookup << "(sampler, texcoord0);\n";
++    } else if (traits & ShaderTrait::MapYUVTexture) {
++        stream << "    result = transformY_UV(sampler, sampler1, texcoord0);\n";
+     } else if (traits & ShaderTrait::MapExternalTexture) {
+         // external textures require texture2D for sampling
+         stream << "    result = texture2D(sampler, texcoord0);\n";
+diff --git a/src/opengl/glshadermanager.h b/src/opengl/glshadermanager.h
+index 0caa5ee5ced..5296514dc85 100644
+--- a/src/opengl/glshadermanager.h
++++ b/src/opengl/glshadermanager.h
+@@ -29,6 +29,7 @@ enum class ShaderTrait {
+     AdjustSaturation = (1 << 3),
+     TransformColorspace = (1 << 4),
+     MapExternalTexture = (1 << 5),
++    MapYUVTexture = (1 << 6),
+ };
+ 
+ Q_DECLARE_FLAGS(ShaderTraits, ShaderTrait)
+diff --git a/src/scene/itemrenderer_opengl.cpp b/src/scene/itemrenderer_opengl.cpp
+index cc02851e497..a414087648e 100644
+--- a/src/scene/itemrenderer_opengl.cpp
++++ b/src/scene/itemrenderer_opengl.cpp
+@@ -274,7 +274,7 @@ void ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+         return;
+     }
+ 
+-    ShaderTraits baseShaderTraits = ShaderTrait::MapTexture;
++    ShaderTraits baseShaderTraits;
+     if (data.brightness() != 1.0) {
+         baseShaderTraits |= ShaderTrait::Modulate;
+     }
+@@ -347,6 +347,16 @@ void ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+         if (renderNode.colorDescription != renderTarget.colorDescription()) {
+             traits |= ShaderTrait::TransformColorspace;
+         }
++        if (std::holds_alternative<GLTexture *>(renderNode.texture)) {
++            traits |= ShaderTrait::MapTexture;
++        } else {
++            const auto contents = std::get<OpenGLSurfaceContents>(renderNode.texture);
++            if (contents.planes.size() == 1) {
++                traits |= ShaderTrait::MapTexture;
++            } else {
++                traits |= ShaderTrait::MapYUVTexture;
++            }
++        }
+         if (!shader || traits != lastTraits) {
+             lastTraits = traits;
+             if (shader) {
+@@ -361,6 +371,8 @@ void ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+ 
+             if (traits & ShaderTrait::MapTexture) {
+                 shader->setUniform(GLShader::IntUniform::Sampler, 0);
++            } else if (traits & ShaderTrait::MapYUVTexture) {
++                shader->setUniform(GLShader::IntUniform::Sampler, 0);
+                 shader->setUniform(GLShader::IntUniform::Sampler1, 1);
+             }
+         }
+@@ -375,11 +387,9 @@ void ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+         if (std::holds_alternative<GLTexture *>(renderNode.texture)) {
+             const auto texture = std::get<GLTexture *>(renderNode.texture);
+             glActiveTexture(GL_TEXTURE0);
+-            shader->setUniform("converter", 0);
+             texture->bind();
+         } else {
+             const auto contents = std::get<OpenGLSurfaceContents>(renderNode.texture);
+-            shader->setUniform("converter", contents.planes.count() > 1);
+             for (int plane = 0; plane < contents.planes.count(); ++plane) {
+                 glActiveTexture(GL_TEXTURE0 + plane);
+                 contents.planes[plane]->bind();
+-- 
+GitLab
+
+
+From 41c647c4d94f3a768ecdb7d32e5f5e65b8aa2fa0 Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Wed, 4 Sep 2024 18:01:05 +0200
+Subject: [PATCH 2/3] opengl: refactor YUV handling to specify the matrix on
+ the CPU side
+
+Having it hardcoded in the shader makes supporting other YUV formats or
+color encodings difficult
+---
+ src/opengl/glshader.cpp           |  1 +
+ src/opengl/glshader.h             |  1 +
+ src/opengl/glshadermanager.cpp    | 18 +++-------------
+ src/scene/itemrenderer_opengl.cpp |  5 +++++
+ src/scene/itemrenderer_opengl.h   |  1 +
+ src/scene/surfaceitem.cpp         |  5 +++++
+ src/scene/surfaceitem.h           |  2 ++
+ src/scene/surfaceitem_wayland.cpp |  9 ++++++++
+ src/scene/surfaceitem_wayland.h   |  1 +
+ src/wayland/surface.cpp           | 36 +++++++++++++++++++++++++++++--
+ src/wayland/surface.h             |  3 +++
+ src/wayland/surface_p.h           |  2 ++
+ 12 files changed, 67 insertions(+), 17 deletions(-)
+
+diff --git a/src/opengl/glshader.cpp b/src/opengl/glshader.cpp
+index ee4a4f07713..a886487bd32 100644
+--- a/src/opengl/glshader.cpp
++++ b/src/opengl/glshader.cpp
+@@ -219,6 +219,7 @@ void GLShader::resolveLocations()
+     m_matrix4Locations[Mat4Uniform::ColorimetryTransformation] = uniformLocation("colorimetryTransform");
+     m_matrix4Locations[Mat4Uniform::DestinationToLMS] = uniformLocation("destinationToLMS");
+     m_matrix4Locations[Mat4Uniform::LMSToDestination] = uniformLocation("lmsToDestination");
++    m_matrix4Locations[Mat4Uniform::YuvToRgb] = uniformLocation("yuvToRgb");
+ 
+     m_vec2Locations[Vec2Uniform::Offset] = uniformLocation("offset");
+     m_vec2Locations[Vec2Uniform::SourceTransferFunctionParams] = uniformLocation("sourceTransferFunctionParams");
+diff --git a/src/opengl/glshader.h b/src/opengl/glshader.h
+index 8d389251666..12c93a9c0e6 100644
+--- a/src/opengl/glshader.h
++++ b/src/opengl/glshader.h
+@@ -87,6 +87,7 @@ public:
+         ColorimetryTransformation,
+         DestinationToLMS,
+         LMSToDestination,
++        YuvToRgb,
+         MatrixCount
+     };
+ 
+diff --git a/src/opengl/glshadermanager.cpp b/src/opengl/glshadermanager.cpp
+index 98792dad313..f0bd8b29413 100644
+--- a/src/opengl/glshadermanager.cpp
++++ b/src/opengl/glshadermanager.cpp
+@@ -127,6 +127,7 @@ QByteArray ShaderManager::generateFragmentSource(ShaderTraits traits) const
+     } else if (traits & ShaderTrait::MapYUVTexture) {
+         stream << "uniform sampler2D sampler;\n";
+         stream << "uniform sampler2D sampler1;\n";
++        stream << "uniform mat4 yuvToRgb;\n";
+         stream << varying << " vec2 texcoord0;\n";
+     } else if (traits & ShaderTrait::MapExternalTexture) {
+         stream << "#extension GL_OES_EGL_image_external : require\n\n";
+@@ -149,26 +150,13 @@ QByteArray ShaderManager::generateFragmentSource(ShaderTraits traits) const
+         stream << "\nout vec4 " << output << ";\n";
+     }
+ 
+-    if (traits & ShaderTrait::MapYUVTexture) {
+-        // limited range BT601 in -> full range BT709 out
+-        stream << "vec4 transformY_UV(sampler2D tex0, sampler2D tex1, vec2 texcoord0) {\n";
+-        stream << "    float y = 1.16438356 * (" << textureLookup << "(tex0, texcoord0).x - 0.0625);\n";
+-        stream << "    float u = " << textureLookup << "(tex1, texcoord0).r - 0.5;\n";
+-        stream << "    float v = " << textureLookup << "(tex1, texcoord0).g - 0.5;\n";
+-        stream << "    return vec4(y + 1.59602678 * v"
+-                  "              , y - 0.39176229 * u - 0.81296764 * v"
+-                  "              , y + 2.01723214 * u"
+-                  "              , 1);\n";
+-        stream << "}\n";
+-        stream << "\n";
+-    }
+-
+     stream << "\nvoid main(void)\n{\n";
+     stream << "    vec4 result;\n";
+     if (traits & ShaderTrait::MapTexture) {
+         stream << "    result = " << textureLookup << "(sampler, texcoord0);\n";
+     } else if (traits & ShaderTrait::MapYUVTexture) {
+-        stream << "    result = transformY_UV(sampler, sampler1, texcoord0);\n";
++        stream << "    result = yuvToRgb * vec4(" << textureLookup << "(sampler, texcoord0).x, " << textureLookup << "(sampler1, texcoord0).rg, 1.0);\n";
++        stream << "    result.a = 1.0;\n";
+     } else if (traits & ShaderTrait::MapExternalTexture) {
+         // external textures require texture2D for sampling
+         stream << "    result = texture2D(sampler, texcoord0);\n";
+diff --git a/src/scene/itemrenderer_opengl.cpp b/src/scene/itemrenderer_opengl.cpp
+index a414087648e..92cba214e95 100644
+--- a/src/scene/itemrenderer_opengl.cpp
++++ b/src/scene/itemrenderer_opengl.cpp
+@@ -166,6 +166,7 @@ void ItemRendererOpenGL::createRenderNode(Item *item, RenderContext *context)
+                 .colorDescription = item->colorDescription(),
+                 .renderingIntent = item->renderingIntent(),
+                 .bufferReleasePoint = nullptr,
++                .yuvConversionMatrix = QMatrix4x4(),
+             });
+         }
+     } else if (auto decorationItem = qobject_cast<DecorationItem *>(item)) {
+@@ -180,6 +181,7 @@ void ItemRendererOpenGL::createRenderNode(Item *item, RenderContext *context)
+                 .colorDescription = item->colorDescription(),
+                 .renderingIntent = item->renderingIntent(),
+                 .bufferReleasePoint = nullptr,
++                .yuvConversionMatrix = QMatrix4x4(),
+             });
+         }
+     } else if (auto surfaceItem = qobject_cast<SurfaceItem *>(item)) {
+@@ -196,6 +198,7 @@ void ItemRendererOpenGL::createRenderNode(Item *item, RenderContext *context)
+                     .colorDescription = item->colorDescription(),
+                     .renderingIntent = item->renderingIntent(),
+                     .bufferReleasePoint = surfaceItem->bufferReleasePoint(),
++                    .yuvConversionMatrix = surfaceItem->yuvConversionMatrix(),
+                 });
+             }
+         }
+@@ -210,6 +213,7 @@ void ItemRendererOpenGL::createRenderNode(Item *item, RenderContext *context)
+                 .colorDescription = item->colorDescription(),
+                 .renderingIntent = item->renderingIntent(),
+                 .bufferReleasePoint = nullptr,
++                .yuvConversionMatrix = QMatrix4x4(),
+             });
+         }
+     }
+@@ -374,6 +378,7 @@ void ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+             } else if (traits & ShaderTrait::MapYUVTexture) {
+                 shader->setUniform(GLShader::IntUniform::Sampler, 0);
+                 shader->setUniform(GLShader::IntUniform::Sampler1, 1);
++                shader->setUniform(GLShader::Mat4Uniform::YuvToRgb, renderNode.yuvConversionMatrix);
+             }
+         }
+         shader->setUniform(GLShader::Mat4Uniform::ModelViewProjectionMatrix, renderContext.projectionMatrix * renderNode.transformMatrix);
+diff --git a/src/scene/itemrenderer_opengl.h b/src/scene/itemrenderer_opengl.h
+index 944281c4e72..af7ce620e67 100644
+--- a/src/scene/itemrenderer_opengl.h
++++ b/src/scene/itemrenderer_opengl.h
+@@ -32,6 +32,7 @@ public:
+         ColorDescription colorDescription;
+         RenderingIntent renderingIntent;
+         std::shared_ptr<SyncReleasePoint> bufferReleasePoint;
++        QMatrix4x4 yuvConversionMatrix;
+     };
+ 
+     struct RenderContext
+diff --git a/src/scene/surfaceitem.cpp b/src/scene/surfaceitem.cpp
+index 86e1340b8a1..8a344090d7e 100644
+--- a/src/scene/surfaceitem.cpp
++++ b/src/scene/surfaceitem.cpp
+@@ -289,6 +289,11 @@ std::chrono::nanoseconds SurfaceItem::frameTimeEstimation() const
+     }
+ }
+ 
++QMatrix4x4 SurfaceItem::yuvConversionMatrix() const
++{
++    return m_yuvConversionMatrix;
++}
++
+ std::shared_ptr<SyncReleasePoint> SurfaceItem::bufferReleasePoint() const
+ {
+     return m_bufferReleasePoint;
+diff --git a/src/scene/surfaceitem.h b/src/scene/surfaceitem.h
+index da27d435408..0c6b2d1f31b 100644
+--- a/src/scene/surfaceitem.h
++++ b/src/scene/surfaceitem.h
+@@ -62,6 +62,7 @@ public:
+     virtual void freeze();
+ 
+     std::chrono::nanoseconds frameTimeEstimation() const;
++    QMatrix4x4 yuvConversionMatrix() const;
+ 
+ Q_SIGNALS:
+     void damaged();
+@@ -86,6 +87,7 @@ protected:
+     std::optional<std::chrono::steady_clock::time_point> m_lastDamage;
+     std::chrono::nanoseconds m_frameTimeEstimation = std::chrono::days(1000);
+     std::shared_ptr<SyncReleasePoint> m_bufferReleasePoint;
++    QMatrix4x4 m_yuvConversionMatrix;
+ };
+ 
+ class KWIN_EXPORT SurfaceTexture
+diff --git a/src/scene/surfaceitem_wayland.cpp b/src/scene/surfaceitem_wayland.cpp
+index a4d012f7740..9e24a399970 100644
+--- a/src/scene/surfaceitem_wayland.cpp
++++ b/src/scene/surfaceitem_wayland.cpp
+@@ -18,6 +18,8 @@
+ #include "x11window.h"
+ #endif
+ 
++#include <drm_fourcc.h>
++
+ namespace KWin
+ {
+ 
+@@ -48,6 +50,7 @@ SurfaceItemWayland::SurfaceItemWayland(SurfaceInterface *surface, Item *parent)
+             this, &SurfaceItemWayland::handlePresentationModeHintChanged);
+     connect(surface, &SurfaceInterface::bufferReleasePointChanged, this, &SurfaceItemWayland::handleReleasePointChanged);
+     connect(surface, &SurfaceInterface::alphaMultiplierChanged, this, &SurfaceItemWayland::handleAlphaMultiplierChanged);
++    connect(surface, &SurfaceInterface::yuvToRgbMatrixChanged, this, &SurfaceItemWayland::handleYuvToRgbChanged);
+ 
+     SubSurfaceInterface *subsurface = surface->subSurface();
+     if (subsurface) {
+@@ -223,6 +226,12 @@ void SurfaceItemWayland::handleAlphaMultiplierChanged()
+     setOpacity(m_surface->alphaMultiplier());
+ }
+ 
++void SurfaceItemWayland::handleYuvToRgbChanged()
++{
++    m_yuvConversionMatrix = m_surface->yuvToRgbMatrix();
++    scheduleRepaint(boundingRect());
++}
++
+ SurfacePixmapWayland::SurfacePixmapWayland(SurfaceItemWayland *item, QObject *parent)
+     : SurfacePixmap(Compositor::self()->backend()->createSurfaceTextureWayland(this), parent)
+     , m_item(item)
+diff --git a/src/scene/surfaceitem_wayland.h b/src/scene/surfaceitem_wayland.h
+index 991cd168c30..3e805f4ad33 100644
+--- a/src/scene/surfaceitem_wayland.h
++++ b/src/scene/surfaceitem_wayland.h
+@@ -51,6 +51,7 @@ private Q_SLOTS:
+     void handlePresentationModeHintChanged();
+     void handleReleasePointChanged();
+     void handleAlphaMultiplierChanged();
++    void handleYuvToRgbChanged();
+ 
+ protected:
+     std::unique_ptr<SurfacePixmap> createPixmap() override;
+diff --git a/src/wayland/surface.cpp b/src/wayland/surface.cpp
+index 601aab3286a..3091374ee04 100644
+--- a/src/wayland/surface.cpp
++++ b/src/wayland/surface.cpp
+@@ -27,10 +27,10 @@
+ #include "utils/resource.h"
+ #include "xx_colormanagement_v4.h"
+ 
+-#include <wayland-server.h>
+-// std
+ #include <algorithm>
+ #include <cmath>
++#include <drm_fourcc.h>
++#include <wayland-server.h>
+ 
+ namespace KWin
+ {
+@@ -349,6 +349,25 @@ void SurfaceInterfacePrivate::surface_commit(Resource *resource)
+         return;
+     }
+ 
++    // unless a protocol overrides the properties, we need to assume some YUV->RGB conversion
++    // matrix and color space to be attached to YUV formats
++    if (bufferRef && bufferRef->dmabufAttributes()) {
++        // clang-format off
++        switch (bufferRef->dmabufAttributes()->format) {
++        case DRM_FORMAT_NV12:
++            // limited range bt601 -> full range rec.709 RGB
++            pending->yuvToRgbMatrix = QMatrix4x4{
++                1.16438356f,  0.0f,         1.59602678f, -0.874202218f,
++                1.16438356f, -0.39176229f, -0.81296764f,  0.531667823f,
++                1.16438356f,  2.01723214f,  0.0f,        -1.085630789f,
++                0.0f,         0.0f,         0.0f,         1.0f,
++            };
++            pending->yuvToRgbMatrixIsSet = true;
++            break;
++        }
++        // clang-format on
++    }
++
+     Transaction *transaction;
+     if (sync) {
+         if (!subsurface.transaction) {
+@@ -593,6 +612,10 @@ void SurfaceState::mergeInto(SurfaceState *target)
+         target->alphaMultiplier = alphaMultiplier;
+         target->alphaMultiplierIsSet = true;
+     }
++    if (yuvToRgbMatrixIsSet) {
++        target->yuvToRgbMatrix = yuvToRgbMatrix;
++        target->yuvToRgbMatrixIsSet = true;
++    }
+     target->presentationFeedback = std::move(presentationFeedback);
+ 
+     *this = SurfaceState{};
+@@ -616,6 +639,7 @@ void SurfaceInterfacePrivate::applyState(SurfaceState *next)
+     const bool presentationModeHintChanged = next->presentationModeHintIsSet;
+     const bool bufferReleasePointChanged = next->bufferIsSet && current->releasePoint != next->releasePoint;
+     const bool alphaMultiplierChanged = next->alphaMultiplierIsSet;
++    const bool yuvToRgbMatrixChanged = next->yuvToRgbMatrixIsSet;
+ 
+     const QSizeF oldSurfaceSize = surfaceSize;
+     const QSize oldBufferSize = bufferSize;
+@@ -714,6 +738,9 @@ void SurfaceInterfacePrivate::applyState(SurfaceState *next)
+     if (alphaMultiplierChanged) {
+         Q_EMIT q->alphaMultiplierChanged();
+     }
++    if (yuvToRgbMatrixChanged) {
++        Q_EMIT q->yuvToRgbMatrixChanged();
++    }
+ 
+     if (bufferChanged) {
+         if (current->buffer && (!current->damage.isEmpty() || !current->bufferDamage.isEmpty())) {
+@@ -1228,6 +1255,11 @@ double SurfaceInterface::alphaMultiplier() const
+     return d->current->alphaMultiplier;
+ }
+ 
++QMatrix4x4 SurfaceInterface::yuvToRgbMatrix() const
++{
++    return d->current->yuvToRgbMatrix;
++}
++
+ } // namespace KWin
+ 
+ #include "moc_surface.cpp"
+diff --git a/src/wayland/surface.h b/src/wayland/surface.h
+index 021f91cac60..3c54aaff401 100644
+--- a/src/wayland/surface.h
++++ b/src/wayland/surface.h
+@@ -354,6 +354,8 @@ public:
+      */
+     std::shared_ptr<SyncReleasePoint> bufferReleasePoint() const;
+ 
++    QMatrix4x4 yuvToRgbMatrix() const;
++
+     /**
+      * Traverses the surface sub-tree with this surface as the root.
+      */
+@@ -445,6 +447,7 @@ Q_SIGNALS:
+     void presentationModeHintChanged();
+     void bufferReleasePointChanged();
+     void alphaMultiplierChanged();
++    void yuvToRgbMatrixChanged();
+ 
+     /**
+      * Emitted when the Surface has been committed.
+diff --git a/src/wayland/surface_p.h b/src/wayland/surface_p.h
+index f93c0504d55..18218eaab4a 100644
+--- a/src/wayland/surface_p.h
++++ b/src/wayland/surface_p.h
+@@ -62,6 +62,7 @@ struct SurfaceState
+     bool presentationModeHintIsSet = false;
+     bool colorDescriptionIsSet = false;
+     bool alphaMultiplierIsSet = false;
++    bool yuvToRgbMatrixIsSet = false;
+     qint32 bufferScale = 1;
+     OutputTransform bufferTransform = OutputTransform::Normal;
+     wl_list frameCallbacks;
+@@ -83,6 +84,7 @@ struct SurfaceState
+     } acquirePoint;
+     std::shared_ptr<SyncReleasePoint> releasePoint;
+     double alphaMultiplier = 1;
++    QMatrix4x4 yuvToRgbMatrix;
+ 
+     struct
+     {
+-- 
+GitLab
+
+
+From efdfe9182af30080e19809c6e438e0c70b868b88 Mon Sep 17 00:00:00 2001
+From: Xaver Hugl <xaver.hugl@gmail.com>
+Date: Wed, 4 Sep 2024 19:43:25 +0200
+Subject: [PATCH 3/3] add support for the P010 buffer format
+
+It's a 10bpc YUV format used for HDR videos. As it also comes with the assumption of the
+rec.2020 color space, this also sets that state on the Wayland surface, unless a color
+management protocol is in use
+---
+ src/backends/drm/drm_pipeline.cpp |  7 +++++++
+ src/core/colorspace.cpp           |  7 ++++++-
+ src/core/colorspace.h             |  1 +
+ src/utils/drm_format_helper.cpp   |  9 +++++++++
+ src/utils/drm_format_helper.h     |  3 +++
+ src/wayland/surface.cpp           | 28 ++++++++++++++++++++++++++--
+ 6 files changed, 52 insertions(+), 3 deletions(-)
+
+diff --git a/src/backends/drm/drm_pipeline.cpp b/src/backends/drm/drm_pipeline.cpp
+index 9c039d51666..18da5156388 100644
+--- a/src/backends/drm/drm_pipeline.cpp
++++ b/src/backends/drm/drm_pipeline.cpp
+@@ -228,6 +228,13 @@ DrmPipeline::Error DrmPipeline::prepareAtomicPresentation(DrmAtomicCommit *commi
+         }
+         commit->addEnum(primary->colorEncoding, DrmPlane::ColorEncoding::BT709_YCbCr);
+         commit->addEnum(primary->colorRange, DrmPlane::ColorRange::Limited_YCbCr);
++    } else if (fb->buffer()->dmabufAttributes()->format == DRM_FORMAT_P010) {
++        if (!primary->colorEncoding.isValid() || !primary->colorRange.isValid()) {
++            // don't allow P010 direct scanout if we can't tell the driver what to do with it
++            return Error::InvalidArguments;
++        }
++        commit->addEnum(primary->colorEncoding, DrmPlane::ColorEncoding::BT2020_YCbCr);
++        commit->addEnum(primary->colorRange, DrmPlane::ColorRange::Limited_YCbCr);
+     }
+     return Error::None;
+ }
+diff --git a/src/core/colorspace.cpp b/src/core/colorspace.cpp
+index a41991db559..fba5986051c 100644
+--- a/src/core/colorspace.cpp
++++ b/src/core/colorspace.cpp
+@@ -295,7 +295,7 @@ std::optional<NamedColorimetry> Colorimetry::name() const
+     return it != names.end() ? std::optional(*it) : std::nullopt;
+ }
+ 
+-const ColorDescription ColorDescription::sRGB = ColorDescription(NamedColorimetry::BT709, TransferFunction(TransferFunction::gamma22), TransferFunction::defaultReferenceLuminanceFor(TransferFunction::gamma22), TransferFunction::defaultMinLuminanceFor(TransferFunction::gamma22), TransferFunction::defaultMaxLuminanceFor(TransferFunction::gamma22), TransferFunction::defaultMaxLuminanceFor(TransferFunction::gamma22));
++const ColorDescription ColorDescription::sRGB = ColorDescription(NamedColorimetry::BT709, TransferFunction(TransferFunction::gamma22));
+ 
+ ColorDescription::ColorDescription(const Colorimetry &containerColorimetry, TransferFunction tf, double referenceLuminance, double minLuminance, std::optional<double> maxAverageLuminance, std::optional<double> maxHdrLuminance)
+     : ColorDescription(containerColorimetry, tf, referenceLuminance, minLuminance, maxAverageLuminance, maxHdrLuminance, std::nullopt, Colorimetry::fromName(NamedColorimetry::BT709))
+@@ -324,6 +324,11 @@ ColorDescription::ColorDescription(NamedColorimetry containerColorimetry, Transf
+ {
+ }
+ 
++ColorDescription::ColorDescription(NamedColorimetry containerColorimetry, TransferFunction tf)
++    : ColorDescription(containerColorimetry, tf, TransferFunction::defaultReferenceLuminanceFor(tf.type), tf.minLuminance, tf.maxLuminance, tf.maxLuminance)
++{
++}
++
+ const Colorimetry &ColorDescription::containerColorimetry() const
+ {
+     return m_containerColorimetry;
+diff --git a/src/core/colorspace.h b/src/core/colorspace.h
+index 2be28c135c1..a0e91a402ea 100644
+--- a/src/core/colorspace.h
++++ b/src/core/colorspace.h
+@@ -166,6 +166,7 @@ public:
+     explicit ColorDescription(NamedColorimetry containerColorimetry, TransferFunction tf, double referenceLuminance, double minLuminance, std::optional<double> maxAverageLuminance, std::optional<double> maxHdrLuminance);
+     explicit ColorDescription(const Colorimetry &containerColorimetry, TransferFunction tf, double referenceLuminance, double minLuminance, std::optional<double> maxAverageLuminance, std::optional<double> maxHdrLuminance, std::optional<Colorimetry> masteringColorimetry, const Colorimetry &sdrColorimetry);
+     explicit ColorDescription(NamedColorimetry containerColorimetry, TransferFunction tf, double referenceLuminance, double minLuminance, std::optional<double> maxAverageLuminance, std::optional<double> maxHdrLuminance, std::optional<Colorimetry> masteringColorimetry, const Colorimetry &sdrColorimetry);
++    explicit ColorDescription(NamedColorimetry containerColorimetry, TransferFunction tf);
+ 
+     /**
+      * The primaries and whitepoint that colors are encoded for. This is used to convert between different colorspaces.
+diff --git a/src/utils/drm_format_helper.cpp b/src/utils/drm_format_helper.cpp
+index 6998da23bfc..9eec1672d19 100644
+--- a/src/utils/drm_format_helper.cpp
++++ b/src/utils/drm_format_helper.cpp
+@@ -115,6 +115,15 @@ std::optional<FormatInfo> FormatInfo::get(uint32_t drmFormat)
+             .openglFormat = GL_R8,
+             .floatingPoint = false,
+         };
++    case DRM_FORMAT_P010:
++        return FormatInfo{
++            .drmFormat = drmFormat,
++            .bitsPerColor = 10,
++            .alphaBits = 0,
++            .bitsPerPixel = 48,
++            .openglFormat = GL_R16,
++            .floatingPoint = false,
++        };
+     default:
+         return std::nullopt;
+     }
+diff --git a/src/utils/drm_format_helper.h b/src/utils/drm_format_helper.h
+index d6fa2ff2e71..7a106b0d68b 100644
+--- a/src/utils/drm_format_helper.h
++++ b/src/utils/drm_format_helper.h
+@@ -36,6 +36,9 @@ static const QHash<uint32_t, YuvConversion> s_drmConversions = {
+     {DRM_FORMAT_NV12, YuvConversion{
+                           {YuvFormat{DRM_FORMAT_R8, 1, 1}, YuvFormat{DRM_FORMAT_GR88, 2, 2}},
+                       }},
++    {DRM_FORMAT_P010, YuvConversion{
++                          {YuvFormat{DRM_FORMAT_R16, 1, 1}, YuvFormat{DRM_FORMAT_GR1616, 2, 2}},
++                      }},
+ };
+ 
+ struct KWIN_EXPORT FormatInfo
+diff --git a/src/wayland/surface.cpp b/src/wayland/surface.cpp
+index 3091374ee04..aa6dade8829 100644
+--- a/src/wayland/surface.cpp
++++ b/src/wayland/surface.cpp
+@@ -352,6 +352,7 @@ void SurfaceInterfacePrivate::surface_commit(Resource *resource)
+     // unless a protocol overrides the properties, we need to assume some YUV->RGB conversion
+     // matrix and color space to be attached to YUV formats
+     if (bufferRef && bufferRef->dmabufAttributes()) {
++        const bool hasColorManagementProtocol = xxColorSurface || frogColorManagement;
+         // clang-format off
+         switch (bufferRef->dmabufAttributes()->format) {
+         case DRM_FORMAT_NV12:
+@@ -363,7 +364,30 @@ void SurfaceInterfacePrivate::surface_commit(Resource *resource)
+                 0.0f,         0.0f,         0.0f,         1.0f,
+             };
+             pending->yuvToRgbMatrixIsSet = true;
++            if (!hasColorManagementProtocol) {
++                pending->colorDescription = ColorDescription::sRGB;
++                pending->colorDescriptionIsSet = true;
++            }
++            break;
++        case DRM_FORMAT_P010:
++            // limited range bt.2020 YUV -> full range bt.2020 RGB
++            pending->yuvToRgbMatrix = QMatrix4x4{
++                1.16438356f,  0.0f,         1.67878795f, -0.915745075f,
++                1.16438356f, -0.18732610f, -0.65046843f,  0.347480639f,
++                1.16438356f,  2.14177232f,  0.0f,        -1.148145075f,
++                0.0f,         0.0f,         0.0f,         1.0f,
++            };
++            pending->yuvToRgbMatrixIsSet = true;
++            if (!hasColorManagementProtocol) {
++                pending->colorDescription = ColorDescription(NamedColorimetry::BT2020, TransferFunction(TransferFunction::PerceptualQuantizer));
++                pending->colorDescriptionIsSet = true;
++            }
+             break;
++        default:
++            if (!hasColorManagementProtocol) {
++                pending->colorDescription = ColorDescription::sRGB;
++                pending->colorDescriptionIsSet = true;
++            }
+         }
+         // clang-format on
+     }
+@@ -635,11 +659,11 @@ void SurfaceInterfacePrivate::applyState(SurfaceState *next)
+     const bool slideChanged = next->slideIsSet;
+     const bool subsurfaceOrderChanged = next->subsurfaceOrderChanged;
+     const bool visibilityChanged = bufferChanged && bool(current->buffer) != bool(next->buffer);
+-    const bool colorDescriptionChanged = next->colorDescriptionIsSet;
++    const bool colorDescriptionChanged = next->colorDescriptionIsSet && (current->colorDescription != next->colorDescription);
+     const bool presentationModeHintChanged = next->presentationModeHintIsSet;
+     const bool bufferReleasePointChanged = next->bufferIsSet && current->releasePoint != next->releasePoint;
+     const bool alphaMultiplierChanged = next->alphaMultiplierIsSet;
+-    const bool yuvToRgbMatrixChanged = next->yuvToRgbMatrixIsSet;
++    const bool yuvToRgbMatrixChanged = next->yuvToRgbMatrixIsSet && (current->yuvToRgbMatrix != next->yuvToRgbMatrix);
+ 
+     const QSizeF oldSurfaceSize = surfaceSize;
+     const QSize oldBufferSize = bufferSize;
+-- 
+GitLab
+

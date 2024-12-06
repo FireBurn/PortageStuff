@@ -1,0 +1,86 @@
+diff --git a/src/DefaultFileAccessJobHandler.cpp b/src/DefaultFileAccessJobHandler.cpp
+index b5de4249..baf4e711 100644
+--- a/src/DefaultFileAccessJobHandler.cpp
++++ b/src/DefaultFileAccessJobHandler.cpp
+@@ -113,7 +113,6 @@ bool DefaultFileAccessJobHandler::get(void* pDestBuffer, long maxLength)
+         chk_connect(pJob, &KIO::TransferJob::result, this, &DefaultFileAccessJobHandler::slotSimpleJobResult);
+         chk_connect(pJob, &KIO::TransferJob::finished, this, &DefaultFileAccessJobHandler::slotJobEnded);
+         chk_connect(pJob, &KIO::TransferJob::data, this, &DefaultFileAccessJobHandler::slotGetData);
+-        chk_connect(pJob, SIGNAL(percent(KJob*,ulong)), &pp, SLOT(slotPercent(KJob*,ulong)));
+ 
+         ProgressProxy::enterEventLoop(pJob, i18nc("Message for progress dialog %1 = path to file", "Reading file: %1", mFileAccess->prettyAbsPath()));
+ #endif
+@@ -157,7 +156,6 @@ bool DefaultFileAccessJobHandler::put(const void* pSrcBuffer, long maxLength, bo
+         chk_connect(pJob, &KIO::TransferJob::result, this, &DefaultFileAccessJobHandler::slotPutJobResult);
+         chk_connect(pJob, &KIO::TransferJob::finished, this, &DefaultFileAccessJobHandler::slotJobEnded);
+         chk_connect(pJob, &KIO::TransferJob::dataReq, this, &DefaultFileAccessJobHandler::slotPutData);
+-        chk_connect(pJob, SIGNAL(percent(KJob*,ulong)), &pp, SLOT(slotPercent(KJob*,ulong)));
+ 
+         ProgressProxy::enterEventLoop(pJob, i18nc("Message for progress dialog %1 = path to file", "Writing file: %1", mFileAccess->prettyAbsPath()));
+ #endif
+@@ -324,7 +322,6 @@ bool DefaultFileAccessJobHandler::rename(const FileAccess& destFile)
+         m_bSuccess = false;
+         KIO::FileCopyJob* pJob = KIO::file_move(mFileAccess->url(), destFile.url(), permissions, KIO::HideProgressInfo);
+         chk_connect(pJob, &KIO::FileCopyJob::result, this, &DefaultFileAccessJobHandler::slotSimpleJobResult);
+-        chk_connect(pJob, SIGNAL(percent(KJob*,ulong)), &pp, SLOT(slotPercent(KJob*,ulong)));
+         chk_connect(pJob, &KIO::FileCopyJob::finished, this, &DefaultFileAccessJobHandler::slotJobEnded);
+ 
+         ProgressProxy::enterEventLoop(pJob,
+@@ -365,7 +362,6 @@ bool DefaultFileAccessJobHandler::copyFile(const QString& inDest)
+     m_bSuccess = false;
+     KIO::FileCopyJob* pJob = KIO::file_copy(mFileAccess->url(), dest.url(), permissions, KIO::HideProgressInfo|KIO::Overwrite);
+     chk_connect(pJob, &KIO::FileCopyJob::result, this, &DefaultFileAccessJobHandler::slotSimpleJobResult);
+-    chk_connect(pJob, SIGNAL(percent(KJob*,ulong)), &pp, SLOT(slotPercent(KJob*,ulong)));
+     chk_connect(pJob, &KIO::FileCopyJob::finished, this, &DefaultFileAccessJobHandler::slotJobEnded);
+ 
+     ProgressProxy::enterEventLoop(pJob,
+diff --git a/src/defmac.h b/src/defmac.h
+index b5b477ad..5847de71 100644
+--- a/src/defmac.h
++++ b/src/defmac.h
+@@ -50,7 +50,7 @@
+     QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_));
+ 
+ #define chk_connect_unique(SOURCE_, SIGNAL_, DEST_, SLOT_, CONNECT_TYPE_) \
+-    QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, CONNECT_TYPE_ | Qt::UniqueConnection));
++    QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, CONNECT_TYPE_ | Qt::AutoConnection));
+ 
+ 
+ #define chk_connect_custom(SOURCE_, SIGNAL_, DEST_, SLOT_, CONNECT_TYPE_) \
+@@ -58,19 +58,19 @@
+ 
+ #define chk_connect_a(SOURCE_, SIGNAL_, DEST_, SLOT_) \
+     QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, \
+-    Qt::ConnectionType(Qt::AutoConnection | Qt::UniqueConnection)));
++    Qt::ConnectionType(Qt::AutoConnection)));
+ 
+ #define chk_connect_d(SOURCE_, SIGNAL_, DEST_, SLOT_) \
+     QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, \
+-    Qt::ConnectionType(Qt::DirectConnection | Qt::UniqueConnection)));
++    Qt::ConnectionType(Qt::DirectConnection)));
+ 
+ #define chk_connect_q(SOURCE_, SIGNAL_, DEST_, SLOT_) \
+     QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, \
+-    Qt::ConnectionType(Qt::QueuedConnection | Qt::UniqueConnection)));
++    Qt::ConnectionType(Qt::QueuedConnection)));
+ 
+ #define chk_connect_bq(SOURCE_, SIGNAL_, DEST_, SLOT_) \
+     QCONNECT_ASSERT(QObject::connect(SOURCE_, SIGNAL_, DEST_, SLOT_, \
+-    Qt::ConnectionType(Qt::BlockingQueuedConnection | Qt::UniqueConnection)));
++    Qt::ConnectionType(Qt::BlockingQueuedConnection)));
+ 
+ #if defined(__MINGW32__) || defined(__MINGW64__)
+ #define MINGW
+diff --git a/src/fileaccess.cpp b/src/fileaccess.cpp
+index fd465ca5..98c2b232 100644
+--- a/src/fileaccess.cpp
++++ b/src/fileaccess.cpp
+@@ -862,8 +862,6 @@ bool FileAccess::writeFile(const void* pSrcBuffer, qint64 length)
+         bool success = mJobHandler->put(pSrcBuffer, length, true /*overwrite*/);
+         close();
+ 
+-        assert(!realFile->isOpen() && !tmpFile->isOpen());
+-
+         return success;
+     }
+     close();
