@@ -3,7 +3,7 @@
 [FireBurn]
 location = /var/db/repos/FireBurn
 sync-type = git
-sync-uri = https://github.com/gentoo-mirror/FireBurn.git
+sync-uri = https://github.com/FireBurn/Overlay.git
 
 [kde]
 location = /var/db/repos/kde
@@ -22,7 +22,3 @@ sync-uri = https://github.com/gentoo-mirror/gamerlay.git
 
 
 
-[gnome-next]
-location = /var/db/repos/gnome-next
-sync-type = git
-sync-uri = https://github.com/gentoo-mirror/gnome-next.git
