@@ -61,18 +61,22 @@ sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
 sys-boot/gnu-efi			o3.conf
 sys-boot/grub				o3.conf
-sys-devel/clang				clango3lto.conf
+# move sys-devel/clang llvm-core/clang
+llvm-core/clang				clango3lto.conf
 #sys-devel/clang				o3.conf
 sys-devel/gcc				o3.conf
-sys-devel/lld				clango3lto.conf
+# move sys-devel/lld llvm-core/lld
+llvm-core/lld				clango3lto.conf
 #sys-devel/lld				o3.conf
-sys-devel/llvm				clango3lto.conf
+# move sys-devel/llvm llvm-core/llvm
+llvm-core/llvm				clango3lto.conf
 #sys-devel/llvm				o3.conf
 sys-devel/llvm-roc			clango3.conf
 sys-libs/efivar				o3.conf
 sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
-sys-libs/libomp				o3.conf
+# move sys-libs/libomp llvm-runtimes/openmp
+llvm-runtimes/openmp				o3.conf
 www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf

@@ -60,8 +60,10 @@ x11-libs/libXxf86vm		abi_x86_32
 x11-libs/xcb-util-keysyms	abi_x86_32
 app-admin/gamemode		abi_x86_32
 media-libs/mesa			abi_x86_32
-sys-devel/clang			abi_x86_32
-sys-devel/llvm			abi_x86_32
+# move sys-devel/clang llvm-core/clang
+llvm-core/clang			abi_x86_32
+# move sys-devel/llvm llvm-core/llvm
+llvm-core/llvm			abi_x86_32
 sys-libs/binutils-libs		abi_x86_32
 sys-libs/libxcrypt		abi_x86_32
 virtual/wine			proton -abi_x86_32 -d3d9
