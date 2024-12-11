@@ -94,7 +94,8 @@ sys-apps/pciutils			-zlib
 sys-apps/systemd			elfutils sysv-utils -gcrypt
 sys-boot/gnu-efi			-custom-cflags
 sys-devel/gcc				zstd
-sys-devel/llvm				-ncurses
+# move sys-devel/llvm llvm-core/llvm
+llvm-core/llvm				-ncurses
 sys-fs/cryptsetup			-gcrypt
 sys-fs/ntfs3g				-crypt
 sys-libs/ncurses			tinfo
