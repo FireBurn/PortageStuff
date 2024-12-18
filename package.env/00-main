@@ -38,7 +38,8 @@ games-emulation/cemu			clango3lto.conf
 games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
-games-emulation/yuzu			clango3lto.conf
+#games-emulation/yuzu			clango3lto.conf
+games-emulation/yuzu			clangdebug.conf
 gui-apps/xwaylandvideobridge		clango3lto.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf
@@ -83,3 +84,4 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 kde-misc/kdiff3				clangdebug.conf
+dev-util/spirv-tools			clangdebug.conf
