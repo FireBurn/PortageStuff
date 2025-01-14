@@ -116,3 +116,36 @@ x11-base/xwayland			libei
 x11-libs/wxGTK				-gstreamer
 x11-misc/sddm				-X -qt5
 x11-wm/mutter				gles2
+# required by sys-libs/pam-1.7.0_p20241230-r2::gentoo[-berkdb]
+# required by net-mail/mailutils-3.18::gentoo[pam]
+# required by virtual/mailx-4::gentoo
+# required by sys-apps/smartmontools-7.4-r1::gentoo
+# required by kde-plasma/plasma-disks-6.2.5::gentoo
+# required by kde-plasma/plasma-meta-6.2.5::gentoo[smart]
+# required by @selected
+# required by @world (argument)
+>=sys-libs/gdbm-1.24 abi_x86_32
+# required by sys-libs/gdbm-1.24::gentoo[readline]
+# required by sys-libs/pam-1.7.0_p20241230-r2::gentoo[-berkdb]
+# required by net-mail/mailutils-3.18::gentoo[pam]
+# required by virtual/mailx-4::gentoo
+# required by sys-apps/smartmontools-7.4-r1::gentoo
+# required by kde-plasma/plasma-disks-6.2.5::gentoo
+# required by kde-plasma/plasma-meta-6.2.5::gentoo[smart]
+# required by @selected
+# required by @world (argument)
+>=sys-libs/readline-8.2_p13-r1 abi_x86_32
+# required by sys-libs/readline-8.2_p13-r1::gentoo
+# required by sys-devel/bc-1.08.1::gentoo[readline]
+# required by app-alternatives/bc-0::gentoo[gnu]
+# required by sys-apps/man-pages-6.06::gentoo
+# required by @system
+# required by @world (argument)
+>=sys-libs/ncurses-6.5_p20241109 abi_x86_32
+# required by sys-libs/ncurses-6.5_p20241109::gentoo[gpm]
+# required by sys-devel/bc-1.08.1::gentoo[readline]
+# required by app-alternatives/bc-0::gentoo[gnu]
+# required by sys-apps/man-pages-6.06::gentoo
+# required by @system
+# required by @world (argument)
+>=sys-libs/gpm-1.20.7-r6 abi_x86_32
