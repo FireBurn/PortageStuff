@@ -1,3 +1,4 @@
+app-admin/gamemode		abi_x86_32
 app-arch/bzip2			abi_x86_32
 app-arch/lz4			abi_x86_32
 app-arch/xz-utils		abi_x86_32
@@ -17,6 +18,11 @@ dev-libs/libffi			abi_x86_32
 dev-libs/libpcre2		abi_x86_32
 dev-libs/libxml2		abi_x86_32
 dev-libs/wayland		abi_x86_32
+dev-util/glslang		abi_x86_32
+dev-util/spirv-tools		abi_x86_32
+dev-util/vulkan-utility-libraries	abi_x86_32
+llvm-core/clang			abi_x86_32
+llvm-core/llvm			abi_x86_32
 media-libs/flac			abi_x86_32
 media-libs/fontconfig		abi_x86_32
 media-libs/freetype		abi_x86_32
@@ -27,7 +33,10 @@ media-libs/libpulse		abi_x86_32
 media-libs/libsndfile		abi_x86_32
 media-libs/libva		abi_x86_32
 media-libs/libvorbis		abi_x86_32
+media-libs/mesa			abi_x86_32
 media-libs/opus			abi_x86_32
+media-libs/vulkan-layers	abi_x86_32
+media-libs/vulkan-loader	abi_x86_32
 media-sound/lame		abi_x86_32
 media-sound/mpg123-base		abi_x86_32
 net-libs/libasyncns		abi_x86_32
@@ -35,10 +44,16 @@ sys-apps/dbus			abi_x86_32
 sys-apps/lm-sensors		abi_x86_32
 sys-apps/systemd		abi_x86_32
 sys-apps/util-linux		abi_x86_32
+sys-libs/binutils-libs		abi_x86_32
+sys-libs/gdbm			abi_x86_32
+sys-libs/gpm			abi_x86_32
 sys-libs/libcap			abi_x86_32
 sys-libs/libudev-compat		abi_x86_32
 sys-libs/libxcrypt		abi_x86_32
+sys-libs/libxcrypt		abi_x86_32
+sys-libs/ncurses		abi_x86_32
 sys-libs/pam			abi_x86_32
+sys-libs/readline		abi_x86_32
 sys-libs/zlib			abi_x86_32
 virtual/libcrypt		abi_x86_32
 virtual/libelf			abi_x86_32
@@ -46,24 +61,16 @@ virtual/libiconv		abi_x86_32
 virtual/libintl			abi_x86_32
 virtual/libudev			abi_x86_32
 virtual/opengl			abi_x86_32
-x11-libs/libdrm			abi_x86_32
+virtual/wine			proton -abi_x86_32 -d3d9
 x11-libs/libX11			abi_x86_32
 x11-libs/libXau			abi_x86_32
-x11-libs/libxcb			abi_x86_32
 x11-libs/libXdmcp		abi_x86_32
 x11-libs/libXext		abi_x86_32
 x11-libs/libXfixes		abi_x86_32
 x11-libs/libXrandr		abi_x86_32
 x11-libs/libXrender		abi_x86_32
-x11-libs/libxshmfence		abi_x86_32
 x11-libs/libXxf86vm		abi_x86_32
+x11-libs/libdrm			abi_x86_32
+x11-libs/libxcb			abi_x86_32
+x11-libs/libxshmfence		abi_x86_32
 x11-libs/xcb-util-keysyms	abi_x86_32
-app-admin/gamemode		abi_x86_32
-media-libs/mesa			abi_x86_32
-# move sys-devel/clang llvm-core/clang
-llvm-core/clang			abi_x86_32
-# move sys-devel/llvm llvm-core/llvm
-llvm-core/llvm			abi_x86_32
-sys-libs/binutils-libs		abi_x86_32
-sys-libs/libxcrypt		abi_x86_32
-virtual/wine			proton -abi_x86_32 -d3d9
