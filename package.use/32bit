@@ -61,7 +61,7 @@ virtual/libiconv		abi_x86_32
 virtual/libintl			abi_x86_32
 virtual/libudev			abi_x86_32
 virtual/opengl			abi_x86_32
-virtual/wine			proton -abi_x86_32 -d3d9
+virtual/wine			staging -abi_x86_32 -d3d9
 x11-libs/libX11			abi_x86_32
 x11-libs/libXau			abi_x86_32
 x11-libs/libXdmcp		abi_x86_32
