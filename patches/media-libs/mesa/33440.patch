@@ -218,7 +218,7 @@ index 504cad8911f2f..8c2ae78911fb6 100644
 GitLab
 
 
-From 54bbcdc61cba721756eb66b412a77dd136287a27 Mon Sep 17 00:00:00 2001
+From 7c89d5db4f82a5af7e0b7c180ea054849a37b884 Mon Sep 17 00:00:00 2001
 From: Qiang Yu <yuq825@gmail.com>
 Date: Fri, 7 Feb 2025 14:18:16 +0800
 Subject: [PATCH 3/3] radeonsi: fix GravityMark corruption when use aco
@@ -228,19 +228,20 @@ aco may use smem load for ssbo when possible.
 Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/12518
 Cc: mesa-stable
 ---
- src/gallium/drivers/radeonsi/si_barrier.c | 4 ++++
- 1 file changed, 4 insertions(+)
+ src/gallium/drivers/radeonsi/si_barrier.c | 5 +++++
+ 1 file changed, 5 insertions(+)
 
 diff --git a/src/gallium/drivers/radeonsi/si_barrier.c b/src/gallium/drivers/radeonsi/si_barrier.c
-index 4951fd84b8326..4f5f1988fe98f 100644
+index 4951fd84b8326..555d0dcd3ac19 100644
 --- a/src/gallium/drivers/radeonsi/si_barrier.c
 +++ b/src/gallium/drivers/radeonsi/si_barrier.c
-@@ -677,6 +677,10 @@ static void si_memory_barrier(struct pipe_context *ctx, unsigned flags)
+@@ -677,6 +677,11 @@ static void si_memory_barrier(struct pipe_context *ctx, unsigned flags)
                  PIPE_BARRIER_IMAGE | PIPE_BARRIER_STREAMOUT_BUFFER | PIPE_BARRIER_GLOBAL_BUFFER))
        sctx->barrier_flags |= SI_BARRIER_INV_VMEM;
  
-+   /* Unlike LLVM, ACO may use SMEM for SSBOs. */
-+   if (sctx->screen->use_aco && (flags & PIPE_BARRIER_SHADER_BUFFER))
++   /* Unlike LLVM, ACO may use SMEM for SSBOs and global access. */
++   if (sctx->screen->use_aco &&
++       (flags & (PIPE_BARRIER_SHADER_BUFFER | PIPE_BARRIER_GLOBAL_BUFFER)))
 +      sctx->barrier_flags |= SI_BARRIER_INV_SMEM;
 +
     if (flags & (PIPE_BARRIER_INDEX_BUFFER | PIPE_BARRIER_INDIRECT_BUFFER))
