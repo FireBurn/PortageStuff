@@ -4,3 +4,6 @@
 =dev-lang/python-3.13*
 dev-qt/qtcore:5
 =dev-build/ninja-1.12.0
+=cross-i686-w64-mingw32/binutils-2.44
+=cross-x86_64-w64-mingw32/binutils-2.44
+=sys-devel/binutils-2.44
