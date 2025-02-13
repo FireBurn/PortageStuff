@@ -49,7 +49,7 @@ media-gfx/graphviz			python
 media-gfx/pstoedit			plotutils
 media-libs/cogl				gles2
 media-libs/embree			clang raymask -ispc
-media-libs/freetype			-harfbuzz
+#media-libs/freetype			-harfbuzz
 media-libs/gegl				jpeg2k raw
 media-libs/gst-plugins-base		-gles2
 media-libs/libmediaart			-qt5

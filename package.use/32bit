@@ -17,15 +17,18 @@ dev-libs/icu			abi_x86_32
 dev-libs/libffi			abi_x86_32
 dev-libs/libpcre2		abi_x86_32
 dev-libs/libxml2		abi_x86_32
+dev-libs/lzo			abi_x86_32
 dev-libs/wayland		abi_x86_32
 dev-util/glslang		abi_x86_32
 dev-util/spirv-tools		abi_x86_32
 dev-util/vulkan-utility-libraries	abi_x86_32
 llvm-core/clang			abi_x86_32
 llvm-core/llvm			abi_x86_32
+media-gfx/graphite2		abi_x86_32
 media-libs/flac			abi_x86_32
 media-libs/fontconfig		abi_x86_32
 media-libs/freetype		abi_x86_32
+media-libs/harfbuzz		abi_x86_32
 media-libs/libglvnd		abi_x86_32
 media-libs/libogg		abi_x86_32
 media-libs/libpng		abi_x86_32
@@ -62,6 +65,7 @@ virtual/libintl			abi_x86_32
 virtual/libudev			abi_x86_32
 virtual/opengl			abi_x86_32
 virtual/wine			staging -abi_x86_32 -d3d9
+x11-libs/cairo			abi_x86_32
 x11-libs/libX11			abi_x86_32
 x11-libs/libXau			abi_x86_32
 x11-libs/libXdmcp		abi_x86_32
@@ -73,4 +77,5 @@ x11-libs/libXxf86vm		abi_x86_32
 x11-libs/libdrm			abi_x86_32
 x11-libs/libxcb			abi_x86_32
 x11-libs/libxshmfence		abi_x86_32
+x11-libs/pixman			abi_x86_32
 x11-libs/xcb-util-keysyms	abi_x86_32
