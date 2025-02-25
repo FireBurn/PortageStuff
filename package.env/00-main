@@ -81,3 +81,4 @@ www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
+dev-qt/qtbase				clangdebug.conf
