@@ -10,6 +10,7 @@ app-emulation/wine-gecko	abi_x86_32
 app-emulation/wine-proton	mingw wow64 -abi_x86_32
 app-emulation/wine-staging	mingw wow64 -abi_x86_32
 app-emulation/winetricks	kde -gtk
+dev-lang/rust			abi_x86_32
 dev-libs/elfutils		abi_x86_32
 dev-libs/expat			abi_x86_32
 dev-libs/glib			abi_x86_32
