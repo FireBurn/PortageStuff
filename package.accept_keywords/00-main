@@ -5,7 +5,6 @@ app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
 <app-office/libreoffice-24.2.9999	**
 <app-office/libreoffice-l10n-24.2.9999	**
-kde-misc/kdiff3				**
 <www-client/chromium-9999		**
 app-emulation/wine-proton		**
 #=cross-i686-w64-mingw32/binutils-9999 **
