@@ -2,7 +2,8 @@
 -input_devices_libinput
 -gentoo-vm
 -custom-cflags
--llvm_slot_18
+-llvm_slot_20
+llvm_slot_19
 llvm_targets_AArch64
 llvm_targets_ARM
 llvm_targets_AVR
