@@ -5,12 +5,10 @@ app-emulation/wine-proton		o3.conf
 app-emulation/wine-staging		o3.conf
 app-emulation/wine-vanilla		o3.conf
 app-office/libreoffice			clango3lto.conf
-cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-i686-w64-mingw32/*		o2.conf
-cross-x86_64-w64-mingw32/gcc		enable-posix.conf
+cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
-# move dev-debug/lldb llvm-core/lldb
-llvm-core/lldb				clango3lto.conf
+cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 dev-java/openjdk			o3.conf
 dev-lang/ocaml				o3.conf
 dev-lang/rust				clango3lto.conf
@@ -39,10 +37,14 @@ games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
 games-emulation/yuzu			clango3lto.conf
-#games-emulation/yuzu			clangdebug.conf
 gui-apps/xwaylandvideobridge		clango3lto.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf
+llvm-core/clang				clango3lto.conf
+llvm-core/lld				clango3lto.conf
+llvm-core/lldb				clango3lto.conf
+llvm-core/llvm				clango3lto.conf
+llvm-runtimes/openmp				o3.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 media-libs/dav1d			o3.conf
 media-libs/embree			o2.conf
@@ -50,8 +52,6 @@ media-libs/flac				o3.conf
 media-libs/gst-plugins-good		o3.conf
 media-libs/mesa				clango3lto.conf
 media-libs/x264				o3.conf
-#media-video/ffmpeg			clango3.conf
-#media-video/mpv				o3.conf
 media-video/qmplay2			clango3lto.conf
 net-irc/konversation			clango3lto.conf
 net-libs/libktorrent			clango3lto.conf
@@ -63,24 +63,12 @@ sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
 sys-boot/gnu-efi			o3.conf
 sys-boot/grub				o3.conf
-# move sys-devel/clang llvm-core/clang
-llvm-core/clang				clango3lto.conf
-#sys-devel/clang				o3.conf
 sys-devel/gcc				o3.conf
-# move sys-devel/lld llvm-core/lld
-llvm-core/lld				clango3lto.conf
-#sys-devel/lld				o3.conf
-# move sys-devel/llvm llvm-core/llvm
-llvm-core/llvm				clango3lto.conf
-#sys-devel/llvm				o3.conf
 sys-devel/llvm-roc			clango3.conf
 sys-libs/efivar				o3.conf
 sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
-# move sys-libs/libomp llvm-runtimes/openmp
-llvm-runtimes/openmp				o3.conf
 www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
-kde-misc/kdiff3				clango3lto.conf
