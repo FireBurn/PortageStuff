@@ -84,4 +84,3 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 kde-misc/kdiff3				clango3lto.conf
-kde-plasma/kwin				clangdebug.conf
