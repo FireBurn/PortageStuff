@@ -1,0 +1,256 @@
+From 499ecc0ed7cd8d302e4c4b8deddfb7317ef092c1 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Wed, 12 Mar 2025 17:24:39 +0000
+Subject: [PATCH] Revert "feat: Make firmware mandatory for title launching"
+
+This reverts commit 84e5fbc0899bb838ae2c813edee30b32735f4a5f.
+---
+ .../activities/EmulationActivity.kt           | 14 ---------
+ .../app/src/main/jni/native_library.cpp       | 31 -------------------
+ .../app/src/main/res/values/strings.xml       |  3 --
+ src/citron/main.cpp                           | 11 ++-----
+ src/core/crypto/key_manager.cpp               | 27 ----------------
+ src/core/crypto/key_manager.h                 |  3 --
+ src/core/file_sys/content_manager.cpp         | 25 ---------------
+ src/core/loader/loader.cpp                    | 18 -----------
+ 8 files changed, 3 insertions(+), 129 deletions(-)
+ delete mode 100644 src/android/app/src/main/jni/native_library.cpp
+ delete mode 100644 src/core/file_sys/content_manager.cpp
+
+diff --git a/src/android/app/src/main/java/org/citron/citron_emu/activities/EmulationActivity.kt b/src/android/app/src/main/java/org/citron/citron_emu/activities/EmulationActivity.kt
+index c4c2c1ed1..9a3471a9b 100644
+--- a/src/android/app/src/main/java/org/citron/citron_emu/activities/EmulationActivity.kt
++++ b/src/android/app/src/main/java/org/citron/citron_emu/activities/EmulationActivity.kt
+@@ -4,7 +4,6 @@
+ package org.citron.citron_emu.activities
+ 
+ import android.annotation.SuppressLint
+-import android.app.AlertDialog
+ import android.app.PendingIntent
+ import android.app.PictureInPictureParams
+ import android.app.RemoteAction
+@@ -83,19 +82,6 @@ class EmulationActivity : AppCompatActivity(), SensorEventListener {
+ 
+         super.onCreate(savedInstanceState)
+ 
+-        // Check if firmware is available
+-        if (!NativeLibrary.isFirmwareAvailable()) {
+-            AlertDialog.Builder(this)
+-                .setTitle(R.string.firmware_missing_title)
+-                .setMessage(R.string.firmware_missing_message)
+-                .setPositiveButton(R.string.ok) { _, _ ->
+-                    finish()
+-                }
+-                .setCancelable(false)
+-                .show()
+-            return
+-        }
+-
+         // Add license verification at the start
+         LicenseVerifier.verifyLicense(this)
+ 
+diff --git a/src/android/app/src/main/jni/native_library.cpp b/src/android/app/src/main/jni/native_library.cpp
+deleted file mode 100644
+index 41152ef41..000000000
+--- a/src/android/app/src/main/jni/native_library.cpp
++++ /dev/null
+@@ -1,31 +0,0 @@
+-#include "core/crypto/key_manager.h"
+-#include "core/hle/service/am/am.h"
+-#include "core/file_sys/registered_cache.h"
+-#include "core/file_sys/content_archive.h"
+-#include "core/system.h"
+-
+-extern "C" {
+-
+-JNIEXPORT jboolean JNICALL Java_org_citron_citron_1emu_NativeLibrary_isFirmwareAvailable(
+-    JNIEnv* env, jobject obj) {
+-    return Core::Crypto::KeyManager::Instance().IsFirmwareAvailable();
+-}
+-
+-JNIEXPORT jboolean JNICALL Java_org_citron_citron_1emu_NativeLibrary_checkFirmwarePresence(
+-    JNIEnv* env, jobject obj) {
+-    constexpr u64 MiiEditId = 0x0100000000001009; // Mii Edit applet ID
+-    constexpr u64 QLaunchId = 0x0100000000001000; // Home Menu applet ID
+-
+-    auto& system = Core::System::GetInstance();
+-    auto bis_system = system.GetFileSystemController().GetSystemNANDContents();
+-    if (!bis_system) {
+-        return false;
+-    }
+-
+-    auto mii_applet_nca = bis_system->GetEntry(MiiEditId, FileSys::ContentRecordType::Program);
+-    auto qlaunch_nca = bis_system->GetEntry(QLaunchId, FileSys::ContentRecordType::Program);
+-
+-    return (mii_applet_nca != nullptr && qlaunch_nca != nullptr);
+-}
+-
+-} // extern "C"
+\ No newline at end of file
+diff --git a/src/android/app/src/main/res/values/strings.xml b/src/android/app/src/main/res/values/strings.xml
+index a30297fbe..c7590b261 100644
+--- a/src/android/app/src/main/res/values/strings.xml
++++ b/src/android/app/src/main/res/values/strings.xml
+@@ -23,9 +23,6 @@
+     <string name="keys">Keys</string>
+     <string name="keys_description">Select your &lt;b>prod.keys&lt;/b> file with the button below.</string>
+     <string name="select_keys">Select Keys</string>
+-    <string name="firmware_missing_title">Missing Firmware</string>
+-    <string name="firmware_missing_message">Firmware is required to launch games.\n\nPlease install firmware by placing your Switch firmware files in the appropriate location.</string>
+-    <string name="ok">OK</string>
+     <string name="games">Games</string>
+     <string name="games_description">Select your &lt;b>Games&lt;/b> folder with the button below.</string>
+     <string name="done">Done</string>
+diff --git a/src/citron/main.cpp b/src/citron/main.cpp
+index a99d62ef4..b38f8e9da 100644
+--- a/src/citron/main.cpp
++++ b/src/citron/main.cpp
+@@ -4780,24 +4780,19 @@ void GMainWindow::OnCheckFirmwareDecryption() {
+ }
+ 
+ bool GMainWindow::CheckFirmwarePresence() {
+-    constexpr u64 MiiEditId = 0x0100000000001009; // Mii Edit applet ID
+-    constexpr u64 QLaunchId = 0x0100000000001000; // Home Menu applet ID
++    constexpr u64 MiiEditId = static_cast<u64>(Service::AM::AppletProgramId::MiiEdit);
+ 
+     auto bis_system = system->GetFileSystemController().GetSystemNANDContents();
+     if (!bis_system) {
+         return false;
+     }
+ 
+-    // Check for essential system applets
+     auto mii_applet_nca = bis_system->GetEntry(MiiEditId, FileSys::ContentRecordType::Program);
+-    auto qlaunch_nca = bis_system->GetEntry(QLaunchId, FileSys::ContentRecordType::Program);
+-
+-    if (!mii_applet_nca || !qlaunch_nca) {
++    if (!mii_applet_nca) {
+         return false;
+     }
+ 
+-    // Also check for essential keys
+-    return Core::Crypto::KeyManager::Instance().IsFirmwareAvailable();
++    return true;
+ }
+ 
+ void GMainWindow::SetFirmwareVersion() {
+diff --git a/src/core/crypto/key_manager.cpp b/src/core/crypto/key_manager.cpp
+index 16004fa49..d00188fad 100644
+--- a/src/core/crypto/key_manager.cpp
++++ b/src/core/crypto/key_manager.cpp
+@@ -1376,31 +1376,4 @@ bool KeyManager::AddTicket(const Ticket& ticket) {
+     SetKey(S128KeyType::Titlekey, key.value(), rights_id[1], rights_id[0]);
+     return true;
+ }
+-
+-bool KeyManager::IsFirmwareAvailable() const {
+-    // Check for essential keys that would only be present with firmware
+-    if (!HasKey(S128KeyType::Master, 0)) {
+-        return false;
+-    }
+-
+-    // Check for at least one titlekek
+-    bool has_titlekek = false;
+-    for (size_t i = 0; i < CURRENT_CRYPTO_REVISION; ++i) {
+-        if (HasKey(S128KeyType::Titlekek, i)) {
+-            has_titlekek = true;
+-            break;
+-        }
+-    }
+-
+-    if (!has_titlekek) {
+-        return false;
+-    }
+-
+-    // Check for header key
+-    if (!HasKey(S256KeyType::Header)) {
+-        return false;
+-    }
+-
+-    return true;
+-}
+ } // namespace Core::Crypto
+diff --git a/src/core/crypto/key_manager.h b/src/core/crypto/key_manager.h
+index 1e29dd809..7de21f8a4 100644
+--- a/src/core/crypto/key_manager.h
++++ b/src/core/crypto/key_manager.h
+@@ -295,9 +295,6 @@ public:
+     void ReloadKeys();
+     bool AreKeysLoaded() const;
+ 
+-    // Check if firmware is installed by verifying essential keys
+-    bool IsFirmwareAvailable() const;
+-
+ private:
+     KeyManager();
+ 
+diff --git a/src/core/file_sys/content_manager.cpp b/src/core/file_sys/content_manager.cpp
+deleted file mode 100644
+index fd53978fc..000000000
+--- a/src/core/file_sys/content_manager.cpp
++++ /dev/null
+@@ -1,25 +0,0 @@
+-#include "core/system.h"
+-#include "core/file_sys/registered_cache.h"
+-#include "core/file_sys/content_archive.h"
+-#include "core/crypto/key_manager.h"
+-
+-bool ContentManager::IsFirmwareAvailable() {
+-    constexpr u64 MiiEditId = 0x0100000000001009; // Mii Edit applet ID
+-    constexpr u64 QLaunchId = 0x0100000000001000; // Home Menu applet ID
+-
+-    auto& system = Core::System::GetInstance();
+-    auto bis_system = system.GetFileSystemController().GetSystemNANDContents();
+-    if (!bis_system) {
+-        return false;
+-    }
+-
+-    auto mii_applet_nca = bis_system->GetEntry(MiiEditId, FileSys::ContentRecordType::Program);
+-    auto qlaunch_nca = bis_system->GetEntry(QLaunchId, FileSys::ContentRecordType::Program);
+-
+-    if (!mii_applet_nca || !qlaunch_nca) {
+-        return false;
+-    }
+-
+-    // Also check for essential keys
+-    return Core::Crypto::KeyManager::Instance().IsFirmwareAvailable();
+-}
+\ No newline at end of file
+diff --git a/src/core/loader/loader.cpp b/src/core/loader/loader.cpp
+index 0135d6f81..b6e355622 100644
+--- a/src/core/loader/loader.cpp
++++ b/src/core/loader/loader.cpp
+@@ -19,10 +19,6 @@
+ #include "core/loader/nso.h"
+ #include "core/loader/nsp.h"
+ #include "core/loader/xci.h"
+-#include "core/hle/service/am/am.h"
+-#include "core/hle/service/filesystem/filesystem.h"
+-#include "core/file_sys/registered_cache.h"
+-#include "core/file_sys/content_archive.h"
+ 
+ namespace Loader {
+ 
+@@ -254,20 +250,6 @@ std::unique_ptr<AppLoader> GetLoader(Core::System& system, FileSys::VirtualFile
+         return nullptr;
+     }
+ 
+-    // Check if firmware is available
+-    constexpr u64 MiiEditId = 0x0100000000001009; // Mii Edit applet ID
+-    auto bis_system = system.GetFileSystemController().GetSystemNANDContents();
+-    if (bis_system) {
+-        auto mii_applet_nca = bis_system->GetEntry(MiiEditId, FileSys::ContentRecordType::Program);
+-        if (!mii_applet_nca) {
+-            LOG_ERROR(Loader, "Firmware is required to launch games but is not available");
+-            return nullptr;
+-        }
+-    } else {
+-        LOG_ERROR(Loader, "System NAND contents not available");
+-        return nullptr;
+-    }
+-
+     FileType type = IdentifyFile(file);
+     const FileType filename_type = GuessFromFilename(file->GetName());
+ 
+-- 
+2.48.1
+

@@ -33,10 +33,11 @@ dev-util/rocminfo			clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
 dev-util/valgrind			o3.conf
 games-emulation/cemu			clango3lto.conf
+games-emulation/citron			clango3lto.conf
 games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
-games-emulation/yuzu			clango3lto.conf
+#games-emulation/yuzu			clango3lto.conf
 gui-apps/xwaylandvideobridge		clango3lto.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf

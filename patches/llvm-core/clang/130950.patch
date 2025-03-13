@@ -1,0 +1,335 @@
+From 88143ce2f76b2022b39612ee508da5cd8fa879eb Mon Sep 17 00:00:00 2001
+From: Matheus Izvekov <mizvekov@gmail.com>
+Date: Sat, 8 Mar 2025 20:32:14 -0300
+Subject: [PATCH] [clang] fix matching of nested template template parameters
+
+When checking the template template parameters of template template
+parameters, the PartialOrdering context was not correctly propagated.
+
+This also has a few drive-by fixes, such as checking the template parameter
+lists of template template parameters, which was previously missing and
+would have been it's own bug, but we need to fix it in order to
+prevent crashes in error recovery in a simple way.
+
+Fixes #130362
+
+Backport of: https://github.com/llvm/llvm-project/pull/130447
+---
+ clang/docs/ReleaseNotes.rst                   |  3 ++
+ clang/include/clang/Sema/Sema.h               |  8 +++--
+ clang/lib/Sema/SemaDecl.cpp                   |  2 +-
+ clang/lib/Sema/SemaDeclCXX.cpp                |  2 +-
+ clang/lib/Sema/SemaTemplate.cpp               | 36 ++++++++++++-------
+ clang/lib/Sema/SemaTemplateDeduction.cpp      | 16 +++++----
+ .../lib/Sema/SemaTemplateInstantiateDecl.cpp  |  2 +-
+ clang/test/SemaTemplate/cwg2398.cpp           | 22 ++++++------
+ .../SemaTemplate/temp_arg_template_p0522.cpp  |  3 +-
+ clang/unittests/AST/DeclPrinterTest.cpp       | 16 ++++-----
+ 10 files changed, 64 insertions(+), 46 deletions(-)
+
+diff --git a/clang/docs/ReleaseNotes.rst b/clang/docs/ReleaseNotes.rst
+index 57a567509a068..18f792c1e1c9e 100644
+--- a/clang/docs/ReleaseNotes.rst
++++ b/clang/docs/ReleaseNotes.rst
+@@ -1058,6 +1058,9 @@ Bug Fixes to C++ Support
+ - Fixed a substitution bug in transforming CTAD aliases when the type alias contains a non-pack template argument
+   corresponding to a pack parameter (#GH124715)
+ - Clang is now better at keeping track of friend function template instance contexts. (#GH55509)
++- Fixes matching of nested template template parameters. (#GH130362)
++- Correctly diagnoses template template paramters which have a pack parameter
++  not in the last position.
+ 
+ Bug Fixes to AST Handling
+ ^^^^^^^^^^^^^^^^^^^^^^^^^
+diff --git a/clang/include/clang/Sema/Sema.h b/clang/include/clang/Sema/Sema.h
+index a30a7076ea5d4..06fc280734e91 100644
+--- a/clang/include/clang/Sema/Sema.h
++++ b/clang/include/clang/Sema/Sema.h
+@@ -11280,14 +11280,16 @@ class Sema final : public SemaBase {
+ 
+   /// The context in which we are checking a template parameter list.
+   enum TemplateParamListContext {
+-    TPC_ClassTemplate,
+-    TPC_VarTemplate,
++    // For this context, Class, Variable, TypeAlias, and non-pack Template
++    // Template Parameters are treated uniformly.
++    TPC_Other,
++
+     TPC_FunctionTemplate,
+     TPC_ClassTemplateMember,
+     TPC_FriendClassTemplate,
+     TPC_FriendFunctionTemplate,
+     TPC_FriendFunctionTemplateDefinition,
+-    TPC_TypeAliasTemplate
++    TPC_TemplateTemplateParameterPack,
+   };
+ 
+   /// Checks the validity of a template parameter list, possibly
+diff --git a/clang/lib/Sema/SemaDecl.cpp b/clang/lib/Sema/SemaDecl.cpp
+index 01f09aba8c2ad..2b34bde63fdd8 100644
+--- a/clang/lib/Sema/SemaDecl.cpp
++++ b/clang/lib/Sema/SemaDecl.cpp
+@@ -8145,7 +8145,7 @@ NamedDecl *Sema::ActOnVariableDeclarator(
+               (D.getCXXScopeSpec().isSet() && DC && DC->isRecord() &&
+                DC->isDependentContext())
+                   ? TPC_ClassTemplateMember
+-                  : TPC_VarTemplate))
++                  : TPC_Other))
+         NewVD->setInvalidDecl();
+ 
+       // If we are providing an explicit specialization of a static variable
+diff --git a/clang/lib/Sema/SemaDeclCXX.cpp b/clang/lib/Sema/SemaDeclCXX.cpp
+index e4e3bbad1f520..85de46c9adab4 100644
+--- a/clang/lib/Sema/SemaDeclCXX.cpp
++++ b/clang/lib/Sema/SemaDeclCXX.cpp
+@@ -13533,7 +13533,7 @@ Decl *Sema::ActOnAliasDeclaration(Scope *S, AccessSpecifier AS,
+     // Merge any previous default template arguments into our parameters,
+     // and check the parameter list.
+     if (CheckTemplateParameterList(TemplateParams, OldTemplateParams,
+-                                   TPC_TypeAliasTemplate))
++                                   TPC_Other))
+       return nullptr;
+ 
+     TypeAliasTemplateDecl *NewDecl =
+diff --git a/clang/lib/Sema/SemaTemplate.cpp b/clang/lib/Sema/SemaTemplate.cpp
+index 938671055333c..1c555b38277b0 100644
+--- a/clang/lib/Sema/SemaTemplate.cpp
++++ b/clang/lib/Sema/SemaTemplate.cpp
+@@ -1591,8 +1591,16 @@ NamedDecl *Sema::ActOnTemplateTemplateParameter(
+   assert(S->isTemplateParamScope() &&
+          "Template template parameter not in template parameter scope!");
+ 
+-  // Construct the parameter object.
+   bool IsParameterPack = EllipsisLoc.isValid();
++
++  bool Invalid = false;
++  if (CheckTemplateParameterList(
++          Params,
++          /*OldParams=*/nullptr,
++          IsParameterPack ? TPC_TemplateTemplateParameterPack : TPC_Other))
++    Invalid = true;
++
++  // Construct the parameter object.
+   TemplateTemplateParmDecl *Param = TemplateTemplateParmDecl::Create(
+       Context, Context.getTranslationUnitDecl(),
+       NameLoc.isInvalid() ? TmpLoc : NameLoc, Depth, Position, IsParameterPack,
+@@ -1615,9 +1623,12 @@ NamedDecl *Sema::ActOnTemplateTemplateParameter(
+   if (Params->size() == 0) {
+     Diag(Param->getLocation(), diag::err_template_template_parm_no_parms)
+     << SourceRange(Params->getLAngleLoc(), Params->getRAngleLoc());
+-    Param->setInvalidDecl();
++    Invalid = true;
+   }
+ 
++  if (Invalid)
++    Param->setInvalidDecl();
++
+   // C++0x [temp.param]p9:
+   //   A default template-argument may be specified for any kind of
+   //   template-parameter that is not a template parameter pack.
+@@ -2066,7 +2077,7 @@ DeclResult Sema::CheckClassTemplate(
+            SemanticContext->isDependentContext())
+               ? TPC_ClassTemplateMember
+           : TUK == TagUseKind::Friend ? TPC_FriendClassTemplate
+-                                      : TPC_ClassTemplate,
++                                      : TPC_Other,
+           SkipBody))
+     Invalid = true;
+ 
+@@ -2208,9 +2219,8 @@ static bool DiagnoseDefaultTemplateArgument(Sema &S,
+                                             SourceLocation ParamLoc,
+                                             SourceRange DefArgRange) {
+   switch (TPC) {
+-  case Sema::TPC_ClassTemplate:
+-  case Sema::TPC_VarTemplate:
+-  case Sema::TPC_TypeAliasTemplate:
++  case Sema::TPC_Other:
++  case Sema::TPC_TemplateTemplateParameterPack:
+     return false;
+ 
+   case Sema::TPC_FunctionTemplate:
+@@ -2383,8 +2393,11 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
+         MissingDefaultArg = true;
+     } else if (NonTypeTemplateParmDecl *NewNonTypeParm
+                = dyn_cast<NonTypeTemplateParmDecl>(*NewParam)) {
+-      // Check for unexpanded parameter packs.
+-      if (!NewNonTypeParm->isParameterPack() &&
++      // Check for unexpanded parameter packs, except in a template template
++      // parameter pack, as in those any unexpanded packs should be expanded
++      // along with the parameter itself.
++      if (TPC != TPC_TemplateTemplateParameterPack &&
++          !NewNonTypeParm->isParameterPack() &&
+           DiagnoseUnexpandedParameterPack(NewNonTypeParm->getLocation(),
+                                           NewNonTypeParm->getTypeSourceInfo(),
+                                           UPPC_NonTypeTemplateParameterType)) {
+@@ -2492,8 +2505,7 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
+     //   If a template parameter of a primary class template or alias template
+     //   is a template parameter pack, it shall be the last template parameter.
+     if (SawParameterPack && (NewParam + 1) != NewParamEnd &&
+-        (TPC == TPC_ClassTemplate || TPC == TPC_VarTemplate ||
+-         TPC == TPC_TypeAliasTemplate)) {
++        (TPC == TPC_Other || TPC == TPC_TemplateTemplateParameterPack)) {
+       Diag((*NewParam)->getLocation(),
+            diag::err_template_param_pack_must_be_last_template_parameter);
+       Invalid = true;
+@@ -2526,8 +2538,8 @@ bool Sema::CheckTemplateParameterList(TemplateParameterList *NewParams,
+           << PrevModuleName;
+       Invalid = true;
+     } else if (MissingDefaultArg &&
+-               (TPC == TPC_ClassTemplate || TPC == TPC_FriendClassTemplate ||
+-                TPC == TPC_VarTemplate || TPC == TPC_TypeAliasTemplate)) {
++               (TPC == TPC_Other || TPC == TPC_TemplateTemplateParameterPack ||
++                TPC == TPC_FriendClassTemplate)) {
+       // C++ 23[temp.param]p14:
+       // If a template-parameter of a class template, variable template, or
+       // alias template has a default template argument, each subsequent
+diff --git a/clang/lib/Sema/SemaTemplateDeduction.cpp b/clang/lib/Sema/SemaTemplateDeduction.cpp
+index 5304b5a2155b4..7a880505a53ff 100644
+--- a/clang/lib/Sema/SemaTemplateDeduction.cpp
++++ b/clang/lib/Sema/SemaTemplateDeduction.cpp
+@@ -3427,9 +3427,9 @@ static TemplateDeductionResult FinishTemplateArgumentDeduction(
+       if (!P.isPackExpansion() && !A.isPackExpansion()) {
+         Info.Param =
+             makeTemplateParameter(Template->getTemplateParameters()->getParam(
+-                (PsStack.empty() ? TemplateArgs.end()
+-                                 : PsStack.front().begin()) -
+-                TemplateArgs.begin()));
++                (AsStack.empty() ? CTAI.CanonicalConverted.end()
++                                 : AsStack.front().begin()) -
++                1 - CTAI.CanonicalConverted.begin()));
+         Info.FirstArg = P;
+         Info.SecondArg = A;
+         return TemplateDeductionResult::NonDeducedMismatch;
+@@ -6625,17 +6625,19 @@ bool Sema::isTemplateTemplateParameterAtLeastAsSpecializedAs(
+ 
+   TemplateDeductionResult TDK;
+   runWithSufficientStackSpace(Info.getLocation(), [&] {
+-    TDK = ::FinishTemplateArgumentDeduction(
+-        *this, AArg, /*IsPartialOrdering=*/true, PArgs, Deduced, Info);
++    TDK = ::FinishTemplateArgumentDeduction(*this, AArg, PartialOrdering, PArgs,
++                                            Deduced, Info);
+   });
+   switch (TDK) {
+   case TemplateDeductionResult::Success:
+     return true;
+ 
+   // It doesn't seem possible to get a non-deduced mismatch when partial
+-  // ordering TTPs.
++  // ordering TTPs, except with an invalid template parameter list which has
++  // a parameter after a pack.
+   case TemplateDeductionResult::NonDeducedMismatch:
+-    llvm_unreachable("Unexpected NonDeducedMismatch");
++    assert(PArg->isInvalidDecl() && "Unexpected NonDeducedMismatch");
++    return false;
+ 
+   // Substitution failures should have already been diagnosed.
+   case TemplateDeductionResult::AlreadyDiagnosed:
+diff --git a/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp b/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
+index 89ad2a0a9b7bb..0c25b87439a95 100644
+--- a/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
++++ b/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
+@@ -1827,7 +1827,7 @@ Decl *TemplateDeclInstantiator::VisitClassTemplateDecl(ClassTemplateDecl *D) {
+       // Do some additional validation, then merge default arguments
+       // from the existing declarations.
+       if (SemaRef.CheckTemplateParameterList(InstParams, PrevParams,
+-                                             Sema::TPC_ClassTemplate))
++                                             Sema::TPC_Other))
+         return nullptr;
+ 
+       Inst->setAccess(PrevClassTemplate->getAccess());
+diff --git a/clang/test/SemaTemplate/cwg2398.cpp b/clang/test/SemaTemplate/cwg2398.cpp
+index 8592be469bb50..33b288acce82a 100644
+--- a/clang/test/SemaTemplate/cwg2398.cpp
++++ b/clang/test/SemaTemplate/cwg2398.cpp
+@@ -650,6 +650,11 @@ namespace regression3 {
+   template struct A<B, Node<None>>;
+   // old-error@-1 {{different template}}
+ } // namespace regression3
++namespace GH130362 {
++  template <template <template <class... T1> class TT1> class TT2> struct A {};
++  template <template <class U1> class UU1> struct B {};
++  template struct A<B>;
++} // namespace GH130362
+ 
+ namespace nttp_auto {
+   namespace t1 {
+@@ -658,26 +663,19 @@ namespace nttp_auto {
+     template struct A<B>;
+   } // namespace t1
+   namespace t2 {
+-    // FIXME: Shouldn't accept parameters after a parameter pack.
+     template<template<auto... Va1, auto Va2> class> struct A {};
+-    // new-error@-1 {{deduced non-type template argument does not have the same type as the corresponding template parameter ('auto' vs 'int')}}
+-    // expected-note@-2 {{previous template template parameter is here}}
++    // expected-error@-1 {{template parameter pack must be the last template parameter}}
++    // old-note@-2 {{previous template template parameter is here}}
+     template<int... Vi> struct B;
+-    // new-note@-1 {{template parameter is declared here}}
+-    // old-note@-2 {{too few template parameters}}
++    // old-note@-1 {{too few template parameters}}
+     template struct A<B>;
+-    // new-note@-1 {{different template parameters}}
+-    // old-error@-2 {{different template parameters}}
++    // old-error@-1 {{different template parameters}}
+   } // namespace t2
+   namespace t3 {
+-    // FIXME: Shouldn't accept parameters after a parameter pack.
+     template<template<auto... Va1, auto... Va2> class> struct A {};
+-    // new-error@-1 {{deduced non-type template argument does not have the same type as the corresponding template parameter ('auto' vs 'int')}}
+-    // new-note@-2 {{previous template template parameter is here}}
++    // expected-error@-1 {{template parameter pack must be the last template parameter}}
+     template<int... Vi> struct B;
+-    // new-note@-1 {{template parameter is declared here}}
+     template struct A<B>;
+-    // new-note@-1 {{different template parameters}}
+   } // namespace t3
+ } // namespace nttp_auto
+ 
+diff --git a/clang/test/SemaTemplate/temp_arg_template_p0522.cpp b/clang/test/SemaTemplate/temp_arg_template_p0522.cpp
+index 2e5a36ae6ed08..d8a81bb363112 100644
+--- a/clang/test/SemaTemplate/temp_arg_template_p0522.cpp
++++ b/clang/test/SemaTemplate/temp_arg_template_p0522.cpp
+@@ -7,7 +7,8 @@
+ template<template<int> typename> struct Ti; // #Ti
+ template<template<int...> typename> struct TPi; // #TPi
+ template<template<int, int...> typename> struct TiPi;
+-template<template<int..., int...> typename> struct TPiPi; // FIXME: Why is this not ill-formed?
++template<template<int..., int...> typename> struct TPiPi;
++// expected-error@-1 {{template parameter pack must be the last template parameter}}
+ 
+ template<typename T, template<T> typename> struct tT0; // #tT0
+ template<template<typename T, T> typename> struct Tt0; // #Tt0
+diff --git a/clang/unittests/AST/DeclPrinterTest.cpp b/clang/unittests/AST/DeclPrinterTest.cpp
+index 6945dff537cae..124b1a166cb18 100644
+--- a/clang/unittests/AST/DeclPrinterTest.cpp
++++ b/clang/unittests/AST/DeclPrinterTest.cpp
+@@ -1196,21 +1196,21 @@ TEST(DeclPrinter, TestUnnamedTemplateParameters) {
+ }
+ 
+ TEST(DeclPrinter, TestUnnamedTemplateParametersPacks) {
+-  ASSERT_TRUE(PrintedDeclCXX17Matches(
+-      "template <typename ..., int ...,"
+-      " template <typename ..., bool ...> class ...> void A();",
+-      functionTemplateDecl(hasName("A")).bind("id"),
+-      "template <typename ..., int ...,"
+-      " template <typename ..., bool ...> class ...> void A()"));
++  ASSERT_TRUE(
++      PrintedDeclCXX17Matches("template <typename ..., int ...,"
++                              " template <typename ...> class ...> void A();",
++                              functionTemplateDecl(hasName("A")).bind("id"),
++                              "template <typename ..., int ...,"
++                              " template <typename ...> class ...> void A()"));
+ }
+ 
+ TEST(DeclPrinter, TestNamedTemplateParametersPacks) {
+   ASSERT_TRUE(PrintedDeclCXX17Matches(
+       "template <typename ...T, int ...I,"
+-      " template <typename ...X, bool ...B> class ...Z> void A();",
++      " template <typename ...X> class ...Z> void A();",
+       functionTemplateDecl(hasName("A")).bind("id"),
+       "template <typename ...T, int ...I,"
+-      " template <typename ...X, bool ...B> class ...Z> void A()"));
++      " template <typename ...X> class ...Z> void A()"));
+ }
+ 
+ TEST(DeclPrinter, TestTemplateTemplateParameterWrittenWithTypename) {
