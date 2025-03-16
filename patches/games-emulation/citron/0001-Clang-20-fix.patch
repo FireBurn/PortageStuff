@@ -1,0 +1,60 @@
+From 6b6c36ee4fc523bed7b49049c574db6c48f8859b Mon Sep 17 00:00:00 2001
+From: oltolm <oleg.tolmatcev@gmail.com>
+Date: Sun, 16 Mar 2025 15:46:45 +0000
+Subject: [PATCH] Fix code for Clang 20
+
+---
+ externals/dynarmic/externals/mcl/.gitignore                   | 2 ++
+ .../mcl/include/mcl/memory/overaligned_unique_ptr.hpp         | 3 ++-
+ .../externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp   | 4 ++--
+ 3 files changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/externals/dynarmic/externals/mcl/.gitignore b/externals/dynarmic/externals/mcl/.gitignore
+index 547b4ec..143e4b0 100644
+--- a/externals/dynarmic/externals/mcl/.gitignore
++++ b/externals/dynarmic/externals/mcl/.gitignore
+@@ -1,2 +1,4 @@
+ *build*/
+ .DS_Store
++.cache/
++compile_commands.json
+diff --git a/externals/dynarmic/externals/mcl/include/mcl/memory/overaligned_unique_ptr.hpp b/externals/dynarmic/externals/mcl/include/mcl/memory/overaligned_unique_ptr.hpp
+index 1e645ef..3ec5485 100644
+--- a/externals/dynarmic/externals/mcl/include/mcl/memory/overaligned_unique_ptr.hpp
++++ b/externals/dynarmic/externals/mcl/include/mcl/memory/overaligned_unique_ptr.hpp
+@@ -4,6 +4,7 @@
+ 
+ #pragma once
+ 
++#include <memory>
+ #include <type_traits>
+ 
+ #ifdef _MSC_VER
+@@ -36,7 +37,7 @@ auto make_overaligned_unique_ptr_array(size_t element_count)
+ {
+     const size_t min_size = element_count * sizeof(T);
+     const size_t alloc_size = (min_size + alignment - 1) / alignment * alignment;
+-#ifdef _MSC_VER
++#ifdef _WIN32
+     return overaligned_unique_ptr<alignment, T[]>{static_cast<T*>(_aligned_malloc(alloc_size, alignment))};
+ #else
+     return overaligned_unique_ptr<alignment, T[]>{static_cast<T*>(std::aligned_alloc(alignment, alloc_size))};
+diff --git a/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp b/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
+index ba2617b..99e1085 100644
+--- a/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
++++ b/externals/dynarmic/externals/mcl/include/mcl/mp/typelist/lift_sequence.hpp
+@@ -15,9 +15,9 @@ namespace detail {
+ template<class VL>
+ struct lift_sequence_impl;
+ 
+-template<class T, template<class, T...> class VLT, T... values>
++template <template <class T, T...> class VLT, class T, T... values>
+ struct lift_sequence_impl<VLT<T, values...>> {
+-    using type = list<std::integral_constant<T, values>...>;
++  using type = list<std::integral_constant<T, values>...>;
+ };
+ 
+ }  // namespace detail
+-- 
+2.49.0
+
