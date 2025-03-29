@@ -1,0 +1,47 @@
+From 4b17c7c2b51e46628ce576e161b94d5cfe915f52 Mon Sep 17 00:00:00 2001
+From: =?UTF-8?q?Marek=20Ol=C5=A1=C3=A1k?= <marek.olsak@amd.com>
+Date: Sat, 29 Mar 2025 02:12:43 -0400
+Subject: [PATCH] glapi: fix x86 32-bit asm dispatch regression
+
+shared_glapi_mapi_tmp.h must be included before asm("x86_entry_end:").
+
+Fixes: fae087770a8 - glapi: simplify codegen macros
+---
+ src/mapi/entry_x86_tls.h     | 6 ------
+ src/mapi/shared-glapi/core.c | 6 ++++++
+ 2 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/src/mapi/entry_x86_tls.h b/src/mapi/entry_x86_tls.h
+index ac8b4ce9d4732..18d00b2b75409 100644
+--- a/src/mapi/entry_x86_tls.h
++++ b/src/mapi/entry_x86_tls.h
+@@ -73,9 +73,3 @@ __asm__(".balign 16\n"
+    "movl _mesa_glapi_tls_Dispatch@GOTNTPOFF(%eax), %eax\n\t" \
+    "movl %gs:(%eax), %eax\n\t"                              \
+    "jmp *(4 * " slot ")(%eax)"
+-
+-#ifndef GLX_X86_READONLY_TEXT
+-__asm__(".balign 16\n"
+-        "x86_entry_end:");
+-__asm__(".text");
+-#endif /* GLX_X86_READONLY_TEXT */
+diff --git a/src/mapi/shared-glapi/core.c b/src/mapi/shared-glapi/core.c
+index 32fc363d20970..b3b9c3c950810 100644
+--- a/src/mapi/shared-glapi/core.c
++++ b/src/mapi/shared-glapi/core.c
+@@ -25,6 +25,12 @@ _mesa_noop_entrypoint(const char *name);
+ #define MAPI_TMP_STUB_ASM_GCC
+ #include "shared_glapi_mapi_tmp.h"
+ 
++#ifndef GLX_X86_READONLY_TEXT
++__asm__(".balign 16\n"
++        "x86_entry_end:");
++__asm__(".text");
++#endif /* GLX_X86_READONLY_TEXT */
++
+ extern unsigned long
+ x86_current_tls();
+ 
+-- 
+GitLab
+
