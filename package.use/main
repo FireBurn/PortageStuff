@@ -9,6 +9,7 @@ app-editors/vim				-X
 app-misc/mime-types			nginx
 app-office/libreoffice			clang -gtk -gtk3 java kde -qt5
 dev-build/cmake				-qt5 -qt4
+dev-cpp/cpp-httplib			-zstd
 dev-db/mariadb				embedded
 dev-db/sqlite				secure-delete
 dev-java/icedtea			sunec
