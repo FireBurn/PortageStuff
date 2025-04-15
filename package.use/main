@@ -117,3 +117,4 @@ x11-base/xwayland			libei
 x11-libs/wxGTK				-gstreamer
 x11-misc/sddm				-X -qt5
 x11-wm/mutter				gles2
+dev-lang/rust:1.85.1			llvm_slot_19
