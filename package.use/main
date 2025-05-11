@@ -3,7 +3,7 @@ app-admin/logstash-bin			all-plugins
 app-arch/p7zip				-kde -wxwidgets
 app-benchmarks/luxmark			scenes
 app-crypt/gpgme				python
-app-crypt/libsecret			-introspection -vala
+app-crypt/libsecret			gnutls -introspection -vala
 app-crypt/pinentry			-gtk
 app-editors/vim				-X
 app-misc/mime-types			nginx
