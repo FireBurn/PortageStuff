@@ -1,0 +1,31 @@
+From 87e694dbb5904c68b8afd65916ab219898ebb8c2 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Tue, 6 May 2025 22:38:21 +0100
+Subject: [PATCH] debugger: Add support for boost 1.88
+
+---
+ src/core/debugger/debugger.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/debugger/debugger.cpp b/src/core/debugger/debugger.cpp
+index e86aae846..af3f71c0d 100644
+--- a/src/core/debugger/debugger.cpp
++++ b/src/core/debugger/debugger.cpp
+@@ -6,7 +6,7 @@
+ #include <thread>
+ 
+ #include <boost/asio.hpp>
+-#include <boost/process/async_pipe.hpp>
++#include <boost/process/v1/async_pipe.hpp>
+ 
+ #include "common/logging/log.h"
+ #include "common/polyfill_thread.h"
+@@ -326,7 +326,7 @@ private:
+ 
+     struct ConnectionState {
+         boost::asio::ip::tcp::socket client_socket;
+-        boost::process::async_pipe signal_pipe;
++        boost::process::v1::async_pipe signal_pipe;
+ 
+         SignalInfo info;
+         Kernel::KScopedAutoObject<Kernel::KThread> active_thread;
