@@ -76,5 +76,3 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
-dev-java/openjdk			o3.conf
-x11-libs/wxGTK				o3.conf
