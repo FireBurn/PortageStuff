@@ -9,7 +9,6 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
-dev-java/openjdk			o3.conf
 dev-lang/ocaml				o3.conf
 dev-lang/rust				clango3lto.conf
 dev-lang/spidermonkey			o3.conf
@@ -76,4 +75,3 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
-x11-libs/wxGTK				o3.conf
