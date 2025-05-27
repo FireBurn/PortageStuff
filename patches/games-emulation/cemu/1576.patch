@@ -1,0 +1,22 @@
+From f179198b89e6fdc02ae2bdfed40034a30d96d6fc Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 26 May 2025 16:46:18 +0100
+Subject: [PATCH] Specify the size of the memset
+
+---
+ src/Cafe/Filesystem/FST/FST.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/Cafe/Filesystem/FST/FST.cpp b/src/Cafe/Filesystem/FST/FST.cpp
+index f125577869..7a37acebe9 100644
+--- a/src/Cafe/Filesystem/FST/FST.cpp
++++ b/src/Cafe/Filesystem/FST/FST.cpp
+@@ -921,7 +921,7 @@ void FSTVolume::TrimCacheIfRequired(FSTCachedRawBlock** droppedRawBlock, FSTCach
+ 
+ void FSTVolume::DetermineUnhashedBlockIV(uint32 clusterIndex, uint32 blockIndex, uint8 ivOut[16])
+ {
+-	memset(ivOut, 0, sizeof(ivOut));
++	memset(ivOut, 0, 16);
+ 	if(blockIndex == 0)
+ 	{
+ 		ivOut[0] = (uint8)(clusterIndex >> 8);
