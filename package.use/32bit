@@ -3,9 +3,9 @@ app-arch/bzip2			abi_x86_32
 app-arch/lz4			abi_x86_32
 app-arch/xz-utils		abi_x86_32
 app-arch/zstd			abi_x86_32
-app-emulation/dxvk		abi_x86_32
-app-emulation/vkd3d		abi_x86_32
-app-emulation/vkd3d-proton	abi_x86_32
+app-emulation/dxvk		abi_x86_32 crossdev-mingw
+app-emulation/vkd3d		abi_x86_32 crossdev-mingw
+app-emulation/vkd3d-proton	abi_x86_32 crossdev-mingw
 app-emulation/wine-gecko	abi_x86_32
 app-emulation/wine-proton	sdl wow64 -abi_x86_32
 app-emulation/wine-staging	wow64 -abi_x86_32
