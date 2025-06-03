@@ -76,3 +76,5 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
+app-emulation/dxvk			clango3lto.conf
+app-emulation/vkd3d-proton		clango3lto.conf
