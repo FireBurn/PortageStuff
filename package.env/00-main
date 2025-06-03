@@ -2,7 +2,7 @@ app-crypt/efitools			o3.conf
 app-crypt/gpgme				clango3lto.conf
 app-emulation/gallium-nine-standalone	o3.conf
 app-emulation/wine-proton		o3.conf
-app-emulation/wine-staging		o3.conf
+app-emulation/wine-staging		clango3lto.conf
 app-emulation/wine-vanilla		o3.conf
 app-office/libreoffice			clango3lto.conf
 cross-i686-w64-mingw32/*		o2.conf
@@ -75,3 +75,5 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
+app-emulation/dxvk			clango3lto.conf
+app-emulation/vkd3d-proton		clango3lto.conf
