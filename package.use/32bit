@@ -7,7 +7,7 @@ app-emulation/dxvk		abi_x86_32 crossdev-mingw
 app-emulation/vkd3d		abi_x86_32 crossdev-mingw
 app-emulation/vkd3d-proton	abi_x86_32 crossdev-mingw
 app-emulation/wine-gecko	abi_x86_32
-app-emulation/wine-proton	sdl wow64 -abi_x86_32 -mingw
+app-emulation/wine-proton	crossdev-mingw sdl wow64 -abi_x86_32
 app-emulation/wine-staging	wow64 -abi_x86_32 -mingw
 app-emulation/wine-vanilla	wow64 -abi_x86_32 -mingw
 app-emulation/winetricks	kde -gtk
