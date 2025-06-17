@@ -117,4 +117,7 @@ x11-base/xwayland			libei
 x11-libs/wxGTK				-gstreamer
 x11-misc/sddm				-X -qt5
 x11-wm/mutter				gles2
-kde-plasma/plasma-meta			-X
+# required by kde-plasma/plasma-meta-6.4.0::gentoo[sddm,display-manager]
+# required by @selected
+# required by @world (argument)
+>=x11-misc/sddm-0.21.0_p20250502-r1 X
