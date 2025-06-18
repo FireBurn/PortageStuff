@@ -120,4 +120,3 @@ x11-wm/mutter				gles2
 dev-lang/rust:1.85.1			llvm_slot_19
 kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
-kde-plasma/plasma-workspace		-fontconfig -X
