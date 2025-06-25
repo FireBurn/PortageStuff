@@ -8,4 +8,3 @@ dev-qt/qtcore:5
 #=cross-i686-w64-mingw32/binutils-2.44
 #=cross-x86_64-w64-mingw32/binutils-2.44
 =dev-util/pkgconf-2.4.1
-=www-client/chromium-139.0.7232.3
