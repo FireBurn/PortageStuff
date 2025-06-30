@@ -1,7 +1,7 @@
 app-crypt/efitools			o3.conf
 app-crypt/gpgme				clango3lto.conf
 app-emulation/gallium-nine-standalone	o3.conf
-app-emulation/wine-proton		o3.conf
+app-emulation/wine-proton		o2debug.conf
 app-emulation/wine-staging		clango3lto.conf
 app-emulation/wine-vanilla		o3.conf
 app-office/libreoffice			clango3lto.conf
