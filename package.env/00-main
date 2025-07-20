@@ -1,6 +1,11 @@
+# move dev-util/valgrind dev-debug/valgrind
+#games-emulation/citron			clango3lto.conf
+#media-libs/mesa				clangdebug.conf
 app-crypt/efitools			o3.conf
 app-crypt/gpgme				clango3lto.conf
+app-emulation/dxvk			clango3lto.conf
 app-emulation/gallium-nine-standalone	o3.conf
+app-emulation/vkd3d-proton		clango3lto.conf
 app-emulation/wine-proton		o2debug.conf
 app-emulation/wine-staging		clango3lto.conf
 app-emulation/wine-vanilla		o3.conf
@@ -9,7 +14,8 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
-dev-java/openjdk			clango3lto.conf
+dev-debug/valgrind			o3.conf
+dev-java/openjdk			o3.conf
 dev-lang/ocaml				o3.conf
 dev-lang/rust				clango3lto.conf
 dev-lang/spidermonkey			o3.conf
@@ -32,10 +38,7 @@ dev-util/clinfo				clango3.conf
 dev-util/directx-headers		clango3lto.conf
 dev-util/rocminfo			clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
-# move dev-util/valgrind dev-debug/valgrind
-dev-debug/valgrind			o3.conf
 games-emulation/cemu			clango3lto.conf
-#games-emulation/citron			clango3lto.conf
 games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
@@ -47,15 +50,15 @@ llvm-core/clang				clango3lto.conf
 llvm-core/lld				clango3lto.conf
 llvm-core/lldb				clango3lto.conf
 llvm-core/llvm				clango3lto.conf
-llvm-runtimes/openmp				o3.conf
+llvm-runtimes/openmp			o3.conf
 media-libs/alsa-lib			no-lto-partitioning.conf
 media-libs/dav1d			o3.conf
 media-libs/embree			o2.conf
 media-libs/flac				o3.conf
 media-libs/gst-plugins-good		o3.conf
 media-libs/mesa				clango3lto.conf
-#media-libs/mesa				clangdebug.conf
 media-libs/x264				o3.conf
+media-video/ffmpeg			clango3lto.conf
 media-video/qmplay2			clango3lto.conf
 net-irc/konversation			clango3lto.conf
 net-libs/libktorrent			clango3lto.conf
@@ -63,6 +66,7 @@ net-libs/libssh2			clango3.conf
 net-libs/nodejs				clango3lto.conf
 net-libs/webkit-gtk			o3.conf
 net-p2p/ktorrent			clango3lto.conf
+net-wireless/wpa_supplicant		clango3lto.conf
 sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
 sys-boot/gnu-efi			o3.conf
@@ -76,7 +80,3 @@ www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
-net-wireless/wpa_supplicant		clango3lto.conf
-app-emulation/dxvk			clango3lto.conf
-app-emulation/vkd3d-proton		clango3lto.conf
-media-video/ffmpeg			clango3lto.conf

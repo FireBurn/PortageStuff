@@ -119,3 +119,4 @@ x11-misc/sddm				-X -qt5
 x11-wm/mutter				gles2
 kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
+dev-java/openjdk			-lto
