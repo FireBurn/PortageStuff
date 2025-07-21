@@ -1,0 +1,2126 @@
+From db2f5ce40f23101154f76ce2d8984b47d8697e7e Mon Sep 17 00:00:00 2001
+From: Tom Anderson <thomasanderson@chromium.org>
+Date: Sat, 19 Jul 2025 00:34:48 +0000
+Subject: [PATCH] [Wayland] Support color management protocol
+
+This change adds support for color-management-v1. This enables rendering
+to HDR surfaces on supported platforms. I've verified HDR video playback
+is working on KDE Plasma 6.4.2. A WaylandWpColorManagerV1 feature flag
+is added and enabled by default, which can be used as a remote kill
+switch in case we need to disable the feature. Once this lands, the old
+zcr_color_manager_v1 can be removed.
+
+Bug: 375959958
+Change-Id: I1b1b959de7baf11e0375825fdc11bf0ab8a05915
+---
+
+diff --git a/third_party/wayland-protocols/BUILD.gn b/third_party/wayland-protocols/BUILD.gn
+index da8491c..1ff4af3 100644
+--- a/third_party/wayland-protocols/BUILD.gn
++++ b/third_party/wayland-protocols/BUILD.gn
+@@ -11,6 +11,10 @@
+   sources = [ "unstable/alpha-compositing/alpha-compositing-unstable-v1.xml" ]
+ }
+ 
++wayland_protocol("color_management_protocol") {
++  sources = [ "src/staging/color-management/color-management-v1.xml" ]
++}
++
+ wayland_protocol("content_type_protocol") {
+   sources = [ "unstable/content-type/content-type-v1.xml" ]
+ }
+diff --git a/ui/gfx/hdr_metadata.cc b/ui/gfx/hdr_metadata.cc
+index 02ead17..1ebd33b 100644
+--- a/ui/gfx/hdr_metadata.cc
++++ b/ui/gfx/hdr_metadata.cc
+@@ -4,6 +4,7 @@
+ 
+ #include "ui/gfx/hdr_metadata.h"
+ 
++#include <algorithm>
+ #include <iomanip>
+ #include <sstream>
+ 
+@@ -37,6 +38,17 @@
+   return ss.str();
+ }
+ 
++std::partial_ordering HdrMetadataSmpteSt2086::operator<=>(
++    const HdrMetadataSmpteSt2086& rhs) const {
++  return std::tie(primaries.fRX, primaries.fRY, primaries.fGX, primaries.fGY,
++                  primaries.fBX, primaries.fBY, primaries.fWX, primaries.fWY,
++                  luminance_min, luminance_max) <=>
++         std::tie(rhs.primaries.fRX, rhs.primaries.fRY, rhs.primaries.fGX,
++                  rhs.primaries.fGY, rhs.primaries.fBX, rhs.primaries.fBY,
++                  rhs.primaries.fWX, rhs.primaries.fWY, rhs.luminance_min,
++                  rhs.luminance_max);
++}
++
+ std::string HdrMetadataNdwl::ToString() const {
+   std::stringstream ss;
+   ss << std::fixed << std::setprecision(4) << "{"
+@@ -83,6 +95,22 @@
+   return payload->equals(rhs.payload.get());
+ }
+ 
++std::strong_ordering HdrMetadataAgtm::operator<=>(
++    const HdrMetadataAgtm& rhs) const {
++  if (!payload && !rhs.payload) {
++    return std::strong_ordering::equal;
++  }
++  if (!payload) {
++    return std::strong_ordering::less;
++  }
++  if (!rhs.payload) {
++    return std::strong_ordering::greater;
++  }
++  return std::lexicographical_compare_three_way(
++      payload->byteSpan().begin(), payload->byteSpan().end(),
++      rhs.payload->byteSpan().begin(), rhs.payload->byteSpan().end());
++}
++
+ HDRMetadata::HDRMetadata() = default;
+ HDRMetadata::HDRMetadata(const HdrMetadataSmpteSt2086& smpte_st_2086,
+                          const HdrMetadataCta861_3& cta_861_3)
+@@ -117,8 +145,9 @@
+   constexpr HdrMetadataSmpteSt2086 kDefaults2086(SkNamedPrimaries::kRec2020,
+                                                  1000.f, 0.f);
+ 
+-  if (!hdr_metadata)
++  if (!hdr_metadata) {
+     return HDRMetadata(kDefaults2086);
++  }
+ 
+   HDRMetadata result = *hdr_metadata;
+   if (!result.smpte_st_2086) {
+diff --git a/ui/gfx/hdr_metadata.h b/ui/gfx/hdr_metadata.h
+index 3dffba0..903c7862 100644
+--- a/ui/gfx/hdr_metadata.h
++++ b/ui/gfx/hdr_metadata.h
+@@ -40,6 +40,8 @@
+   }
+   friend bool operator==(const HdrMetadataCta861_3&,
+                          const HdrMetadataCta861_3&) = default;
++  friend auto operator<=>(const HdrMetadataCta861_3&,
++                          const HdrMetadataCta861_3&) = default;
+ };
+ 
+ // SMPTE ST 2086 color volume metadata.
+@@ -65,8 +67,8 @@
+            luminance_min != 0.f;
+   }
+ 
+-  friend bool operator==(const HdrMetadataSmpteSt2086&,
+-                         const HdrMetadataSmpteSt2086&) = default;
++  bool operator==(const HdrMetadataSmpteSt2086&) const = default;
++  std::partial_ordering operator<=>(const HdrMetadataSmpteSt2086&) const;
+ };
+ 
+ // Nominal diffuse white level (NDWL) metadata.
+@@ -82,6 +84,8 @@
+ 
+   friend bool operator==(const HdrMetadataNdwl&,
+                          const HdrMetadataNdwl&) = default;
++  friend auto operator<=>(const HdrMetadataNdwl&,
++                          const HdrMetadataNdwl&) = default;
+ };
+ 
+ // HDR metadata for extended range color spaces.
+@@ -108,6 +112,8 @@
+ 
+   friend bool operator==(const HdrMetadataExtendedRange&,
+                          const HdrMetadataExtendedRange&) = default;
++  friend auto operator<=>(const HdrMetadataExtendedRange&,
++                          const HdrMetadataExtendedRange&) = default;
+ };
+ 
+ struct COLOR_SPACE_EXPORT HdrMetadataAgtm {
+@@ -123,6 +129,7 @@
+   std::string ToString() const;
+ 
+   bool operator==(const HdrMetadataAgtm& rhs) const;
++  std::strong_ordering operator<=>(const HdrMetadataAgtm& rhs) const;
+ 
+   // The raw encoded AGTM metadata payload.
+   sk_sp<SkData> payload;
+@@ -178,6 +185,7 @@
+   std::string ToString() const;
+ 
+   friend bool operator==(const HDRMetadata&, const HDRMetadata&) = default;
++  friend auto operator<=>(const HDRMetadata&, const HDRMetadata&) = default;
+ };
+ 
+ // HDR metadata types as described in
+diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
+index 095f6d2..0de1732 100644
+--- a/ui/ozone/platform/wayland/BUILD.gn
++++ b/ui/ozone/platform/wayland/BUILD.gn
+@@ -176,6 +176,14 @@
+     "host/wayland_window_manager.h",
+     "host/wayland_window_observer.cc",
+     "host/wayland_window_observer.h",
++    "host/wayland_wp_color_management_output.cc",
++    "host/wayland_wp_color_management_output.h",
++    "host/wayland_wp_color_management_surface.cc",
++    "host/wayland_wp_color_management_surface.h",
++    "host/wayland_wp_color_manager.cc",
++    "host/wayland_wp_color_manager.h",
++    "host/wayland_wp_image_description.cc",
++    "host/wayland_wp_image_description.h",
+     "host/wayland_zcr_color_management_output.cc",
+     "host/wayland_zcr_color_management_output.h",
+     "host/wayland_zcr_color_management_surface.cc",
+@@ -255,6 +263,7 @@
+     "//third_party/wayland:wayland_egl",
+     "//third_party/wayland:wayland_util",
+     "//third_party/wayland-protocols:alpha_compositing_protocol",
++    "//third_party/wayland-protocols:color_management_protocol",
+     "//third_party/wayland-protocols:content_type_protocol",
+     "//third_party/wayland-protocols:cursor_shape_protocol",
+     "//third_party/wayland-protocols:extended_drag",
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
+index fca8218..e919eba 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.cc
++++ b/ui/ozone/platform/wayland/common/wayland_object.cc
+@@ -7,6 +7,7 @@
+ #include <alpha-compositing-unstable-v1-client-protocol.h>
+ #include <appmenu-client-protocol.h>
+ #include <chrome-color-management-client-protocol.h>
++#include <color-management-v1-client-protocol.h>
+ #include <content-type-v1-client-protocol.h>
+ #include <cursor-shape-v1-client-protocol.h>
+ #include <extended-drag-unstable-v1-client-protocol.h>
+@@ -180,20 +181,27 @@
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_subsurface)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_surface)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_touch, delete_touch)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_output_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_feedback_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_creator_params_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_info_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewport)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewporter)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_token_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_popup)
+diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
+index 85ad88c..4f46ede 100644
+--- a/ui/ozone/platform/wayland/common/wayland_object.h
++++ b/ui/ozone/platform/wayland/common/wayland_object.h
+@@ -141,12 +141,19 @@
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewport)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewporter)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_output_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_feedback_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_image_description_creator_params_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_image_description_info_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_image_description_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
+diff --git a/ui/ozone/platform/wayland/common/wayland_overlay_config.cc b/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
+index 79f467bc..a333f61 100644
+--- a/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
++++ b/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
+@@ -33,7 +33,8 @@
+                                 : gfx::GpuFenceHandle()),
+       color_space(data.color_space == gfx::ColorSpace::CreateSRGB()
+                       ? std::nullopt
+-                      : std::optional<gfx::ColorSpace>(data.color_space)) {}
++                      : std::optional<gfx::ColorSpace>(data.color_space)),
++      hdr_metadata(data.hdr_metadata) {}
+ 
+ WaylandOverlayConfig& WaylandOverlayConfig::operator=(
+     WaylandOverlayConfig&& other) = default;
+diff --git a/ui/ozone/platform/wayland/common/wayland_overlay_config.h b/ui/ozone/platform/wayland/common/wayland_overlay_config.h
+index 9911ea01..dcd0b92 100644
+--- a/ui/ozone/platform/wayland/common/wayland_overlay_config.h
++++ b/ui/ozone/platform/wayland/common/wayland_overlay_config.h
+@@ -11,6 +11,7 @@
+ #include "ui/gfx/color_space.h"
+ #include "ui/gfx/gpu_fence.h"
+ #include "ui/gfx/gpu_fence_handle.h"
++#include "ui/gfx/hdr_metadata.h"
+ #include "ui/gfx/overlay_plane_data.h"
+ #include "ui/gfx/overlay_priority_hint.h"
+ #include "ui/gfx/overlay_transform.h"
+@@ -78,8 +79,9 @@
+   // compositing.
+   gfx::GpuFenceHandle access_fence_handle;
+ 
+-  // Specifies the color space data of the wayland config.
++  // Specifies the color space data and HDR metadata of the wayland config.
+   std::optional<gfx::ColorSpace> color_space;
++  std::optional<gfx::HDRMetadata> hdr_metadata;
+ };
+ 
+ }  // namespace wl
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
+index 7d6d6c3a..cdac10e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.cc
++++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
+@@ -57,6 +57,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_tablet_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window_drag_controller.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zwp_linux_dmabuf.h"
+@@ -171,6 +172,8 @@
+                               &WaylandTabletManager::Instantiate);
+   RegisterGlobalObjectFactory(WaylandCursorShape::kInterfaceName,
+                               &WaylandCursorShape::Instantiate);
++  RegisterGlobalObjectFactory(WaylandWpColorManager::kInterfaceName,
++                              &WaylandWpColorManager::Instantiate);
+   RegisterGlobalObjectFactory(WaylandZwpLinuxDmabuf::kInterfaceName,
+                               &WaylandZwpLinuxDmabuf::Instantiate);
+   RegisterGlobalObjectFactory(WaylandZwpPointerConstraints::kInterfaceName,
+diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
+index ed4d61c0..29c30c056 100644
+--- a/ui/ozone/platform/wayland/host/wayland_connection.h
++++ b/ui/ozone/platform/wayland/host/wayland_connection.h
+@@ -53,6 +53,7 @@
+ class WaylandCursorPosition;
+ class WaylandCursorShape;
+ class WaylandDataDeviceManager;
++class WaylandWpColorManager;
+ class WaylandDataDragController;
+ class WaylandEventSource;
+ class WaylandOutputManager;
+@@ -174,6 +175,10 @@
+     return zcr_color_manager_.get();
+   }
+ 
++  WaylandWpColorManager* wp_color_manager() const {
++    return wp_color_manager_.get();
++  }
++
+   WaylandCursorShape* wayland_cursor_shape() const {
+     return cursor_shape_.get();
+   }
+@@ -327,6 +332,7 @@
+   friend class WaylandZwpRelativePointerManager;
+   friend class WaylandZcrColorManager;
+   friend class WaylandCursorShape;
++  friend class WaylandWpColorManager;
+   friend class XdgActivation;
+   friend class XdgForeignWrapper;
+   friend class XdgSessionManager;
+@@ -443,6 +449,7 @@
+   std::unique_ptr<WaylandTabletManager> tablet_manager_;
+   std::unique_ptr<WaylandCursorPosition> cursor_position_;
+   std::unique_ptr<WaylandZcrColorManager> zcr_color_manager_;
++  std::unique_ptr<WaylandWpColorManager> wp_color_manager_;
+   std::unique_ptr<WaylandCursorShape> cursor_shape_;
+   std::unique_ptr<WaylandZwpPointerConstraints> zwp_pointer_constraints_;
+   std::unique_ptr<WaylandZwpRelativePointerManager>
+diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+index d84f997..2ab813b4 100644
+--- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
+@@ -424,8 +424,9 @@
+   surface->set_contains_video(
+       config.priority_hint == gfx::OverlayPriorityHint::kHardwareProtection ||
+       config.priority_hint == gfx::OverlayPriorityHint::kVideo);
+-  surface->set_color_space(
+-      config.color_space.value_or(gfx::ColorSpace::CreateSRGB()));
++  surface->SetImageDescription(
++      config.color_space.value_or(gfx::ColorSpace::CreateSRGB()),
++      config.hdr_metadata);
+   if (set_opaque_region) {
+     auto region_px =
+         config.enable_blend
+diff --git a/ui/ozone/platform/wayland/host/wayland_output.cc b/ui/ozone/platform/wayland/host/wayland_output.cc
+index c4e2121..02c45c5 100644
+--- a/ui/ozone/platform/wayland/host/wayland_output.cc
++++ b/ui/ozone/platform/wayland/host/wayland_output.cc
+@@ -14,6 +14,8 @@
+ #include "ui/ozone/platform/wayland/host/dump_util.h"
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_output_manager.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/xdg_output.h"
+@@ -137,6 +139,16 @@
+       zcr_color_manager->CreateColorManagementOutput(output_.get()).release());
+ }
+ 
++void WaylandOutput::InitializeWpColorManagementOutput(
++    WaylandWpColorManager* wp_color_manager) {
++  DCHECK(!wp_color_management_output_);
++  wp_color_management_output_ =
++      std::make_unique<WaylandWpColorManagementOutput>(
++          wp_color_manager->CreateColorManagementOutput(output_.get())
++              .release(),
++          this, connection_);
++}
++
+ void WaylandOutput::Initialize(Delegate* delegate) {
+   DCHECK(!delegate_);
+   delegate_ = delegate;
+diff --git a/ui/ozone/platform/wayland/host/wayland_output.h b/ui/ozone/platform/wayland/host/wayland_output.h
+index 7fc3096d..d811411 100644
+--- a/ui/ozone/platform/wayland/host/wayland_output.h
++++ b/ui/ozone/platform/wayland/host/wayland_output.h
+@@ -12,15 +12,18 @@
+ #include "base/memory/raw_ptr.h"
+ #include "ui/display/types/display_snapshot.h"
+ #include "ui/display/types/native_display_delegate.h"
++#include "ui/gfx/display_color_spaces.h"
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/ozone/platform/wayland/common/wayland_object.h"
+ 
+ namespace ui {
+ 
+-class XDGOutput;
+-class WaylandZcrColorManager;
+-class WaylandZcrColorManagementOutput;
+ class WaylandConnection;
++class WaylandWpColorManagementOutput;
++class WaylandWpColorManager;
++class WaylandZcrColorManagementOutput;
++class WaylandZcrColorManager;
++class XDGOutput;
+ 
+ // WaylandOutput objects keep track of wl_output information received through
+ // the Wayland protocol, along with other related protocol extensions, such as,
+@@ -105,6 +108,7 @@
+   void Initialize(Delegate* delegate);
+   void InitializeXdgOutput(zxdg_output_manager_v1* manager);
+   void InitializeColorManagementOutput(WaylandZcrColorManager* manager);
++  void InitializeWpColorManagementOutput(WaylandWpColorManager* manager);
+ 
+   const Metrics& GetMetrics() const;
+   void SetMetrics(const Metrics& metrics);
+@@ -116,6 +120,9 @@
+   WaylandZcrColorManagementOutput* color_management_output() const {
+     return color_management_output_.get();
+   }
++  WaylandWpColorManagementOutput* wp_color_management_output() const {
++    return wp_color_management_output_.get();
++  }
+ 
+   // Returns true if the output has all the state information available
+   // necessary to represent its associated display. This information arrives
+@@ -183,6 +190,7 @@
+   wl::Object<wl_output> output_;
+   std::unique_ptr<XDGOutput> xdg_output_;
+   std::unique_ptr<WaylandZcrColorManagementOutput> color_management_output_;
++  std::unique_ptr<WaylandWpColorManagementOutput> wp_color_management_output_;
+ 
+   float scale_factor_ = kDefaultScaleFactor;
+   int32_t panel_transform_ = WL_OUTPUT_TRANSFORM_NORMAL;
+diff --git a/ui/ozone/platform/wayland/host/wayland_output_manager.cc b/ui/ozone/platform/wayland/host/wayland_output_manager.cc
+index f245166..e68c48a 100644
+--- a/ui/ozone/platform/wayland/host/wayland_output_manager.cc
++++ b/ui/ozone/platform/wayland/host/wayland_output_manager.cc
+@@ -12,6 +12,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
+ 
+ namespace ui {
+ 
+@@ -53,6 +54,12 @@
+     wayland_output->InitializeColorManagementOutput(
+         connection_->zcr_color_manager());
+   }
++
++  if (auto* wp_color_manager = connection_->wp_color_manager();
++      wp_color_manager && wp_color_manager->ready()) {
++    wayland_output->InitializeWpColorManagementOutput(wp_color_manager);
++  }
++
+   DCHECK(!wayland_output->IsReady());
+ 
+   output_list_[output_id] = std::move(wayland_output);
+@@ -91,6 +98,15 @@
+         connection_->zcr_color_manager());
+ }
+ 
++void WaylandOutputManager::InitializeAllWpColorManagementOutputs() {
++  auto* wp_color_manager = connection_->wp_color_manager();
++  CHECK(wp_color_manager);
++  CHECK(wp_color_manager->ready());
++  for (const auto& output : output_list_) {
++    output.second->InitializeWpColorManagementOutput(wp_color_manager);
++  }
++}
++
+ std::unique_ptr<WaylandScreen> WaylandOutputManager::CreateWaylandScreen() {
+   auto wayland_screen = std::make_unique<WaylandScreen>(connection_);
+   wayland_screen_ = wayland_screen->GetWeakPtr();
+diff --git a/ui/ozone/platform/wayland/host/wayland_output_manager.h b/ui/ozone/platform/wayland/host/wayland_output_manager.h
+index 99cb70cd..df0c99c 100644
+--- a/ui/ozone/platform/wayland/host/wayland_output_manager.h
++++ b/ui/ozone/platform/wayland/host/wayland_output_manager.h
+@@ -43,6 +43,7 @@
+ 
+   void InitializeAllXdgOutputs();
+   void InitializeAllColorManagementOutputs();
++  void InitializeAllWpColorManagementOutputs();
+ 
+   // Creates a platform screen.
+   std::unique_ptr<WaylandScreen> CreateWaylandScreen();
+diff --git a/ui/ozone/platform/wayland/host/wayland_screen.cc b/ui/ozone/platform/wayland/host/wayland_screen.cc
+index 3aec789..2cd2651 100644
+--- a/ui/ozone/platform/wayland/host/wayland_screen.cc
++++ b/ui/ozone/platform/wayland/host/wayland_screen.cc
+@@ -39,6 +39,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_output_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/zwp_idle_inhibit_manager.h"
+@@ -230,6 +231,12 @@
+   changed_display.UpdateWorkAreaFromInsets(metrics.insets);
+ 
+   gfx::DisplayColorSpaces color_spaces;
++  if (auto* wayland_output =
++          connection_->wayland_output_manager()->GetOutput(metrics.output_id)) {
++    if (auto* output = wayland_output->wp_color_management_output()) {
++      color_spaces = output->display_color_spaces();
++    }
++  }
+   color_spaces.SetOutputBufferFormats(image_format_no_alpha_.value(),
+                                       image_format_alpha_.value());
+   changed_display.SetColorSpaces(color_spaces);
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
+index cef9875..4ad668e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
+@@ -43,6 +43,8 @@
+ #include "ui/ozone/platform/wayland/host/wayland_subsurface.h"
+ #include "ui/ozone/platform/wayland/host/wayland_syncobj_timeline.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_surface.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
+@@ -222,6 +224,20 @@
+     }
+   }
+ 
++  if (auto* wp_color_manager = connection_->wp_color_manager()) {
++    wp_color_management_surface_ =
++        std::make_unique<WaylandWpColorManagementSurface>(
++            this, connection_,
++            wp_color_manager->CreateColorManagementSurface(surface()),
++            wp_color_manager->CreateColorManagementFeedbackSurface(surface()));
++  } else {
++    static bool log_once = false;
++    if (!log_once) {
++      log_once = true;
++      LOG(WARNING) << "Server doesn't support wp_color_management_surface_v1.";
++    }
++  }
++
+   return true;
+ }
+ 
+@@ -548,9 +564,21 @@
+ 
+   // Setting Color Space of surface.
+   // Should be called infrequently: only when color space is changing to a
+-  // a different one.
+-  if (pending_state_.color_space != state_.color_space) {
+-    zcr_color_management_surface_->SetColorSpace(pending_state_.color_space);
++  // different one.
++  if (zcr_color_management_surface_ &&
++      pending_state_.color_space != state_.color_space) {
++    auto* color_manager = connection_->zcr_color_manager();
++    auto wayland_color_space =
++        color_manager->GetColorSpace(pending_state_.color_space);
++    zcr_color_management_surface_->SetColorSpace(wayland_color_space);
++    needs_commit = true;
++  }
++  if (wp_color_management_surface_ &&
++      (pending_state_.color_space != state_.color_space ||
++       pending_state_.hdr_metadata != state_.hdr_metadata)) {
++    wp_color_management_surface_->SetColorSpace(
++        pending_state_.color_space,
++        pending_state_.hdr_metadata.value_or(gfx::HDRMetadata()));
+     needs_commit = true;
+   }
+ 
+@@ -823,6 +851,7 @@
+   opaque_region_px = other.opaque_region_px;
+   input_region_px = other.input_region_px;
+   color_space = other.color_space;
++  hdr_metadata = other.hdr_metadata;
+   buffer_id = other.buffer_id;
+   buffer = other.buffer;
+   buffer_size_px = other.buffer_size_px;
+@@ -925,24 +954,18 @@
+     root_window_->OnLeftOutput();
+ }
+ 
+-void WaylandSurface::set_color_space(gfx::ColorSpace color_space) {
+-  if (!connection_->zcr_color_manager()) {
+-    return;
+-  }
+-  if (!color_space.IsValid() && pending_state_.contains_video) {
++void WaylandSurface::SetImageDescription(
++    const gfx::ColorSpace& color_space,
++    const std::optional<gfx::HDRMetadata>& hdr_metadata) {
++  if (color_space.IsValid() || !pending_state_.contains_video) {
++    pending_state_.color_space = color_space;
++  } else {
+     // Not all video content contains colorspace information.
+     // In this case, default to Rec709.
+     // Maybe use Rec601 for SD video if it becomes an issue.
+-    color_space = gfx::ColorSpace::CreateREC709();
++    pending_state_.color_space = gfx::ColorSpace::CreateREC709();
+   }
+-  if (!color_space.IsValid()) {
+-    return;
+-  }
+-
+-  auto wayland_zcr_color_space =
+-      connection_->zcr_color_manager()->GetColorSpace(color_space);
+-  if (wayland_zcr_color_space != nullptr)
+-    pending_state_.color_space = wayland_zcr_color_space;
++  pending_state_.hdr_metadata = hdr_metadata;
+ }
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
+index 8a0a157..378358bf 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface.h
++++ b/ui/ozone/platform/wayland/host/wayland_surface.h
+@@ -20,6 +20,7 @@
+ #include "ui/gfx/geometry/rect.h"
+ #include "ui/gfx/geometry/rect_f.h"
+ #include "ui/gfx/gpu_fence_handle.h"
++#include "ui/gfx/hdr_metadata.h"
+ #include "ui/gfx/native_widget_types.h"
+ #include "ui/gfx/overlay_priority_hint.h"
+ #include "ui/gfx/overlay_transform.h"
+@@ -39,6 +40,7 @@
+ class WaylandOutput;
+ class WaylandWindow;
+ class WaylandBufferHandle;
++class WaylandWpColorManagementSurface;
+ class WaylandZcrColorManagementSurface;
+ 
+ // Wrapper of a wl_surface, owned by a WaylandWindow or a WlSubsurface.
+@@ -68,6 +70,10 @@
+     return entered_outputs_;
+   }
+ 
++  WaylandWpColorManagementSurface* wp_color_management_surface() const {
++    return wp_color_management_surface_.get();
++  }
++
+   // Requests an explicit release for the next commit.
+   void RequestExplicitRelease(ExplicitReleaseCallback callback);
+ 
+@@ -188,8 +194,9 @@
+   // be removed.
+   void RemoveEnteredOutput(uint32_t id);
+ 
+-  // Set surface ColorSpace
+-  void set_color_space(gfx::ColorSpace color_space);
++  // Set surface ColorSpace and HDR metadata.
++  void SetImageDescription(const gfx::ColorSpace& color_space,
++                           const std::optional<gfx::HDRMetadata>& hdr_metadata);
+ 
+   // Validates the |pending_state_| and generates the corresponding requests.
+   // Then copy |pending_states_| to |states_|.
+@@ -252,8 +259,9 @@
+     std::vector<gfx::Rect> opaque_region_px;
+     std::vector<gfx::Rect> input_region_px;
+ 
+-    // The current color space of the surface.
+-    scoped_refptr<WaylandZcrColorSpace> color_space = nullptr;
++    // The current color space and HDR metadata of the surface.
++    gfx::ColorSpace color_space;
++    std::optional<gfx::HDRMetadata> hdr_metadata;
+ 
+     // The acquire gpu fence to associate with the surface buffer.
+     gfx::GpuFenceHandle acquire_fence;
+@@ -355,6 +363,7 @@
+   wl::Object<wp_fractional_scale_v1> fractional_scale_;
+   std::unique_ptr<WaylandZcrColorManagementSurface>
+       zcr_color_management_surface_;
++  std::unique_ptr<WaylandWpColorManagementSurface> wp_color_management_surface_;
+   ExplicitReleaseCallback next_explicit_release_request_;
+ 
+   // A cached copy of connection->supports_viewporter_surface_scaling(). While
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
+new file mode 100644
+index 0000000..76254ac
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
+@@ -0,0 +1,89 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h"
++
++#include "base/logging.h"
++#include "ui/gfx/display_color_spaces.h"
++#include "ui/ozone/platform/wayland/host/wayland_connection.h"
++#include "ui/ozone/platform/wayland/host/wayland_output.h"
++
++namespace ui {
++
++WaylandWpColorManagementOutput::WaylandWpColorManagementOutput(
++    wp_color_management_output_v1* color_management_output,
++    WaylandOutput* wayland_output,
++    WaylandConnection* connection)
++    : color_management_output_(color_management_output),
++      wayland_output_(wayland_output),
++      connection_(connection) {
++  DCHECK(color_management_output_);
++  static constexpr wp_color_management_output_v1_listener kListener = {
++      .image_description_changed = &OnImageDescriptionChanged,
++  };
++  wp_color_management_output_v1_add_listener(color_management_output_.get(),
++                                             &kListener, this);
++
++  // Get the initial color space.
++  GetCurrentColorSpace();
++}
++
++WaylandWpColorManagementOutput::~WaylandWpColorManagementOutput() = default;
++
++void WaylandWpColorManagementOutput::GetCurrentColorSpace() {
++  auto image_description_object = wl::Object<wp_image_description_v1>(
++      wp_color_management_output_v1_get_image_description(
++          color_management_output_.get()));
++
++  image_description_ = base::MakeRefCounted<WaylandWpImageDescription>(
++      std::move(image_description_object), connection_, std::nullopt,
++      base::BindOnce(&WaylandWpColorManagementOutput::OnImageDescription,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void WaylandWpColorManagementOutput::OnImageDescription(
++    scoped_refptr<WaylandWpImageDescription> image_description) {
++  if (!image_description) {
++    LOG(ERROR) << "Failed to get output image description.";
++    return;
++  }
++  CHECK_EQ(image_description, image_description_);
++
++  display_color_spaces_ =
++      gfx::DisplayColorSpaces(image_description->gfx_color_space());
++
++  // Set HDR metadata and derive luminance values.
++  const auto& hdr_metadata = image_description->hdr_metadata();
++  if (hdr_metadata.ndwl) {
++    display_color_spaces_.SetSDRMaxLuminanceNits(hdr_metadata.ndwl->nits);
++  }
++
++  // GetContentMaxLuminance returns a default of 1000 if the metadata does
++  // not contain a peak luminance. Avoid this by checking first.
++  if ((hdr_metadata.cta_861_3 &&
++       hdr_metadata.cta_861_3->max_content_light_level > 0) ||
++      (hdr_metadata.smpte_st_2086 &&
++       hdr_metadata.smpte_st_2086->luminance_max > 0)) {
++    float peak_brightness =
++        gfx::HDRMetadata::GetContentMaxLuminance(hdr_metadata);
++    float sdr_nits = display_color_spaces_.GetSDRMaxLuminanceNits();
++    if (sdr_nits > 0.f) {
++      display_color_spaces_.SetHDRMaxLuminanceRelative(peak_brightness /
++                                                       sdr_nits);
++    }
++  }
++
++  wayland_output_->TriggerDelegateNotifications();
++}
++
++// static
++void WaylandWpColorManagementOutput::OnImageDescriptionChanged(
++    void* data,
++    wp_color_management_output_v1* management_output) {
++  auto* self = static_cast<WaylandWpColorManagementOutput*>(data);
++  DCHECK(self);
++  self->GetCurrentColorSpace();
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h
+new file mode 100644
+index 0000000..00c2c510
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h
+@@ -0,0 +1,63 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_OUTPUT_H_
++#define UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_OUTPUT_H_
++
++#include <color-management-v1-client-protocol.h>
++
++#include <cstdint>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
++#include "ui/gfx/color_space.h"
++#include "ui/gfx/display_color_spaces.h"
++#include "ui/ozone/platform/wayland/common/wayland_object.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_image_description.h"
++
++namespace ui {
++
++class WaylandOutput;
++class WaylandConnection;
++
++// Wraps the `wp_color_management_output_v1` object.
++class WaylandWpColorManagementOutput {
++ public:
++  WaylandWpColorManagementOutput(
++      wp_color_management_output_v1* color_management_output,
++      WaylandOutput* wayland_output,
++      WaylandConnection* connection);
++  WaylandWpColorManagementOutput(const WaylandWpColorManagementOutput&) =
++      delete;
++  WaylandWpColorManagementOutput& operator=(
++      const WaylandWpColorManagementOutput&) = delete;
++  ~WaylandWpColorManagementOutput();
++
++  const gfx::DisplayColorSpaces& display_color_spaces() const {
++    return display_color_spaces_;
++  }
++
++ private:
++  // wp_color_management_output_v1_listener
++  static void OnImageDescriptionChanged(
++      void* data,
++      wp_color_management_output_v1* management_output);
++
++  void GetCurrentColorSpace();
++  void OnImageDescription(
++      scoped_refptr<WaylandWpImageDescription> image_description);
++
++  wl::Object<wp_color_management_output_v1> color_management_output_;
++  const raw_ptr<WaylandOutput> wayland_output_;
++  const raw_ptr<WaylandConnection> connection_;
++
++  gfx::DisplayColorSpaces display_color_spaces_;
++  scoped_refptr<WaylandWpImageDescription> image_description_;
++
++  base::WeakPtrFactory<WaylandWpColorManagementOutput> weak_factory_{this};
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_OUTPUT_H_
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc
+new file mode 100644
+index 0000000..2cca0ed
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc
+@@ -0,0 +1,89 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h"
++
++#include "base/functional/bind.h"
++#include "base/logging.h"
++#include "base/notimplemented.h"
++#include "ui/ozone/platform/wayland/host/wayland_connection.h"
++#include "ui/ozone/platform/wayland/host/wayland_surface.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
++
++namespace ui {
++
++WaylandWpColorManagementSurface::WaylandWpColorManagementSurface(
++    WaylandSurface* wayland_surface,
++    WaylandConnection* connection,
++    wl::Object<wp_color_management_surface_v1> management_surface,
++    wl::Object<wp_color_management_surface_feedback_v1> feedback_surface)
++    : wayland_surface_(wayland_surface),
++      connection_(connection),
++      management_surface_(std::move(management_surface)),
++      feedback_surface_(std::move(feedback_surface)) {
++  DCHECK(wayland_surface_);
++  DCHECK(connection_);
++  DCHECK(management_surface_);
++  if (feedback_surface_) {
++    static constexpr wp_color_management_surface_feedback_v1_listener
++        kListener = {.preferred_changed = &OnPreferredChanged};
++    wp_color_management_surface_feedback_v1_add_listener(
++        feedback_surface_.get(), &kListener, this);
++  }
++}
++
++WaylandWpColorManagementSurface::~WaylandWpColorManagementSurface() = default;
++
++void WaylandWpColorManagementSurface::SetColorSpace(
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata) {
++  if (!color_space.IsValid()) {
++    wp_color_management_surface_v1_unset_image_description(
++        management_surface_.get());
++    return;
++  }
++
++  auto* color_manager = connection_->wp_color_manager();
++  DCHECK(color_manager);
++
++  color_manager->GetImageDescription(
++      color_space, hdr_metadata,
++      base::BindOnce(&WaylandWpColorManagementSurface::OnSetColorSpace,
++                     weak_factory_.GetWeakPtr()));
++}
++
++void WaylandWpColorManagementSurface::OnSetColorSpace(
++    scoped_refptr<WaylandWpImageDescription> image_description) {
++  if (!image_description) {
++    LOG(ERROR) << "Failed to get image description for color space.";
++    return;
++  }
++
++  auto* color_manager = connection_->wp_color_manager();
++  wp_color_manager_v1_render_intent render_intent;
++  if (color_manager->IsSupportedRenderIntent(
++          WP_COLOR_MANAGER_V1_RENDER_INTENT_RELATIVE)) {
++    render_intent = WP_COLOR_MANAGER_V1_RENDER_INTENT_RELATIVE;
++  } else {
++    // The protocol mandates that perceptual is always supported.
++    CHECK(color_manager->IsSupportedRenderIntent(
++        WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL));
++    render_intent = WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL;
++  }
++  wp_color_management_surface_v1_set_image_description(
++      management_surface_.get(), image_description->object(), render_intent);
++}
++
++// static
++void WaylandWpColorManagementSurface::OnPreferredChanged(
++    void* data,
++    wp_color_management_surface_feedback_v1* feedback_surface,
++    uint32_t identity) {
++  // TODO(https://crbug.com/375959958): The image description is currently set
++  // based on the output the surface resides on. We should be using this hint
++  // from the compositor instead.
++  NOTIMPLEMENTED_LOG_ONCE();
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h
+new file mode 100644
+index 0000000..14d7c98
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h
+@@ -0,0 +1,61 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_SURFACE_H_
++#define UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_SURFACE_H_
++
++#include <color-management-v1-client-protocol.h>
++
++#include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
++#include "base/memory/weak_ptr.h"
++#include "ui/gfx/color_space.h"
++#include "ui/gfx/hdr_metadata.h"
++#include "ui/ozone/platform/wayland/common/wayland_object.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_image_description.h"
++
++namespace ui {
++
++class WaylandConnection;
++class WaylandSurface;
++
++// Wraps `wp_color_management_surface_v1` and
++// `wp_color_management_surface_feedback_v1`.
++class WaylandWpColorManagementSurface {
++ public:
++  WaylandWpColorManagementSurface(
++      WaylandSurface* wayland_surface,
++      WaylandConnection* connection,
++      wl::Object<wp_color_management_surface_v1> management_surface,
++      wl::Object<wp_color_management_surface_feedback_v1> feedback_surface);
++  WaylandWpColorManagementSurface(const WaylandWpColorManagementSurface&) =
++      delete;
++  WaylandWpColorManagementSurface& operator=(
++      const WaylandWpColorManagementSurface&) = delete;
++  ~WaylandWpColorManagementSurface();
++
++  void SetColorSpace(const gfx::ColorSpace& color_space,
++                     const gfx::HDRMetadata& hdr_metadata);
++
++ private:
++  // wp_color_management_surface_feedback_v1_listener
++  static void OnPreferredChanged(
++      void* data,
++      wp_color_management_surface_feedback_v1* feedback_surface,
++      uint32_t identity);
++
++  void OnSetColorSpace(
++      scoped_refptr<WaylandWpImageDescription> image_description);
++
++  const raw_ptr<WaylandSurface> wayland_surface_;
++  const raw_ptr<WaylandConnection> connection_;
++  wl::Object<wp_color_management_surface_v1> management_surface_;
++  wl::Object<wp_color_management_surface_feedback_v1> feedback_surface_;
++
++  base::WeakPtrFactory<WaylandWpColorManagementSurface> weak_factory_{this};
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_SURFACE_H_
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc
+new file mode 100644
+index 0000000..5db7ef4
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc
+@@ -0,0 +1,398 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
++
++#include <color-management-v1-client-protocol.h>
++
++#include "base/feature_list.h"
++#include "base/logging.h"
++#include "ui/ozone/platform/wayland/host/wayland_connection.h"
++#include "ui/ozone/platform/wayland/host/wayland_output_manager.h"
++
++namespace ui {
++
++namespace {
++
++constexpr uint32_t kMinVersion = 1;
++
++BASE_FEATURE(kWaylandWpColorManagerV1,
++             "WaylandWpColorManagerV1",
++             base::FEATURE_ENABLED_BY_DEFAULT);
++
++std::optional<wp_color_manager_v1_primaries> ColorSpaceToPrimaries(
++    gfx::ColorSpace::PrimaryID primary_id) {
++  switch (primary_id) {
++    case gfx::ColorSpace::PrimaryID::BT709:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_SRGB;
++    case gfx::ColorSpace::PrimaryID::BT470M:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_PAL_M;
++    case gfx::ColorSpace::PrimaryID::BT470BG:
++    case gfx::ColorSpace::PrimaryID::EBU_3213_E:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_PAL;
++    case gfx::ColorSpace::PrimaryID::SMPTE170M:
++    case gfx::ColorSpace::PrimaryID::SMPTE240M:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_NTSC;
++    case gfx::ColorSpace::PrimaryID::FILM:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_GENERIC_FILM;
++    case gfx::ColorSpace::PrimaryID::BT2020:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_BT2020;
++    case gfx::ColorSpace::PrimaryID::SMPTEST428_1:
++    case gfx::ColorSpace::PrimaryID::XYZ_D50:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_CIE1931_XYZ;
++    case gfx::ColorSpace::PrimaryID::SMPTEST431_2:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_DCI_P3;
++    case gfx::ColorSpace::PrimaryID::P3:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_DISPLAY_P3;
++    case gfx::ColorSpace::PrimaryID::ADOBE_RGB:
++      return WP_COLOR_MANAGER_V1_PRIMARIES_ADOBE_RGB;
++    case gfx::ColorSpace::PrimaryID::INVALID:
++    case gfx::ColorSpace::PrimaryID::APPLE_GENERIC_RGB:
++    case gfx::ColorSpace::PrimaryID::WIDE_GAMUT_COLOR_SPIN:
++    case gfx::ColorSpace::PrimaryID::CUSTOM:
++      // These do not have a direct mapping in the Wayland protocol.
++      return std::nullopt;
++  }
++}
++
++std::optional<wp_color_manager_v1_transfer_function>
++TransferIdToTransferFunction(gfx::ColorSpace::TransferID transfer_id) {
++  switch (transfer_id) {
++    case gfx::ColorSpace::TransferID::BT709:
++    case gfx::ColorSpace::TransferID::SMPTE170M:
++    case gfx::ColorSpace::TransferID::BT1361_ECG:
++    case gfx::ColorSpace::TransferID::BT2020_10:
++    case gfx::ColorSpace::TransferID::BT2020_12:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT1886;
++    case gfx::ColorSpace::TransferID::GAMMA22:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22;
++    case gfx::ColorSpace::TransferID::GAMMA28:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA28;
++    case gfx::ColorSpace::TransferID::SMPTE240M:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST240;
++    case gfx::ColorSpace::TransferID::LINEAR:
++    case gfx::ColorSpace::TransferID::LINEAR_HDR:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR;
++    case gfx::ColorSpace::TransferID::LOG:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_100;
++    case gfx::ColorSpace::TransferID::LOG_SQRT:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_316;
++    case gfx::ColorSpace::TransferID::IEC61966_2_4:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_XVYCC;
++    case gfx::ColorSpace::TransferID::SRGB:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB;
++    case gfx::ColorSpace::TransferID::SRGB_HDR:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_SRGB;
++    case gfx::ColorSpace::TransferID::PQ:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ;
++    case gfx::ColorSpace::TransferID::SMPTEST428_1:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST428;
++    case gfx::ColorSpace::TransferID::HLG:
++      return WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG;
++    case gfx::ColorSpace::TransferID::INVALID:
++    case gfx::ColorSpace::TransferID::BT709_APPLE:
++    case gfx::ColorSpace::TransferID::GAMMA18:
++    case gfx::ColorSpace::TransferID::GAMMA24:
++    case gfx::ColorSpace::TransferID::CUSTOM:
++    case gfx::ColorSpace::TransferID::CUSTOM_HDR:
++    case gfx::ColorSpace::TransferID::SCRGB_LINEAR_80_NITS:
++      // These do not have a direct mapping in the Wayland protocol.
++      return std::nullopt;
++  }
++}
++
++}  // namespace
++
++// static
++constexpr char WaylandWpColorManager::kInterfaceName[];
++
++// static
++void WaylandWpColorManager::Instantiate(WaylandConnection* connection,
++                                        wl_registry* registry,
++                                        uint32_t name,
++                                        const std::string& interface,
++                                        uint32_t version) {
++  if (!base::FeatureList::IsEnabled(kWaylandWpColorManagerV1)) {
++    return;
++  }
++
++  CHECK_EQ(interface, kInterfaceName)
++      << "Expected " << kInterfaceName << " but got " << interface;
++
++  if (connection->wp_color_manager() ||
++      !wl::CanBind(interface, version, kMinVersion, kMinVersion)) {
++    return;
++  }
++
++  auto manager = wl::Bind<wp_color_manager_v1>(registry, name, kMinVersion);
++  if (!manager) {
++    LOG(ERROR) << "Failed to bind " << kInterfaceName;
++    return;
++  }
++  connection->wp_color_manager_ =
++      std::make_unique<WaylandWpColorManager>(manager.release(), connection);
++}
++
++WaylandWpColorManager::WaylandWpColorManager(wp_color_manager_v1* color_manager,
++                                             WaylandConnection* connection)
++    : manager_(color_manager), connection_(connection) {
++  DCHECK(manager_);
++  static constexpr wp_color_manager_v1_listener kListener = {
++      .supported_intent = &OnSupportedIntent,
++      .supported_feature = &OnSupportedFeature,
++      .supported_tf_named = &OnSupportedTfNamed,
++      .supported_primaries_named = &OnSupportedPrimariesNamed,
++      .done = &OnDone,
++  };
++  wp_color_manager_v1_add_listener(manager_.get(), &kListener, this);
++}
++
++WaylandWpColorManager::~WaylandWpColorManager() = default;
++
++void WaylandWpColorManager::GetImageDescription(
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata,
++    WaylandWpImageDescription::CreationCallback callback) {
++  ImageDescription key = {color_space, hdr_metadata};
++
++  if (auto it = image_description_cache_.Get(key);
++      it != image_description_cache_.end()) {
++    std::move(callback).Run(it->second);
++    return;
++  }
++
++  pending_callbacks_[key].push_back(std::move(callback));
++  // Return early if there's already a pending creation for this key.
++  if (pending_callbacks_[key].size() > 1) {
++    return;
++  }
++
++  auto cleanup = [&]() {
++    for (auto& cb : pending_callbacks_[key]) {
++      std::move(cb).Run(nullptr);
++    }
++    pending_callbacks_.erase(key);
++  };
++
++  if (!IsSupportedFeature(WP_COLOR_MANAGER_V1_FEATURE_PARAMETRIC)) {
++    LOG(ERROR) << "Server does not support parametric color descriptions.";
++    cleanup();
++    return;
++  }
++
++  // Create a new image description.
++  auto creator = wl::Object<wp_image_description_creator_params_v1>(
++      wp_color_manager_v1_create_parametric_creator(manager_.get()));
++  if (!creator) {
++    LOG(ERROR) << "Failed to create wp_image_description_creator_params_v1";
++    cleanup();
++    return;
++  }
++  if (!PopulateDescriptionCreator(creator.get(), color_space, hdr_metadata)) {
++    LOG(ERROR) << "Failed to populate image description for color space "
++               << color_space.ToString();
++    cleanup();
++    return;
++  }
++
++  auto image_description_object = wl::Object<wp_image_description_v1>(
++      wp_image_description_creator_params_v1_create(creator.release()));
++  if (!image_description_object) {
++    LOG(ERROR) << "Failed to create wp_image_description_v1";
++    cleanup();
++    return;
++  }
++
++  pending_creations_[key] = base::MakeRefCounted<WaylandWpImageDescription>(
++      std::move(image_description_object), connection_, color_space,
++      base::BindOnce(&WaylandWpColorManager::OnImageDescriptionCreated,
++                     weak_factory_.GetWeakPtr(), color_space, hdr_metadata));
++}
++
++void WaylandWpColorManager::OnImageDescriptionCreated(
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata,
++    scoped_refptr<WaylandWpImageDescription> image_description) {
++  ImageDescription key = {color_space, hdr_metadata};
++  auto creation_it = pending_creations_.find(key);
++  CHECK(creation_it != pending_creations_.end());
++  pending_creations_.erase(creation_it);
++
++  if (image_description) {
++    image_description_cache_.Put(key, image_description);
++  }
++
++  auto callback_it = pending_callbacks_.find(key);
++  CHECK(callback_it != pending_callbacks_.end());
++  for (auto& cb : callback_it->second) {
++    std::move(cb).Run(image_description);
++  }
++  pending_callbacks_.erase(callback_it);
++}
++
++bool WaylandWpColorManager::PopulateDescriptionCreator(
++    wp_image_description_creator_params_v1* creator,
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata) {
++  // Set named primaries if possible.
++  if (auto primary = ColorSpaceToPrimaries(color_space.GetPrimaryID());
++      primary && IsSupportedPrimaries(*primary)) {
++    wp_image_description_creator_params_v1_set_primaries_named(creator,
++                                                               *primary);
++  } else if (IsSupportedFeature(WP_COLOR_MANAGER_V1_FEATURE_SET_PRIMARIES)) {
++    auto primaries = color_space.GetPrimaries();
++    wp_image_description_creator_params_v1_set_primaries(
++        creator, static_cast<int32_t>(primaries.fRX * 1000000),
++        static_cast<int32_t>(primaries.fRY * 1000000),
++        static_cast<int32_t>(primaries.fGX * 1000000),
++        static_cast<int32_t>(primaries.fGY * 1000000),
++        static_cast<int32_t>(primaries.fBX * 1000000),
++        static_cast<int32_t>(primaries.fBY * 1000000),
++        static_cast<int32_t>(primaries.fWX * 1000000),
++        static_cast<int32_t>(primaries.fWY * 1000000));
++  } else {
++    LOG(ERROR) << "Unable to set image primaries.";
++    return false;
++  }
++
++  // Set named transfer function if possible.
++  if (auto transfer = TransferIdToTransferFunction(color_space.GetTransferID());
++      transfer && IsSupportedTransferFunction(*transfer)) {
++    wp_image_description_creator_params_v1_set_tf_named(creator, *transfer);
++  } else if (IsSupportedFeature(WP_COLOR_MANAGER_V1_FEATURE_SET_TF_POWER)) {
++    skcms_TransferFunction fn;
++    // The protocol only supports a pure power curve. Check for that.
++    if (color_space.GetTransferFunction(&fn) && fn.a == 1.0f && fn.b == 0.0f &&
++        fn.c == 0.0f && fn.d == 0.0f && fn.e == 0.0f && fn.f == 0.0f) {
++      wp_image_description_creator_params_v1_set_tf_power(
++          creator, static_cast<uint32_t>(fn.g * 10000));
++    } else {
++      LOG(ERROR) << "Unable to set non-power-curve transfer function.";
++      return false;
++    }
++  } else {
++    LOG(ERROR) << "Unable to set image transfer function.";
++    return false;
++  }
++
++  if (hdr_metadata.IsValid()) {
++    if (IsSupportedFeature(
++            WP_COLOR_MANAGER_V1_FEATURE_SET_MASTERING_DISPLAY_PRIMARIES)) {
++      if (hdr_metadata.smpte_st_2086 && hdr_metadata.smpte_st_2086->IsValid()) {
++        const auto& smpte_st_2086 = *hdr_metadata.smpte_st_2086;
++        const auto& primaries = smpte_st_2086.primaries;
++        wp_image_description_creator_params_v1_set_mastering_display_primaries(
++            creator, static_cast<int32_t>(primaries.fRX * 1000000),
++            static_cast<int32_t>(primaries.fRY * 1000000),
++            static_cast<int32_t>(primaries.fGX * 1000000),
++            static_cast<int32_t>(primaries.fGY * 1000000),
++            static_cast<int32_t>(primaries.fBX * 1000000),
++            static_cast<int32_t>(primaries.fBY * 1000000),
++            static_cast<int32_t>(primaries.fWX * 1000000),
++            static_cast<int32_t>(primaries.fWY * 1000000));
++
++        wp_image_description_creator_params_v1_set_mastering_luminance(
++            creator, static_cast<uint32_t>(smpte_st_2086.luminance_min * 10000),
++            static_cast<uint32_t>(smpte_st_2086.luminance_max));
++      }
++    }
++
++    if (hdr_metadata.cta_861_3 && hdr_metadata.cta_861_3->IsValid()) {
++      const auto& cta_861_3 = *hdr_metadata.cta_861_3;
++      if (cta_861_3.max_content_light_level > 0) {
++        wp_image_description_creator_params_v1_set_max_cll(
++            creator, cta_861_3.max_content_light_level);
++      }
++      if (cta_861_3.max_frame_average_light_level > 0) {
++        wp_image_description_creator_params_v1_set_max_fall(
++            creator, cta_861_3.max_frame_average_light_level);
++      }
++    }
++  }
++
++  return true;
++}
++
++wl::Object<wp_color_management_output_v1>
++WaylandWpColorManager::CreateColorManagementOutput(wl_output* output) {
++  return wl::Object<wp_color_management_output_v1>(
++      wp_color_manager_v1_get_output(manager_.get(), output));
++}
++
++wl::Object<wp_color_management_surface_v1>
++WaylandWpColorManager::CreateColorManagementSurface(wl_surface* surface) {
++  return wl::Object<wp_color_management_surface_v1>(
++      wp_color_manager_v1_get_surface(manager_.get(), surface));
++}
++
++wl::Object<wp_color_management_surface_feedback_v1>
++WaylandWpColorManager::CreateColorManagementFeedbackSurface(
++    wl_surface* surface) {
++  return wl::Object<wp_color_management_surface_feedback_v1>(
++      wp_color_manager_v1_get_surface_feedback(manager_.get(), surface));
++}
++
++bool WaylandWpColorManager::IsSupportedRenderIntent(
++    wp_color_manager_v1_render_intent intent) const {
++  return supported_intents_ & (1 << intent);
++}
++
++bool WaylandWpColorManager::IsSupportedFeature(
++    wp_color_manager_v1_feature feature) const {
++  return supported_features_ & (1 << feature);
++}
++
++bool WaylandWpColorManager::IsSupportedPrimaries(
++    wp_color_manager_v1_primaries primaries) const {
++  return supported_primaries_ & (1 << primaries);
++}
++
++bool WaylandWpColorManager::IsSupportedTransferFunction(
++    wp_color_manager_v1_transfer_function transfer_function) const {
++  return supported_transfers_ & (1 << transfer_function);
++}
++
++// static
++void WaylandWpColorManager::OnSupportedIntent(void* data,
++                                              wp_color_manager_v1* manager,
++                                              uint32_t render_intent) {
++  auto* self = static_cast<WaylandWpColorManager*>(data);
++  self->supported_intents_ |= 1 << render_intent;
++}
++
++// static
++void WaylandWpColorManager::OnSupportedFeature(void* data,
++                                               wp_color_manager_v1* manager,
++                                               uint32_t feature) {
++  auto* self = static_cast<WaylandWpColorManager*>(data);
++  self->supported_features_ |= 1 << feature;
++}
++
++// static
++void WaylandWpColorManager::OnSupportedTfNamed(void* data,
++                                               wp_color_manager_v1* manager,
++                                               uint32_t tf) {
++  auto* self = static_cast<WaylandWpColorManager*>(data);
++  self->supported_transfers_ |= 1 << tf;
++}
++
++// static
++void WaylandWpColorManager::OnSupportedPrimariesNamed(
++    void* data,
++    wp_color_manager_v1* manager,
++    uint32_t primaries) {
++  auto* self = static_cast<WaylandWpColorManager*>(data);
++  self->supported_primaries_ |= 1 << primaries;
++}
++
++// static
++void WaylandWpColorManager::OnDone(void* data, wp_color_manager_v1* manager) {
++  auto* self = static_cast<WaylandWpColorManager*>(data);
++  self->ready_ = true;
++  if (auto* output_manager = self->connection_->wayland_output_manager()) {
++    output_manager->InitializeAllWpColorManagementOutputs();
++  }
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h
+new file mode 100644
+index 0000000..e5935df
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h
+@@ -0,0 +1,129 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGER_H_
++#define UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGER_H_
++
++#include <color-management-v1-client-protocol.h>
++
++#include <cstdint>
++#include <memory>
++
++#include "base/containers/flat_map.h"
++#include "base/containers/lru_cache.h"
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/scoped_refptr.h"
++#include "ui/gfx/color_space.h"
++#include "ui/gfx/hdr_metadata.h"
++#include "ui/ozone/platform/wayland/common/wayland_object.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_image_description.h"
++
++namespace ui {
++
++class WaylandConnection;
++
++// Wraps the `wp_color_manager_v1` global object.
++class WaylandWpColorManager
++    : public wl::GlobalObjectRegistrar<WaylandWpColorManager> {
++ public:
++  static constexpr char kInterfaceName[] = "wp_color_manager_v1";
++
++  static void Instantiate(WaylandConnection* connection,
++                          wl_registry* registry,
++                          uint32_t name,
++                          const std::string& interface,
++                          uint32_t version);
++
++  WaylandWpColorManager(wp_color_manager_v1* color_manager,
++                        WaylandConnection* connection);
++  WaylandWpColorManager(const WaylandWpColorManager&) = delete;
++  WaylandWpColorManager& operator=(const WaylandWpColorManager&) = delete;
++  ~WaylandWpColorManager();
++
++  void GetImageDescription(
++      const gfx::ColorSpace& color_space,
++      const gfx::HDRMetadata& hdr_metadata,
++      WaylandWpImageDescription::CreationCallback callback);
++
++  wl::Object<wp_color_management_output_v1> CreateColorManagementOutput(
++      wl_output* output);
++  wl::Object<wp_color_management_surface_v1> CreateColorManagementSurface(
++      wl_surface* surface);
++  wl::Object<wp_color_management_surface_feedback_v1>
++  CreateColorManagementFeedbackSurface(wl_surface* surface);
++
++  uint32_t version() const {
++    return wp_color_manager_v1_get_version(manager_.get());
++  }
++
++  bool IsSupportedRenderIntent(wp_color_manager_v1_render_intent intent) const;
++
++  bool IsSupportedFeature(wp_color_manager_v1_feature feature) const;
++
++  bool IsSupportedPrimaries(wp_color_manager_v1_primaries primaries) const;
++
++  bool IsSupportedTransferFunction(
++      wp_color_manager_v1_transfer_function transfer_function) const;
++
++  bool ready() const { return ready_; }
++
++ private:
++  using ImageDescription = std::pair<gfx::ColorSpace, gfx::HDRMetadata>;
++
++  // wp_color_manager_v1_listener
++  static void OnSupportedIntent(void* data,
++                                wp_color_manager_v1* manager,
++                                uint32_t render_intent);
++  static void OnSupportedFeature(void* data,
++                                 wp_color_manager_v1* manager,
++                                 uint32_t feature);
++  static void OnSupportedTfNamed(void* data,
++                                 wp_color_manager_v1* manager,
++                                 uint32_t tf);
++  static void OnSupportedPrimariesNamed(void* data,
++                                        wp_color_manager_v1* manager,
++                                        uint32_t primaries);
++  static void OnDone(void* data, wp_color_manager_v1* manager);
++
++  void OnImageDescriptionCreated(
++      const gfx::ColorSpace& color_space,
++      const gfx::HDRMetadata& hdr_metadata,
++      scoped_refptr<WaylandWpImageDescription> image_description);
++
++  bool PopulateDescriptionCreator(
++      wp_image_description_creator_params_v1* creator,
++      const gfx::ColorSpace& color_space,
++      const gfx::HDRMetadata& hdr_metadata);
++
++  wl::Object<wp_color_manager_v1> manager_;
++  const raw_ptr<WaylandConnection> connection_;
++
++  // Cache of successfully created image descriptions.
++  base::LRUCache<ImageDescription, scoped_refptr<WaylandWpImageDescription>>
++      image_description_cache_{64};
++
++  // Callbacks for image descriptions that are being created.
++  base::flat_map<ImageDescription,
++                 std::vector<WaylandWpImageDescription::CreationCallback>>
++      pending_callbacks_;
++
++  // Holds the image description objects while their creation is pending.
++  base::flat_map<ImageDescription, scoped_refptr<WaylandWpImageDescription>>
++      pending_creations_;
++
++  // Feature support, as bitsets.
++  uint32_t supported_intents_ = 0;
++  uint32_t supported_features_ = 0;
++  uint32_t supported_transfers_ = 0;
++  uint32_t supported_primaries_ = 0;
++
++  bool ready_ = false;
++
++  base::WeakPtrFactory<WaylandWpColorManager> weak_factory_{this};
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGER_H_
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc b/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc
+new file mode 100644
+index 0000000..36c47dd9
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc
+@@ -0,0 +1,344 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "ui/ozone/platform/wayland/host/wayland_wp_image_description.h"
++
++#include "base/logging.h"
++#include "base/notimplemented.h"
++#include "third_party/skia/include/core/SkColorSpace.h"
++#include "ui/ozone/platform/wayland/host/wayland_connection.h"
++
++namespace ui {
++
++namespace {
++
++gfx::ColorSpace::PrimaryID ToGfxPrimaryID(
++    wp_color_manager_v1_primaries primaries) {
++  switch (primaries) {
++    case WP_COLOR_MANAGER_V1_PRIMARIES_SRGB:
++      return gfx::ColorSpace::PrimaryID::BT709;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_PAL_M:
++      return gfx::ColorSpace::PrimaryID::BT470M;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_PAL:
++      // This could also be EBU_3213_E, but BT470BG is the broader
++      // equivalent for PAL systems.
++      return gfx::ColorSpace::PrimaryID::BT470BG;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_NTSC:
++      // This could also be SMPTE240M, but SMPTE170M is the more
++      // common standard for NTSC/BT.601.
++      return gfx::ColorSpace::PrimaryID::SMPTE170M;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_GENERIC_FILM:
++      return gfx::ColorSpace::PrimaryID::FILM;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_BT2020:
++      return gfx::ColorSpace::PrimaryID::BT2020;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_CIE1931_XYZ:
++      // This could also be XYZ_D50, but SMPTEST428_1 is explicitly
++      // mentioned in the Wayland protocol documentation.
++      return gfx::ColorSpace::PrimaryID::SMPTEST428_1;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_DCI_P3:
++      return gfx::ColorSpace::PrimaryID::SMPTEST431_2;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_DISPLAY_P3:
++      return gfx::ColorSpace::PrimaryID::P3;
++    case WP_COLOR_MANAGER_V1_PRIMARIES_ADOBE_RGB:
++      return gfx::ColorSpace::PrimaryID::ADOBE_RGB;
++    default:
++      return gfx::ColorSpace::PrimaryID::INVALID;
++  }
++}
++
++gfx::ColorSpace::TransferID ToGfxTransferID(
++    wp_color_manager_v1_transfer_function transfer) {
++  switch (transfer) {
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_BT1886:
++      // This is the transfer function for BT.709, BT.601, and SDR BT.2020.
++      // BT709 is the most common and representative choice.
++      return gfx::ColorSpace::TransferID::BT709;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22:
++      return gfx::ColorSpace::TransferID::GAMMA22;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA28:
++      return gfx::ColorSpace::TransferID::GAMMA28;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST240:
++      return gfx::ColorSpace::TransferID::SMPTE240M;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR:
++      // While this could also map to LINEAR_HDR, the base LINEAR is the
++      // more fundamental choice for a generic linear transfer.
++      return gfx::ColorSpace::TransferID::LINEAR;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_100:
++      return gfx::ColorSpace::TransferID::LOG;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_LOG_316:
++      return gfx::ColorSpace::TransferID::LOG_SQRT;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_XVYCC:
++      return gfx::ColorSpace::TransferID::IEC61966_2_4;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_SRGB:
++      return gfx::ColorSpace::TransferID::SRGB;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_SRGB:
++      return gfx::ColorSpace::TransferID::SRGB_HDR;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ:
++      return gfx::ColorSpace::TransferID::PQ;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST428:
++      return gfx::ColorSpace::TransferID::SMPTEST428_1;
++    case WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_HLG:
++      return gfx::ColorSpace::TransferID::HLG;
++    default:
++      return gfx::ColorSpace::TransferID::INVALID;
++  }
++}
++
++}  // namespace
++
++WaylandWpImageDescription::WaylandWpImageDescription(
++    wl::Object<wp_image_description_v1> image_description,
++    WaylandConnection* connection,
++    std::optional<gfx::ColorSpace> color_space,
++    CreationCallback callback)
++    : image_description_(std::move(image_description)),
++      connection_(connection),
++      creation_callback_(std::move(callback)) {
++  DCHECK(image_description_);
++  if (color_space.has_value()) {
++    color_space_ = *color_space;
++  }
++  static constexpr wp_image_description_v1_listener kListener = {
++      .failed = &OnFailed,
++      .ready = &OnReady,
++  };
++  wp_image_description_v1_add_listener(image_description_.get(), &kListener,
++                                       this);
++}
++
++WaylandWpImageDescription::~WaylandWpImageDescription() = default;
++
++void WaylandWpImageDescription::HandleReady() {
++  if (creation_callback_) {
++    std::move(creation_callback_).Run(this);
++  }
++}
++
++// static
++void WaylandWpImageDescription::OnFailed(
++    void* data,
++    wp_image_description_v1* image_description,
++    uint32_t cause,
++    const char* msg) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  LOG(ERROR) << "Failed to create image description: " << msg;
++  if (self->creation_callback_) {
++    std::move(self->creation_callback_).Run(nullptr);
++  }
++}
++
++// static
++void WaylandWpImageDescription::OnReady(
++    void* data,
++    wp_image_description_v1* image_description,
++    uint32_t identity) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++
++  // If this description was created from a gfx::ColorSpace, it's ready.
++  if (self->color_space_.IsValid()) {
++    self->HandleReady();
++    return;
++  }
++
++  // Otherwise, this description came from the compositor (e.g., an output),
++  // and we need to get its parameters to build a gfx::ColorSpace.
++  static constexpr wp_image_description_info_v1_listener kInfoListener = {
++      .done = &OnInfoDone,
++      .icc_file = &OnInfoIccFile,
++      .primaries = &OnInfoPrimaries,
++      .primaries_named = &OnInfoPrimariesNamed,
++      .tf_power = &OnInfoTfPower,
++      .tf_named = &OnInfoTfNamed,
++      .luminances = &OnInfoLuminances,
++      .target_primaries = &OnInfoTargetPrimaries,
++      .target_luminance = &OnInfoTargetLuminance,
++      .target_max_cll = &OnInfoTargetMaxCll,
++      .target_max_fall = &OnInfoTargetMaxFall,
++  };
++  self->info_.reset(wp_image_description_v1_get_information(image_description));
++  wp_image_description_info_v1_add_listener(self->info_.get(), &kInfoListener,
++                                            self);
++}
++
++// static
++void WaylandWpImageDescription::OnInfoDone(
++    void* data,
++    wp_image_description_info_v1* image_info) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++
++  // Construct ColorSpace from gathered info.
++  if (self->pending_custom_primaries_ && self->pending_custom_transfer_fn_) {
++    self->color_space_ = gfx::ColorSpace::CreateCustom(
++        *self->pending_custom_primaries_, *self->pending_custom_transfer_fn_);
++  } else if (self->pending_custom_primaries_ && self->pending_transfer_id_) {
++    self->color_space_ = gfx::ColorSpace::CreateCustom(
++        *self->pending_custom_primaries_, *self->pending_transfer_id_);
++  } else if (self->pending_primary_id_ && self->pending_custom_transfer_fn_) {
++    skcms_Matrix3x3 to_xyz;
++    gfx::ColorSpace(*self->pending_primary_id_,
++                    gfx::ColorSpace::TransferID::SRGB)
++        .GetPrimaryMatrix(&to_xyz);
++    self->color_space_ = gfx::ColorSpace::CreateCustom(
++        to_xyz, *self->pending_custom_transfer_fn_);
++  } else if (self->pending_primary_id_ && self->pending_transfer_id_) {
++    self->color_space_ = gfx::ColorSpace(
++        *self->pending_primary_id_, *self->pending_transfer_id_,
++        gfx::ColorSpace::MatrixID::RGB, gfx::ColorSpace::RangeID::FULL);
++  } else {
++    LOG(ERROR) << "Incomplete image description info from compositor.";
++    self->color_space_ = gfx::ColorSpace::CreateSRGB();
++  }
++
++  self->pending_custom_primaries_.reset();
++  self->pending_custom_transfer_fn_.reset();
++  self->pending_primary_id_.reset();
++  self->pending_transfer_id_.reset();
++
++  // The info object is implicitly destroyed by the server after done.
++  self->info_.reset();
++
++  self->HandleReady();
++}
++
++// static
++void WaylandWpImageDescription::OnInfoIccFile(
++    void* data,
++    wp_image_description_info_v1* image_info,
++    int32_t icc,
++    uint32_t icc_size) {
++  NOTIMPLEMENTED_LOG_ONCE();
++  close(icc);
++}
++
++// static
++void WaylandWpImageDescription::OnInfoPrimaries(
++    void* data,
++    wp_image_description_info_v1* image_info,
++    int32_t r_x,
++    int32_t r_y,
++    int32_t g_x,
++    int32_t g_y,
++    int32_t b_x,
++    int32_t b_y,
++    int32_t w_x,
++    int32_t w_y) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  SkColorSpacePrimaries primaries = {
++      r_x / 1000000.f, r_y / 1000000.f, g_x / 1000000.f, g_y / 1000000.f,
++      b_x / 1000000.f, b_y / 1000000.f, w_x / 1000000.f, w_y / 1000000.f};
++  skcms_Matrix3x3 pending_custom_primaries;
++  if (primaries.toXYZD50(&pending_custom_primaries)) {
++    self->pending_custom_primaries_ = pending_custom_primaries;
++  }
++}
++
++// static
++void WaylandWpImageDescription::OnInfoTfNamed(
++    void* data,
++    wp_image_description_info_v1* image_info,
++    uint32_t tf) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  self->pending_transfer_id_ =
++      ToGfxTransferID(static_cast<wp_color_manager_v1_transfer_function>(tf));
++}
++
++void WaylandWpImageDescription::OnInfoTfPower(
++    void* data,
++    wp_image_description_info_v1* info,
++    uint32_t eexp) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  self->pending_custom_transfer_fn_ = skcms_TransferFunction{
++      .g = eexp / 10000.f, .a = 1.0f, .b = 0, .c = 0, .d = 0, .e = 0, .f = 0};
++}
++
++void WaylandWpImageDescription::OnInfoLuminances(
++    void* data,
++    wp_image_description_info_v1* info,
++    uint32_t min_lum,
++    uint32_t max_lum,
++    uint32_t reference_lum) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  // The reference white luminance corresponds to SDR white level (or nominal
++  // diffuse white level).
++  self->hdr_metadata_.ndwl = gfx::HdrMetadataNdwl(reference_lum);
++}
++
++void WaylandWpImageDescription::OnInfoTargetPrimaries(
++    void* data,
++    wp_image_description_info_v1* info,
++    int32_t r_x,
++    int32_t r_y,
++    int32_t g_x,
++    int32_t g_y,
++    int32_t b_x,
++    int32_t b_y,
++    int32_t w_x,
++    int32_t w_y) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  if (!self->hdr_metadata_.smpte_st_2086) {
++    self->hdr_metadata_.smpte_st_2086.emplace();
++  }
++  self->hdr_metadata_.smpte_st_2086->primaries = {
++      r_x / 1000000.f, r_y / 1000000.f, g_x / 1000000.f, g_y / 1000000.f,
++      b_x / 1000000.f, b_y / 1000000.f, w_x / 1000000.f, w_y / 1000000.f};
++}
++
++void WaylandWpImageDescription::OnInfoTargetLuminance(
++    void* data,
++    wp_image_description_info_v1* info,
++    uint32_t min_lum,
++    uint32_t max_lum) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  if (!self->hdr_metadata_.smpte_st_2086) {
++    self->hdr_metadata_.smpte_st_2086.emplace();
++  }
++  self->hdr_metadata_.smpte_st_2086->luminance_min = min_lum / 10000.f;
++  self->hdr_metadata_.smpte_st_2086->luminance_max = max_lum;
++}
++
++void WaylandWpImageDescription::OnInfoTargetMaxCll(
++    void* data,
++    wp_image_description_info_v1* info,
++    uint32_t max_cll) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  if (!self->hdr_metadata_.cta_861_3) {
++    self->hdr_metadata_.cta_861_3.emplace();
++  }
++  self->hdr_metadata_.cta_861_3->max_content_light_level = max_cll;
++}
++
++void WaylandWpImageDescription::OnInfoTargetMaxFall(
++    void* data,
++    wp_image_description_info_v1* info,
++    uint32_t max_fall) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  if (!self->hdr_metadata_.cta_861_3) {
++    self->hdr_metadata_.cta_861_3.emplace();
++  }
++  self->hdr_metadata_.cta_861_3->max_frame_average_light_level = max_fall;
++}
++
++// static
++void WaylandWpImageDescription::OnInfoPrimariesNamed(
++    void* data,
++    wp_image_description_info_v1* image_info,
++    uint32_t primaries) {
++  auto* self = static_cast<WaylandWpImageDescription*>(data);
++  DCHECK(self);
++  self->pending_primary_id_ =
++      ToGfxPrimaryID(static_cast<wp_color_manager_v1_primaries>(primaries));
++}
++
++}  // namespace ui
+diff --git a/ui/ozone/platform/wayland/host/wayland_wp_image_description.h b/ui/ozone/platform/wayland/host/wayland_wp_image_description.h
+new file mode 100644
+index 0000000..d6e9dbd
+--- /dev/null
++++ b/ui/ozone/platform/wayland/host/wayland_wp_image_description.h
+@@ -0,0 +1,133 @@
++// Copyright 2025 The Chromium Authors
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_IMAGE_DESCRIPTION_H_
++#define UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_IMAGE_DESCRIPTION_H_
++
++#include <color-management-v1-client-protocol.h>
++
++#include <optional>
++
++#include "base/functional/callback.h"
++#include "base/memory/raw_ptr.h"
++#include "base/memory/ref_counted.h"
++#include "base/memory/weak_ptr.h"
++#include "third_party/skia/modules/skcms/skcms.h"
++#include "ui/gfx/color_space.h"
++#include "ui/gfx/hdr_metadata.h"
++#include "ui/ozone/platform/wayland/common/wayland_object.h"
++
++namespace ui {
++
++class WaylandConnection;
++
++// Wraps `wp_image_description_v1`
++class WaylandWpImageDescription
++    : public base::RefCounted<WaylandWpImageDescription> {
++ public:
++  using CreationCallback = base::OnceCallback<void(
++      scoped_refptr<WaylandWpImageDescription> image_description)>;
++
++  WaylandWpImageDescription(
++      wl::Object<wp_image_description_v1> image_description,
++      WaylandConnection* connection,
++      std::optional<gfx::ColorSpace> color_space,
++      CreationCallback callback);
++  WaylandWpImageDescription(const WaylandWpImageDescription&) = delete;
++  WaylandWpImageDescription& operator=(const WaylandWpImageDescription&) =
++      delete;
++
++  wp_image_description_v1* object() const { return image_description_.get(); }
++
++  const gfx::ColorSpace& gfx_color_space() const { return color_space_; }
++  const gfx::HDRMetadata& hdr_metadata() const { return hdr_metadata_; }
++
++ private:
++  friend class base::RefCounted<WaylandWpImageDescription>;
++  ~WaylandWpImageDescription();
++
++  // wp_image_description_v1_listener
++  static void OnFailed(void* data,
++                       wp_image_description_v1* image_description,
++                       uint32_t cause,
++                       const char* msg);
++  static void OnReady(void* data,
++                      wp_image_description_v1* image_description,
++                      uint32_t identity);
++
++  // wp_image_description_info_v1_listener
++  static void OnInfoDone(void* data, wp_image_description_info_v1* image_info);
++  static void OnInfoIccFile(void* data,
++                            wp_image_description_info_v1* image_info,
++                            int32_t icc,
++                            uint32_t icc_size);
++  static void OnInfoPrimaries(void* data,
++                              wp_image_description_info_v1* image_info,
++                              int32_t r_x,
++                              int32_t r_y,
++                              int32_t g_x,
++                              int32_t g_y,
++                              int32_t b_x,
++                              int32_t b_y,
++                              int32_t w_x,
++                              int32_t w_y);
++  static void OnInfoTfPower(void* data,
++                            wp_image_description_info_v1* info,
++                            uint32_t eexp);
++  static void OnInfoLuminances(void* data,
++                               wp_image_description_info_v1* info,
++                               uint32_t min_lum,
++                               uint32_t max_lum,
++                               uint32_t reference_lum);
++  static void OnInfoTargetPrimaries(void* data,
++                                    wp_image_description_info_v1* info,
++                                    int32_t r_x,
++                                    int32_t r_y,
++                                    int32_t g_x,
++                                    int32_t g_y,
++                                    int32_t b_x,
++                                    int32_t b_y,
++                                    int32_t w_x,
++                                    int32_t w_y);
++  static void OnInfoTargetLuminance(void* data,
++                                    wp_image_description_info_v1* info,
++                                    uint32_t min_lum,
++                                    uint32_t max_lum);
++  static void OnInfoTargetMaxCll(void* data,
++                                 wp_image_description_info_v1* info,
++                                 uint32_t max_cll);
++  static void OnInfoTargetMaxFall(void* data,
++                                  wp_image_description_info_v1* info,
++                                  uint32_t max_fall);
++  static void OnInfoTfNamed(void* data,
++                            wp_image_description_info_v1* image_info,
++                            uint32_t tf);
++  static void OnInfoPrimariesNamed(void* data,
++                                   wp_image_description_info_v1* image_info,
++                                   uint32_t primaries);
++
++  void HandleReady();
++
++  wl::Object<wp_image_description_v1> image_description_;
++  const raw_ptr<WaylandConnection> connection_;
++
++  gfx::ColorSpace color_space_;
++  gfx::HDRMetadata hdr_metadata_;
++  CreationCallback creation_callback_;
++
++  // Intermediate state for parsing information events.
++  std::optional<skcms_Matrix3x3> pending_custom_primaries_;
++  std::optional<skcms_TransferFunction> pending_custom_transfer_fn_;
++  std::optional<gfx::ColorSpace::PrimaryID> pending_primary_id_;
++  std::optional<gfx::ColorSpace::TransferID> pending_transfer_id_;
++
++  // Holds the info object while its information is being parsed.
++  wl::Object<wp_image_description_info_v1> info_;
++
++  base::WeakPtrFactory<WaylandWpImageDescription> weak_factory_{this};
++};
++
++}  // namespace ui
++
++#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_IMAGE_DESCRIPTION_H_
+diff --git a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
+index 33532c7..72ad2b0 100644
+--- a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
++++ b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
+@@ -144,7 +144,7 @@
+   connection_->zcr_color_manager()->GetColorSpace(
+       gfx::ColorSpace::CreateHDR10());
+   connection_->RoundTripQueue();
+-  surface->set_color_space(gfx::ColorSpace::CreateHDR10());
++  surface->SetImageDescription(gfx::ColorSpace::CreateHDR10(), std::nullopt);
+   surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
+       surface, buffer_id));
+   surface->ApplyPendingState();
+@@ -195,7 +195,7 @@
+   // original default color space remains unchanged on the surface.
+   connection_->zcr_color_manager()->GetColorSpace(invalid_space);
+   connection_->RoundTripQueue();
+-  surface->set_color_space(invalid_space);
++  surface->SetImageDescription(invalid_space, std::nullopt);
+   surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
+       surface, buffer_id));
+   surface->ApplyPendingState();
+diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom b/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
+index c085386..ce5050c 100644
+--- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
++++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
+@@ -6,6 +6,7 @@
+ 
+ import "ui/gfx/geometry/mojom/geometry.mojom";
+ import "ui/gfx/mojom/color_space.mojom";
++import "ui/gfx/mojom/hdr_metadata.mojom";
+ import "ui/gfx/mojom/gpu_fence_handle.mojom";
+ import "ui/gfx/mojom/overlay_transform.mojom";
+ import "ui/gfx/mojom/overlay_priority_hint.mojom";
+@@ -28,6 +29,9 @@
+   // Optional: specifies the color space data of the wayland config.
+   gfx.mojom.ColorSpace? color_space;
+ 
++  // Optional: specifies the HDR metadata of the wayland config.
++  gfx.mojom.HDRMetadata? hdr_metadata;
++
+   // Specifies how the buffer is to be transformed during composition.
+   TransformUnion transform;
+ 
+diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
+index 135fc384..2dfc0391 100644
+--- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
++++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
+@@ -65,6 +65,10 @@
+   if (!data.ReadColorSpace(&out->color_space))
+     return false;
+ 
++  if (!data.ReadHdrMetadata(&out->hdr_metadata)) {
++    return false;
++  }
++
+   if (!data.ReadTransform(&out->transform))
+     return false;
+ 
+diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
+index 559817a..1ca4fd38 100644
+--- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
++++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
+@@ -10,6 +10,7 @@
+ #include "skia/public/mojom/skcolor4f_mojom_traits.h"
+ #include "ui/gfx/mojom/color_space_mojom_traits.h"
+ #include "ui/gfx/mojom/gpu_fence_handle_mojom_traits.h"
++#include "ui/gfx/mojom/hdr_metadata_mojom_traits.h"
+ #include "ui/gfx/mojom/overlay_priority_hint_mojom_traits.h"
+ #include "ui/gfx/mojom/overlay_transform_mojom_traits.h"
+ #include "ui/gfx/mojom/rrect_f_mojom_traits.h"
+@@ -52,6 +53,11 @@
+     return input.color_space;
+   }
+ 
++  static const std::optional<gfx::HDRMetadata>& hdr_metadata(
++      const wl::WaylandOverlayConfig& input) {
++    return input.hdr_metadata;
++  }
++
+   static const std::variant<gfx::OverlayTransform, gfx::Transform>& transform(
+       const wl::WaylandOverlayConfig& input) {
+     return input.transform;

@@ -1,0 +1,51 @@
+Author: Bastian Blank <waldi@debian.org>
+Date:   Sun Jul 6 08:25:12 2025 +0200
+
+    Allow null image also for fractional scaling
+    
+    The image scaling support would allow an null image to be returned if
+    the requested scaling factors is one of the supported ones (1.0, 2.0 or
+    3.0).  However if the requested scaling factor is something else, it
+    would trip and crash.
+    
+    This change just accepts and returns null images in this case.
+    
+    Bug: 428748522
+
+diff --git a/ui/gfx/image/image_skia.cc b/ui/gfx/image/image_skia.cc
+index be9d17a5c5..f5c6e2ed80 100644
+--- a/ui/gfx/image/image_skia.cc
++++ b/ui/gfx/image/image_skia.cc
+@@ -251,8 +251,9 @@ std::vector<ImageSkiaRep>::const_iterator ImageSkiaStorage::FindRepresentation(
+     }
+     if (scale != resource_scale) {
+       auto iter = FindRepresentation(resource_scale, fetch_new_image);
+-      CHECK(iter != image_reps_.end());
+-      image = iter->unscaled() ? (*iter) : ScaleImageSkiaRep(*iter, scale);
++      // Image might be empty
++      if (iter != image_reps_.end())
++        image = iter->unscaled() ? (*iter) : ScaleImageSkiaRep(*iter, scale);
+     } else {
+       image = source_->GetImageForScale(scale);
+       // Image may be missing for the specified scale in some cases, such like
+diff --git a/ui/gfx/image/image_skia_unittest.cc b/ui/gfx/image/image_skia_unittest.cc
+index 190cef3b0a..1dade025c8 100644
+--- a/ui/gfx/image/image_skia_unittest.cc
++++ b/ui/gfx/image/image_skia_unittest.cc
+@@ -656,4 +656,16 @@ TEST_F(ImageSkiaTest, SupportedScaleValue) {
+   EXPECT_EQ(1.0f, source->GetLastRequestedScaleAndReset());
+ }
+ 
++TEST_F(ImageSkiaTest, AllowNull) {
++  const int kSmallIcon1x = 16;
++  ImageSkia image(std::make_unique<NullSource>(),
++                  gfx::Size(kSmallIcon1x, kSmallIcon1x));
++
++  const ImageSkiaRep& rep10 = image.GetRepresentation(1.0f);
++  EXPECT_TRUE(rep10.is_null());
++
++  const ImageSkiaRep& rep12 = image.GetRepresentation(1.2f);
++  EXPECT_TRUE(rep12.is_null());
++}
++
+ }  // namespace gfx
