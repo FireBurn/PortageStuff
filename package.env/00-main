@@ -77,6 +77,7 @@ sys-libs/efivar				o3.conf
 sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
 www-client/chromium			clango3lto.conf
+games-fps/q2rtx				clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
