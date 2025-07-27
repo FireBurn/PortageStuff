@@ -39,6 +39,7 @@ games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
 #games-emulation/yuzu			clango3lto.conf
+games-fps/q2rtx				clango3lto.conf
 gui-apps/xwaylandvideobridge		clango3lto.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf
