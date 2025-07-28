@@ -1,4 +1,4 @@
-From 16822dfc0b2ba093f62913a92f1fcfe59035f8f7 Mon Sep 17 00:00:00 2001
+From db462fecaaf5974976bc5387f01b4d0f200aad87 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Mon, 28 Jul 2025 12:23:03 +0100
 Subject: [PATCH] color-management-v1.xml
@@ -6,13 +6,13 @@ Subject: [PATCH] color-management-v1.xml
 ---
  .../color-management/color-management-v1.xml  | 1637 +++++++++++++++++
  1 file changed, 1637 insertions(+)
- create mode 100644 third_party/wayland-protocols/staging/color-management/color-management-v1.xml
+ create mode 100644 third_party/wayland-protocols/src/staging/color-management/color-management-v1.xml
 
-diff --git a/third_party/wayland-protocols/staging/color-management/color-management-v1.xml b/third_party/wayland-protocols/staging/color-management/color-management-v1.xml
+diff --git a/third_party/wayland-protocols/src/staging/color-management/color-management-v1.xml b/third_party/wayland-protocols/src/staging/color-management/color-management-v1.xml
 new file mode 100644
 index 0000000..4c1bc75
 --- /dev/null
-+++ b/third_party/wayland-protocols/staging/color-management/color-management-v1.xml
++++ b/third_party/wayland-protocols/src/staging/color-management/color-management-v1.xml
 @@ -0,0 +1,1637 @@
 +<?xml version="1.0" encoding="UTF-8"?>
 +<protocol name="color_management_v1">
