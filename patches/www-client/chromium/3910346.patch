@@ -1,6 +1,6 @@
-From db2f5ce40f23101154f76ce2d8984b47d8697e7e Mon Sep 17 00:00:00 2001
+From 39103465bbea44912d12594ced57d74cafc1c245 Mon Sep 17 00:00:00 2001
 From: Tom Anderson <thomasanderson@chromium.org>
-Date: Sat, 19 Jul 2025 00:34:48 +0000
+Date: Fri, 25 Jul 2025 17:16:26 +0000
 Subject: [PATCH] [Wayland] Support color management protocol
 
 This change adds support for color-management-v1. This enables rendering
@@ -349,7 +349,7 @@ index ed4d61c0..29c30c056 100644
    std::unique_ptr<WaylandZwpPointerConstraints> zwp_pointer_constraints_;
    std::unique_ptr<WaylandZwpRelativePointerManager>
 diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
-index d84f997..2ab813b4 100644
+index d84f997..40ceda6a 100644
 --- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
 @@ -424,8 +424,9 @@
@@ -360,7 +360,7 @@ index d84f997..2ab813b4 100644
 -      config.color_space.value_or(gfx::ColorSpace::CreateSRGB()));
 +  surface->SetImageDescription(
 +      config.color_space.value_or(gfx::ColorSpace::CreateSRGB()),
-+      config.hdr_metadata);
++      config.hdr_metadata.value_or(gfx::HDRMetadata()));
    if (set_opaque_region) {
      auto region_px =
          config.enable_blend
@@ -525,7 +525,7 @@ index 3aec789..2cd2651 100644
                                        image_format_alpha_.value());
    changed_display.SetColorSpaces(color_spaces);
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
-index cef9875..4ad668e 100644
+index cef9875..6a31a2ec 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
 @@ -43,6 +43,8 @@
@@ -558,7 +558,7 @@ index cef9875..4ad668e 100644
    return true;
  }
  
-@@ -548,9 +564,21 @@
+@@ -548,9 +564,20 @@
  
    // Setting Color Space of surface.
    // Should be called infrequently: only when color space is changing to a
@@ -577,13 +577,12 @@ index cef9875..4ad668e 100644
 +  if (wp_color_management_surface_ &&
 +      (pending_state_.color_space != state_.color_space ||
 +       pending_state_.hdr_metadata != state_.hdr_metadata)) {
-+    wp_color_management_surface_->SetColorSpace(
-+        pending_state_.color_space,
-+        pending_state_.hdr_metadata.value_or(gfx::HDRMetadata()));
++    wp_color_management_surface_->SetColorSpace(pending_state_.color_space,
++                                                pending_state_.hdr_metadata);
      needs_commit = true;
    }
  
-@@ -823,6 +851,7 @@
+@@ -823,6 +850,7 @@
    opaque_region_px = other.opaque_region_px;
    input_region_px = other.input_region_px;
    color_space = other.color_space;
@@ -591,7 +590,7 @@ index cef9875..4ad668e 100644
    buffer_id = other.buffer_id;
    buffer = other.buffer;
    buffer_size_px = other.buffer_size_px;
-@@ -925,24 +954,18 @@
+@@ -925,24 +953,17 @@
      root_window_->OnLeftOutput();
  }
  
@@ -600,9 +599,8 @@ index cef9875..4ad668e 100644
 -    return;
 -  }
 -  if (!color_space.IsValid() && pending_state_.contains_video) {
-+void WaylandSurface::SetImageDescription(
-+    const gfx::ColorSpace& color_space,
-+    const std::optional<gfx::HDRMetadata>& hdr_metadata) {
++void WaylandSurface::SetImageDescription(const gfx::ColorSpace& color_space,
++                                         const gfx::HDRMetadata& hdr_metadata) {
 +  if (color_space.IsValid() || !pending_state_.contains_video) {
 +    pending_state_.color_space = color_space;
 +  } else {
@@ -625,7 +623,7 @@ index cef9875..4ad668e 100644
  
  }  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
-index 8a0a157..378358bf 100644
+index 8a0a157..78a4603 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.h
 +++ b/ui/ozone/platform/wayland/host/wayland_surface.h
 @@ -20,6 +20,7 @@
@@ -663,7 +661,7 @@ index 8a0a157..378358bf 100644
 -  void set_color_space(gfx::ColorSpace color_space);
 +  // Set surface ColorSpace and HDR metadata.
 +  void SetImageDescription(const gfx::ColorSpace& color_space,
-+                           const std::optional<gfx::HDRMetadata>& hdr_metadata);
++                           const gfx::HDRMetadata& hdr_metadata);
  
    // Validates the |pending_state_| and generates the corresponding requests.
    // Then copy |pending_states_| to |states_|.
@@ -675,7 +673,7 @@ index 8a0a157..378358bf 100644
 -    scoped_refptr<WaylandZcrColorSpace> color_space = nullptr;
 +    // The current color space and HDR metadata of the surface.
 +    gfx::ColorSpace color_space;
-+    std::optional<gfx::HDRMetadata> hdr_metadata;
++    gfx::HDRMetadata hdr_metadata;
  
      // The acquire gpu fence to associate with the surface buffer.
      gfx::GpuFenceHandle acquire_fence;
