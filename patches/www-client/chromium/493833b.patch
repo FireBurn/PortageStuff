@@ -1,6 +1,6 @@
-From 39103465bbea44912d12594ced57d74cafc1c245 Mon Sep 17 00:00:00 2001
+From 493833b69474fc8363ca7a54f350eddeee706b86 Mon Sep 17 00:00:00 2001
 From: Tom Anderson <thomasanderson@chromium.org>
-Date: Fri, 25 Jul 2025 17:16:26 +0000
+Date: Mon, 28 Jul 2025 17:06:30 +0000
 Subject: [PATCH] [Wayland] Support color management protocol
 
 This change adds support for color-management-v1. This enables rendering
@@ -687,10 +687,10 @@ index 8a0a157..78a4603 100644
    // A cached copy of connection->supports_viewporter_surface_scaling(). While
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
 new file mode 100644
-index 0000000..76254ac
+index 0000000..1fb32055
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,87 @@
 +// Copyright 2025 The Chromium Authors
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -748,9 +748,6 @@ index 0000000..76254ac
 +
 +  // Set HDR metadata and derive luminance values.
 +  const auto& hdr_metadata = image_description->hdr_metadata();
-+  if (hdr_metadata.ndwl) {
-+    display_color_spaces_.SetSDRMaxLuminanceNits(hdr_metadata.ndwl->nits);
-+  }
 +
 +  // GetContentMaxLuminance returns a default of 1000 if the metadata does
 +  // not contain a peak luminance. Avoid this by checking first.
@@ -760,7 +757,8 @@ index 0000000..76254ac
 +       hdr_metadata.smpte_st_2086->luminance_max > 0)) {
 +    float peak_brightness =
 +        gfx::HDRMetadata::GetContentMaxLuminance(hdr_metadata);
-+    float sdr_nits = display_color_spaces_.GetSDRMaxLuminanceNits();
++    float sdr_nits = hdr_metadata.ndwl ? hdr_metadata.ndwl->nits
++                                       : gfx::ColorSpace::kDefaultSDRWhiteLevel;
 +    if (sdr_nits > 0.f) {
 +      display_color_spaces_.SetHDRMaxLuminanceRelative(peak_brightness /
 +                                                       sdr_nits);
@@ -2040,24 +2038,49 @@ index 0000000..d6e9dbd
 +
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_IMAGE_DESCRIPTION_H_
 diff --git a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
-index 33532c7..72ad2b0 100644
+index 33532c7..4b17b2cc 100644
 --- a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
-@@ -144,7 +144,7 @@
+@@ -2,6 +2,8 @@
+ // Use of this source code is governed by a BSD-style license that can be
+ // found in the LICENSE file.
+ 
++#include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
++
+ #include <chrome-color-management-client-protocol.h>
+ 
+ #include "base/check.h"
+@@ -12,13 +14,13 @@
+ #include "testing/gtest/include/gtest/gtest.h"
+ #include "ui/display/test/test_screen.h"
+ #include "ui/gfx/color_space.h"
++#include "ui/gfx/hdr_metadata.h"
+ #include "ui/ozone/platform/wayland/common/wayland_object.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_output.h"
+ #include "ui/ozone/platform/wayland/host/wayland_output_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
+-#include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
+ #include "ui/ozone/platform/wayland/host/wayland_zcr_color_space.h"
+ #include "ui/ozone/platform/wayland/test/mock_surface.h"
+ #include "ui/ozone/platform/wayland/test/mock_wayland_zcr_color_manager.h"
+@@ -144,7 +146,8 @@
    connection_->zcr_color_manager()->GetColorSpace(
        gfx::ColorSpace::CreateHDR10());
    connection_->RoundTripQueue();
 -  surface->set_color_space(gfx::ColorSpace::CreateHDR10());
-+  surface->SetImageDescription(gfx::ColorSpace::CreateHDR10(), std::nullopt);
++  surface->SetImageDescription(gfx::ColorSpace::CreateHDR10(),
++                               gfx::HDRMetadata());
    surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
        surface, buffer_id));
    surface->ApplyPendingState();
-@@ -195,7 +195,7 @@
+@@ -195,7 +198,7 @@
    // original default color space remains unchanged on the surface.
    connection_->zcr_color_manager()->GetColorSpace(invalid_space);
    connection_->RoundTripQueue();
 -  surface->set_color_space(invalid_space);
-+  surface->SetImageDescription(invalid_space, std::nullopt);
++  surface->SetImageDescription(invalid_space, gfx::HDRMetadata());
    surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
        surface, buffer_id));
    surface->ApplyPendingState();
