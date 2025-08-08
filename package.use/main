@@ -122,4 +122,4 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 media-libs/libmpeg2			-sdl
-=www-client/chromium-140.0.7312.0	bundled-toolchain
+#=www-client/chromium-140.0.7312.0	bundled-toolchain
