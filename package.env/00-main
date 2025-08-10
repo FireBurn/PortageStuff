@@ -15,7 +15,7 @@ cross-i686-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 dev-debug/valgrind			o3.conf
-dev-java/openjdk			o3.conf
+dev-java/openjdk			clango3lto.conf
 dev-lang/ocaml				o3.conf
 dev-lang/rust				clango3lto.conf
 dev-lang/spidermonkey			o3.conf
