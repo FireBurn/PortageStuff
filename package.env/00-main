@@ -10,7 +10,7 @@ cross-i686-w64-mingw32/*		o2.conf
 cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 cross-x86_64-w64-mingw32/*		o2.conf
 dev-debug/lldb				clango3lto.conf
-dev-java/openjdk			o3.conf
+dev-java/openjdk			clango3lto.conf
 dev-lang/ocaml				o3.conf
 dev-lang/rust				clango3lto.conf
 dev-lang/spidermonkey			o3.conf
@@ -69,7 +69,6 @@ llvm-core/lld				clango3lto.conf
 llvm-core/llvm				clango3lto.conf
 sys-devel/llvm-roc			clango3.conf
 sys-libs/efivar				o3.conf
-sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
 llvm-runtimes/openmp			o3.conf
 www-client/chromium			clango3lto.conf
@@ -79,3 +78,4 @@ x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
 app-emulation/dxvk			clango3lto.conf
 app-emulation/vkd3d-proton		clango3lto.conf
+sys-libs/glibc				o3.conf
