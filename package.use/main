@@ -109,7 +109,7 @@ virtual/notification-daemon		kde
 virtual/rust				profiler
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
 www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
-www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X
+www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X system-pipewire system-png
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			egl gles2
 x11-base/xorg-drivers			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel -video_cards_i965
