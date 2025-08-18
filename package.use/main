@@ -123,3 +123,7 @@ kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 media-libs/libmpeg2			-sdl
 =www-client/chromium-140.0.7312.0	bundled-toolchain
+# required by www-client/firefox-142.0::gentoo[system-png]
+# required by @selected
+# required by @world (argument)
+>=media-libs/libpng-1.6.50-r1 apng
