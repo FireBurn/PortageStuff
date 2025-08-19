@@ -31,7 +31,7 @@ dev-qt/qtwidgets			-gtk
 # move dev-util/apitrace dev-debug/apitrace
 dev-debug/apitrace			system-snappy
 dev-util/vulkan-tools			cube -X
-dev-vcs/git				tk
+dev-vcs/git				tk -safe-directory
 dev-vcs/subversion			perl -kwallet
 games-emulation/cemu			sdl
 games-emulation/dolphin			-wxwidgets
@@ -109,7 +109,7 @@ virtual/notification-daemon		kde
 virtual/rust				profiler
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
 www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
-www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X system-pipewire system-png
+www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X system-pipewire
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			egl gles2
 x11-base/xorg-drivers			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel -video_cards_i965
@@ -121,4 +121,3 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 =www-client/chromium-140.0.7312.0	bundled-toolchain
-media-libs/libpng			apng
