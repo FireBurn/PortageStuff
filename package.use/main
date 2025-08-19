@@ -30,7 +30,7 @@ dev-qt/qttools				designer qdbus
 dev-qt/qtwidgets			-gtk
 dev-util/apitrace			system-snappy
 dev-util/vulkan-tools			cube -X
-dev-vcs/git				tk
+dev-vcs/git				tk -safe-directory
 dev-vcs/subversion			perl -kwallet
 games-emulation/cemu			sdl
 games-emulation/dolphin			-wxwidgets
