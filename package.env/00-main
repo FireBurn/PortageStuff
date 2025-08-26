@@ -79,3 +79,5 @@ net-wireless/wpa_supplicant		clango3lto.conf
 app-emulation/dxvk			clango3lto.conf
 app-emulation/vkd3d-proton		clango3lto.conf
 sys-libs/glibc				o3.conf
+dev-util/hipify-clang			clango3lto.conf
+dev-libs/rccl				clango3.conf

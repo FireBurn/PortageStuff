@@ -123,3 +123,6 @@ kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 media-libs/libmpeg2			-sdl
 =www-client/chromium-140.0.7312.0	bundled-toolchain
+dev-debug/gdb				-rocm
+sci-libs/rocBLAS			amdgpu_targets_gfx1100 -amdgpu_targets_gfx1103 
+dev-libs/rccl				amdgpu_targets_gfx1100 -amdgpu_targets_gfx1103
