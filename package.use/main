@@ -124,3 +124,4 @@ dev-java/openjdk			-lto
 media-libs/libmpeg2			-sdl
 =www-client/chromium-140.0.7312.0	bundled-toolchain
 dev-debug/gdb				-rocm
+sci-misc/llama-cpp			curl vulkan -hip -openmp
