@@ -126,4 +126,4 @@ media-libs/libmpeg2			-sdl
 dev-debug/gdb				-rocm
 sci-libs/rocBLAS			amdgpu_targets_gfx1100 -amdgpu_targets_gfx1103 
 dev-libs/rccl				amdgpu_targets_gfx1100 -amdgpu_targets_gfx1103
-sci-ml/caffe2				distrubuted
+sci-ml/caffe2				distributed
