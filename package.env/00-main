@@ -83,3 +83,4 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 dev-util/hipify-clang			clango3lto.conf
+sci-ml/ollama				clango3lto.conf
