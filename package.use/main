@@ -121,3 +121,7 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 =www-client/chromium-140.0.7312.0	bundled-toolchain
+dev-debug/gdb				-rocm
+sci-libs/rocBLAS			-amdgpu_targets_gfx90c
+sci-ml/caffe2				distributed -amdgpu_targets_gfx90c
+
