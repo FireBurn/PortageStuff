@@ -1,6 +1,6 @@
-From 493833b69474fc8363ca7a54f350eddeee706b86 Mon Sep 17 00:00:00 2001
+From 07c9a59c2a5256ce49c22445a6c5108182c7da11 Mon Sep 17 00:00:00 2001
 From: Tom Anderson <thomasanderson@chromium.org>
-Date: Mon, 28 Jul 2025 17:06:30 +0000
+Date: Tue, 19 Aug 2025 12:48:59 -0700
 Subject: [PATCH] [Wayland] Support color management protocol
 
 This change adds support for color-management-v1. This enables rendering
@@ -12,13 +12,68 @@ zcr_color_manager_v1 can be removed.
 
 Bug: 375959958
 Change-Id: I1b1b959de7baf11e0375825fdc11bf0ab8a05915
+Reviewed-on: https://chromium-review.googlesource.com/c/chromium/src/+/6771393
+Reviewed-by: Elly FJ <ellyjones@chromium.org>
+Reviewed-by: Kramer Ge <fangzhoug@chromium.org>
+Reviewed-by: Avi Drissman <avi@chromium.org>
+Commit-Queue: Thomas Anderson <thomasanderson@chromium.org>
+Cr-Commit-Position: refs/heads/main@{#1503562}
 ---
+ third_party/wayland-protocols/BUILD.gn        |   4 +
+ ui/gfx/hdr_metadata.cc                        |  31 +-
+ ui/gfx/hdr_metadata.h                         |  12 +-
+ ui/ozone/platform/wayland/BUILD.gn            |   9 +
+ .../platform/wayland/common/wayland_object.cc |  68 +--
+ .../platform/wayland/common/wayland_object.h  |  57 +--
+ .../wayland/common/wayland_overlay_config.cc  |   3 +-
+ .../wayland/common/wayland_overlay_config.h   |   4 +-
+ .../wayland/fuzzer/wayland_buffer_fuzzer.cc   |   5 +-
+ .../wayland/gpu/gbm_pixmap_wayland.cc         |  11 +-
+ .../platform/wayland/gpu/gbm_pixmap_wayland.h |   3 +-
+ .../wayland/gpu/wayland_buffer_manager_gpu.cc |  18 +-
+ .../wayland/gpu/wayland_buffer_manager_gpu.h  |   4 +
+ .../host/wayland_buffer_manager_host.cc       |  10 +
+ .../host/wayland_buffer_manager_host.h        |   2 +
+ .../wayland/host/wayland_connection.cc        |  11 +-
+ .../wayland/host/wayland_connection.h         |   7 +
+ .../wayland/host/wayland_frame_manager.cc     |   5 +-
+ .../platform/wayland/host/wayland_output.cc   |  12 +
+ .../platform/wayland/host/wayland_output.h    |  14 +-
+ .../wayland/host/wayland_output_manager.cc    |  16 +
+ .../wayland/host/wayland_output_manager.h     |   1 +
+ .../platform/wayland/host/wayland_screen.cc   |   7 +
+ .../platform/wayland/host/wayland_surface.cc  |  55 ++-
+ .../platform/wayland/host/wayland_surface.h   |  17 +-
+ .../wayland/host/wayland_surface_unittest.cc  |   2 +-
+ .../wayland_wp_color_management_output.cc     |  87 ++++
+ .../host/wayland_wp_color_management_output.h |  63 +++
+ .../wayland_wp_color_management_surface.cc    |  89 ++++
+ .../wayland_wp_color_management_surface.h     |  61 +++
+ .../wayland/host/wayland_wp_color_manager.cc  | 398 ++++++++++++++++++
+ .../wayland/host/wayland_wp_color_manager.h   | 129 ++++++
+ .../host/wayland_wp_image_description.cc      | 344 +++++++++++++++
+ .../host/wayland_wp_image_description.h       | 133 ++++++
+ .../wayland_zcr_color_manager_unittest.cc     |   9 +-
+ .../mojom/wayland_buffer_manager.mojom        |   4 +
+ .../mojom/wayland_overlay_config.mojom        |   4 +
+ .../wayland_overlay_config_mojom_traits.cc    |   4 +
+ .../wayland_overlay_config_mojom_traits.h     |   6 +
+ .../wayland_buffer_manager_unittest.cc        |   2 +-
+ 40 files changed, 1614 insertions(+), 107 deletions(-)
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_color_manager.h
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_image_description.cc
+ create mode 100644 ui/ozone/platform/wayland/host/wayland_wp_image_description.h
 
 diff --git a/third_party/wayland-protocols/BUILD.gn b/third_party/wayland-protocols/BUILD.gn
-index da8491c..1ff4af3 100644
+index da8491c19a278f..1ff4af39ff051b 100644
 --- a/third_party/wayland-protocols/BUILD.gn
 +++ b/third_party/wayland-protocols/BUILD.gn
-@@ -11,6 +11,10 @@
+@@ -11,6 +11,10 @@ wayland_protocol("alpha_compositing_protocol") {
    sources = [ "unstable/alpha-compositing/alpha-compositing-unstable-v1.xml" ]
  }
  
@@ -30,7 +85,7 @@ index da8491c..1ff4af3 100644
    sources = [ "unstable/content-type/content-type-v1.xml" ]
  }
 diff --git a/ui/gfx/hdr_metadata.cc b/ui/gfx/hdr_metadata.cc
-index 02ead17..1ebd33b 100644
+index 02ead17ea45f66..1ebd33baaf77c8 100644
 --- a/ui/gfx/hdr_metadata.cc
 +++ b/ui/gfx/hdr_metadata.cc
 @@ -4,6 +4,7 @@
@@ -41,7 +96,7 @@ index 02ead17..1ebd33b 100644
  #include <iomanip>
  #include <sstream>
  
-@@ -37,6 +38,17 @@
+@@ -37,6 +38,17 @@ std::string HdrMetadataSmpteSt2086::ToString() const {
    return ss.str();
  }
  
@@ -59,7 +114,7 @@ index 02ead17..1ebd33b 100644
  std::string HdrMetadataNdwl::ToString() const {
    std::stringstream ss;
    ss << std::fixed << std::setprecision(4) << "{"
-@@ -83,6 +95,22 @@
+@@ -83,6 +95,22 @@ bool HdrMetadataAgtm::operator==(const HdrMetadataAgtm& rhs) const {
    return payload->equals(rhs.payload.get());
  }
  
@@ -82,7 +137,7 @@ index 02ead17..1ebd33b 100644
  HDRMetadata::HDRMetadata() = default;
  HDRMetadata::HDRMetadata(const HdrMetadataSmpteSt2086& smpte_st_2086,
                           const HdrMetadataCta861_3& cta_861_3)
-@@ -117,8 +145,9 @@
+@@ -117,8 +145,9 @@ HDRMetadata HDRMetadata::PopulateUnspecifiedWithDefaults(
    constexpr HdrMetadataSmpteSt2086 kDefaults2086(SkNamedPrimaries::kRec2020,
                                                   1000.f, 0.f);
  
@@ -94,10 +149,10 @@ index 02ead17..1ebd33b 100644
    HDRMetadata result = *hdr_metadata;
    if (!result.smpte_st_2086) {
 diff --git a/ui/gfx/hdr_metadata.h b/ui/gfx/hdr_metadata.h
-index 3dffba0..903c7862 100644
+index 3dffba0ef74e17..903c7862b8554f 100644
 --- a/ui/gfx/hdr_metadata.h
 +++ b/ui/gfx/hdr_metadata.h
-@@ -40,6 +40,8 @@
+@@ -40,6 +40,8 @@ struct COLOR_SPACE_EXPORT HdrMetadataCta861_3 {
    }
    friend bool operator==(const HdrMetadataCta861_3&,
                           const HdrMetadataCta861_3&) = default;
@@ -106,7 +161,7 @@ index 3dffba0..903c7862 100644
  };
  
  // SMPTE ST 2086 color volume metadata.
-@@ -65,8 +67,8 @@
+@@ -65,8 +67,8 @@ struct COLOR_SPACE_EXPORT HdrMetadataSmpteSt2086 {
             luminance_min != 0.f;
    }
  
@@ -117,7 +172,7 @@ index 3dffba0..903c7862 100644
  };
  
  // Nominal diffuse white level (NDWL) metadata.
-@@ -82,6 +84,8 @@
+@@ -82,6 +84,8 @@ struct COLOR_SPACE_EXPORT HdrMetadataNdwl {
  
    friend bool operator==(const HdrMetadataNdwl&,
                           const HdrMetadataNdwl&) = default;
@@ -126,7 +181,7 @@ index 3dffba0..903c7862 100644
  };
  
  // HDR metadata for extended range color spaces.
-@@ -108,6 +112,8 @@
+@@ -108,6 +112,8 @@ struct COLOR_SPACE_EXPORT HdrMetadataExtendedRange {
  
    friend bool operator==(const HdrMetadataExtendedRange&,
                           const HdrMetadataExtendedRange&) = default;
@@ -135,7 +190,7 @@ index 3dffba0..903c7862 100644
  };
  
  struct COLOR_SPACE_EXPORT HdrMetadataAgtm {
-@@ -123,6 +129,7 @@
+@@ -123,6 +129,7 @@ struct COLOR_SPACE_EXPORT HdrMetadataAgtm {
    std::string ToString() const;
  
    bool operator==(const HdrMetadataAgtm& rhs) const;
@@ -143,7 +198,7 @@ index 3dffba0..903c7862 100644
  
    // The raw encoded AGTM metadata payload.
    sk_sp<SkData> payload;
-@@ -178,6 +185,7 @@
+@@ -178,6 +185,7 @@ struct COLOR_SPACE_EXPORT HDRMetadata {
    std::string ToString() const;
  
    friend bool operator==(const HDRMetadata&, const HDRMetadata&) = default;
@@ -152,10 +207,10 @@ index 3dffba0..903c7862 100644
  
  // HDR metadata types as described in
 diff --git a/ui/ozone/platform/wayland/BUILD.gn b/ui/ozone/platform/wayland/BUILD.gn
-index 095f6d2..0de1732 100644
+index 3b773c3583c9a3..1923b239f2d9cf 100644
 --- a/ui/ozone/platform/wayland/BUILD.gn
 +++ b/ui/ozone/platform/wayland/BUILD.gn
-@@ -176,6 +176,14 @@
+@@ -176,6 +176,14 @@ source_set("wayland") {
      "host/wayland_window_manager.h",
      "host/wayland_window_observer.cc",
      "host/wayland_window_observer.h",
@@ -170,7 +225,7 @@ index 095f6d2..0de1732 100644
      "host/wayland_zcr_color_management_output.cc",
      "host/wayland_zcr_color_management_output.h",
      "host/wayland_zcr_color_management_surface.cc",
-@@ -255,6 +263,7 @@
+@@ -255,6 +263,7 @@ source_set("wayland") {
      "//third_party/wayland:wayland_egl",
      "//third_party/wayland:wayland_util",
      "//third_party/wayland-protocols:alpha_compositing_protocol",
@@ -179,7 +234,7 @@ index 095f6d2..0de1732 100644
      "//third_party/wayland-protocols:cursor_shape_protocol",
      "//third_party/wayland-protocols:extended_drag",
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.cc b/ui/ozone/platform/wayland/common/wayland_object.cc
-index fca8218..e919eba 100644
+index fca8218d81a550..59ca7f19ec4e81 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.cc
 +++ b/ui/ozone/platform/wayland/common/wayland_object.cc
 @@ -7,6 +7,7 @@
@@ -190,51 +245,184 @@ index fca8218..e919eba 100644
  #include <content-type-v1-client-protocol.h>
  #include <cursor-shape-v1-client-protocol.h>
  #include <extended-drag-unstable-v1-client-protocol.h>
-@@ -180,20 +181,27 @@
+@@ -158,83 +159,84 @@ IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(org_kde_kwin_appmenu,
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(org_kde_kwin_appmenu_manager)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(org_kde_kwin_idle)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(org_kde_kwin_idle_timeout)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(overlay_prioritizer)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(overlay_prioritized_surface)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(overlay_prioritizer)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_buffer)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_callback)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_compositor)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_data_device_manager)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_data_device, delete_data_device)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_data_offer)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_data_source)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_drm)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_keyboard, delete_keyboard)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_output, delete_output)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_pointer, delete_pointer)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_registry)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_region)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_seat, delete_seat)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_registry)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_shm)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_shm_pool)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_subcompositor)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_subsurface)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(wl_surface)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_touch, delete_touch)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_touch, delete_touch)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewport)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewporter)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_output_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_feedback_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_color_manager_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_creator_params_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_info_v1)
 +IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_image_description_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
-+IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewport)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewporter)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_content_type_manager_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_device_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_cursor_shape_manager_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_manager_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_fractional_scale_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
--IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
- IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewport)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(wp_viewporter)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_token_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
  IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_popup)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_positioner)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_surface)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel_icon_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_toplevel_icon_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xdg_wm_base)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(xx_toplevel_session_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xx_session_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(xx_session_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(xx_toplevel_session_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_management_output_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_management_surface_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_space_creator_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_color_space_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_keyboard_extension_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_keyboard_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_source_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_offer_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_source_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_keyboard_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_extended_text_input_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zcr_keyboard_extension_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibit_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibitor_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_keyboard_shortcuts_inhibit_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_keyboard_shortcuts_inhibitor_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_linux_buffer_params_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_feedback_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_locked_pointer_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_pointer_constraints_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_pinch_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_hold_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_pinch_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_pointer_gestures_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_manager_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_offer_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_source_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_relative_pointer_manager_v1)
+@@ -245,16 +247,22 @@ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_tablet_seat_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_tablet_tool_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_tablet_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_text_input_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_text_input_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_text_input_manager_v3)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_text_input_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zwp_text_input_v3)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_decoration_manager_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exported_v1)
+-IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exported_v2)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v2)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_output_manager_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_output_v1)
+ IMPLEMENT_WAYLAND_OBJECT_TRAITS(zxdg_toplevel_decoration_v1)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_data_device, delete_data_device)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_keyboard, delete_keyboard)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_output, delete_output)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_pointer, delete_pointer)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_seat, delete_seat)
++IMPLEMENT_WAYLAND_OBJECT_TRAITS_WITH_DELETER(wl_touch, delete_touch)
+ 
+ }  // namespace wl
 diff --git a/ui/ozone/platform/wayland/common/wayland_object.h b/ui/ozone/platform/wayland/common/wayland_object.h
-index 85ad88c..4f46ede 100644
+index 85ad88c863db73..e8c2e48c8ca064 100644
 --- a/ui/ozone/platform/wayland/common/wayland_object.h
 +++ b/ui/ozone/platform/wayland/common/wayland_object.h
-@@ -141,12 +141,19 @@
- DECLARE_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
- DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewport)
- DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewporter)
+@@ -111,14 +111,14 @@ DECLARE_WAYLAND_OBJECT_TRAITS(org_kde_kwin_appmenu)
+ DECLARE_WAYLAND_OBJECT_TRAITS(org_kde_kwin_appmenu_manager)
+ DECLARE_WAYLAND_OBJECT_TRAITS(org_kde_kwin_idle)
+ DECLARE_WAYLAND_OBJECT_TRAITS(org_kde_kwin_idle_timeout)
+-DECLARE_WAYLAND_OBJECT_TRAITS(overlay_prioritizer)
+ DECLARE_WAYLAND_OBJECT_TRAITS(overlay_prioritized_surface)
++DECLARE_WAYLAND_OBJECT_TRAITS(overlay_prioritizer)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_buffer)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_callback)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_compositor)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_cursor_theme)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wl_data_device_manager)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_data_device)
++DECLARE_WAYLAND_OBJECT_TRAITS(wl_data_device_manager)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_data_offer)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_data_source)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_display)
+@@ -127,8 +127,8 @@ DECLARE_WAYLAND_OBJECT_TRAITS(wl_event_queue)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_keyboard)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_output)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_pointer)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wl_registry)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_region)
++DECLARE_WAYLAND_OBJECT_TRAITS(wl_registry)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_seat)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_shm)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_shm_pool)
+@@ -136,64 +136,71 @@ DECLARE_WAYLAND_OBJECT_TRAITS(wl_subcompositor)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_subsurface)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_surface)
+ DECLARE_WAYLAND_OBJECT_TRAITS(wl_touch)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wp_presentation)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewport)
+-DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewporter)
 +DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_output_v1)
 +DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_feedback_v1)
 +DECLARE_WAYLAND_OBJECT_TRAITS(wp_color_management_surface_v1)
@@ -251,11 +439,95 @@ index 85ad88c..4f46ede 100644
  DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_manager_v1)
  DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_surface_v1)
  DECLARE_WAYLAND_OBJECT_TRAITS(wp_linux_drm_syncobj_timeline_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_presentation)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_presentation_feedback)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_single_pixel_buffer_manager_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewport)
++DECLARE_WAYLAND_OBJECT_TRAITS(wp_viewporter)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_activation_token_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(xdg_activation_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_popup)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_positioner)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_surface)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel)
+-DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_manager_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel_drag_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel_icon_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_toplevel_icon_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xdg_wm_base)
+-DECLARE_WAYLAND_OBJECT_TRAITS(xx_toplevel_session_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xx_session_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(xx_session_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_manager_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(xx_toplevel_session_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_management_output_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_management_surface_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_space_creator_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_color_space_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_blending_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_alpha_compositing_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_keyboard_extension_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_keyboard_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_source_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_offer_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_source_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_drag_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_keyboard_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zcr_extended_text_input_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zcr_keyboard_extension_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibit_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_idle_inhibitor_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_keyboard_shortcuts_inhibit_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_keyboard_shortcuts_inhibitor_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_buffer_release_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_buffer_params_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_buffer_release_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_feedback_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_dmabuf_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_explicit_synchronization_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_linux_surface_synchronization_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_locked_pointer_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_pointer_constraints_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_pinch_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_hold_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_pointer_gesture_pinch_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_pointer_gestures_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_manager_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_device_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_offer_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_primary_selection_source_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_relative_pointer_manager_v1)
+@@ -204,14 +211,14 @@ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_tablet_seat_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_tablet_tool_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_tablet_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_text_input_manager_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zwp_text_input_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_text_input_manager_v3)
++DECLARE_WAYLAND_OBJECT_TRAITS(zwp_text_input_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zwp_text_input_v3)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_decoration_manager_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exported_v1)
+-DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exported_v2)
++DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v1)
++DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_exporter_v2)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_output_manager_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_output_v1)
+ DECLARE_WAYLAND_OBJECT_TRAITS(zxdg_toplevel_decoration_v1)
 diff --git a/ui/ozone/platform/wayland/common/wayland_overlay_config.cc b/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
-index 79f467bc..a333f61 100644
+index 79f467bc141f54..a333f612bca248 100644
 --- a/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
 +++ b/ui/ozone/platform/wayland/common/wayland_overlay_config.cc
-@@ -33,7 +33,8 @@
+@@ -33,7 +33,8 @@ WaylandOverlayConfig::WaylandOverlayConfig(const gfx::OverlayPlaneData& data,
                                  : gfx::GpuFenceHandle()),
        color_space(data.color_space == gfx::ColorSpace::CreateSRGB()
                        ? std::nullopt
@@ -266,7 +538,7 @@ index 79f467bc..a333f61 100644
  WaylandOverlayConfig& WaylandOverlayConfig::operator=(
      WaylandOverlayConfig&& other) = default;
 diff --git a/ui/ozone/platform/wayland/common/wayland_overlay_config.h b/ui/ozone/platform/wayland/common/wayland_overlay_config.h
-index 9911ea01..dcd0b92 100644
+index 9911ea019e74bc..dcd0b92e006a68 100644
 --- a/ui/ozone/platform/wayland/common/wayland_overlay_config.h
 +++ b/ui/ozone/platform/wayland/common/wayland_overlay_config.h
 @@ -11,6 +11,7 @@
@@ -277,7 +549,7 @@ index 9911ea01..dcd0b92 100644
  #include "ui/gfx/overlay_plane_data.h"
  #include "ui/gfx/overlay_priority_hint.h"
  #include "ui/gfx/overlay_transform.h"
-@@ -78,8 +79,9 @@
+@@ -78,8 +79,9 @@ struct WaylandOverlayConfig {
    // compositing.
    gfx::GpuFenceHandle access_fence_handle;
  
@@ -288,8 +560,204 @@ index 9911ea01..dcd0b92 100644
  };
  
  }  // namespace wl
+diff --git a/ui/ozone/platform/wayland/fuzzer/wayland_buffer_fuzzer.cc b/ui/ozone/platform/wayland/fuzzer/wayland_buffer_fuzzer.cc
+index 17e9d35b4861d3..aad93eaf41068f 100644
+--- a/ui/ozone/platform/wayland/fuzzer/wayland_buffer_fuzzer.cc
++++ b/ui/ozone/platform/wayland/fuzzer/wayland_buffer_fuzzer.cc
+@@ -28,7 +28,9 @@
+ #include "base/test/test_timeouts.h"
+ #include "mojo/core/embedder/embedder.h"
+ #include "testing/gmock/include/gmock/gmock.h"
++#include "ui/gfx/color_space.h"
+ #include "ui/gfx/geometry/rect.h"
++#include "ui/gfx/hdr_metadata.h"
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h"
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_event_source.h"
+@@ -183,7 +185,8 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+   env.SetTerminateGpuCallback(manager_host);
+   manager_host->CreateDmabufBasedBuffer(
+       mojo::PlatformHandle(std::move(fd)), buffer_size, strides, offsets,
+-      modifiers, kFormat, kPlaneCount, kBufferId);
++      modifiers, kFormat, kPlaneCount, gfx::ColorSpace(), gfx::HDRMetadata(),
++      kBufferId);
+ 
+   // Wait until the buffers are created.
+   test_api.SyncDisplay();
+diff --git a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
+index bc7d1c77c83c4c..ed64026c5aabf5 100644
+--- a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
++++ b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.cc
+@@ -172,8 +172,9 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
+     std::vector<gfx::GpuFence> release_fences) {
+   DCHECK_NE(widget, gfx::kNullAcceleratedWidget);
+ 
+-  if (!created_wl_buffer_)
+-    CreateDmabufBasedWlBuffer();
++  if (!created_wl_buffer_) {
++    CreateDmabufBasedWlBuffer(overlay_plane_data);
++  }
+ 
+   widget_ = widget;
+ 
+@@ -216,7 +217,8 @@ gfx::NativePixmapHandle GbmPixmapWayland::ExportHandle() const {
+   return handle;
+ }
+ 
+-void GbmPixmapWayland::CreateDmabufBasedWlBuffer() {
++void GbmPixmapWayland::CreateDmabufBasedWlBuffer(
++    const gfx::OverlayPlaneData& overlay_plane_data) {
+   uint64_t modifier = gbm_bo_->GetFormatModifier();
+ 
+   std::vector<uint32_t> strides;
+@@ -241,7 +243,8 @@ void GbmPixmapWayland::CreateDmabufBasedWlBuffer() {
+   // Asks Wayland to create a wl_buffer based on the |file| fd.
+   buffer_manager_->CreateDmabufBasedBuffer(
+       std::move(fd), visible_area_size_, strides, offsets, modifiers,
+-      gbm_bo_->GetFormat(), plane_count, buffer_id_);
++      gbm_bo_->GetFormat(), plane_count, overlay_plane_data.color_space,
++      overlay_plane_data.hdr_metadata.value_or(gfx::HDRMetadata()), buffer_id_);
+ }
+ 
+ }  // namespace ui
+diff --git a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.h b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.h
+index f1cab4fb048d43..f7834c22282198 100644
+--- a/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.h
++++ b/ui/ozone/platform/wayland/gpu/gbm_pixmap_wayland.h
+@@ -74,7 +74,8 @@ class GbmPixmapWayland : public gfx::NativePixmap {
+   ~GbmPixmapWayland() override;
+ 
+   // Asks Wayland to create a dmabuf based wl_buffer.
+-  void CreateDmabufBasedWlBuffer();
++  void CreateDmabufBasedWlBuffer(
++      const gfx::OverlayPlaneData& overlay_plane_data);
+ 
+   // gbm_bo wrapper for struct gbm_bo.
+   std::unique_ptr<GbmBuffer> gbm_bo_;
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
+index ec18550fef787e..be3b54e774c1da 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.cc
+@@ -194,6 +194,8 @@ void WaylandBufferManagerGpu::CreateDmabufBasedBuffer(
+     const std::vector<uint64_t>& modifiers,
+     uint32_t current_format,
+     uint32_t planes_count,
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata,
+     uint32_t buffer_id) {
+   DCHECK(gpu_thread_runner_);
+   if (!gpu_thread_runner_->BelongsToCurrentThread()) {
+@@ -204,14 +206,15 @@ void WaylandBufferManagerGpu::CreateDmabufBasedBuffer(
+                        base::Unretained(this), std::move(dmabuf_fd),
+                        std::move(size), std::move(strides), std::move(offsets),
+                        std::move(modifiers), current_format, planes_count,
+-                       buffer_id));
++                       color_space, hdr_metadata, buffer_id));
+     return;
+   }
+ 
+-  base::OnceClosure task = base::BindOnce(
+-      &WaylandBufferManagerGpu::CreateDmabufBasedBufferTask,
+-      base::Unretained(this), std::move(dmabuf_fd), size, strides, offsets,
+-      modifiers, current_format, planes_count, buffer_id);
++  base::OnceClosure task =
++      base::BindOnce(&WaylandBufferManagerGpu::CreateDmabufBasedBufferTask,
++                     base::Unretained(this), std::move(dmabuf_fd), size,
++                     strides, offsets, modifiers, current_format, planes_count,
++                     color_space, hdr_metadata, buffer_id);
+   RunOrQueueTask(std::move(task));
+ }
+ 
+@@ -508,13 +511,16 @@ void WaylandBufferManagerGpu::CreateDmabufBasedBufferTask(
+     const std::vector<uint64_t>& modifiers,
+     uint32_t current_format,
+     uint32_t planes_count,
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata,
+     uint32_t buffer_id) {
+   DCHECK_CALLED_ON_VALID_SEQUENCE(gpu_sequence_checker_);
+   DCHECK(remote_host_);
+ 
+   remote_host_->CreateDmabufBasedBuffer(
+       mojo::PlatformHandle(std::move(dmabuf_fd)), size, strides, offsets,
+-      modifiers, current_format, planes_count, buffer_id);
++      modifiers, current_format, planes_count, color_space, hdr_metadata,
++      buffer_id);
+ }
+ 
+ void WaylandBufferManagerGpu::CreateShmBasedBufferTask(base::ScopedFD shm_fd,
+diff --git a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
+index ab184ab4c172c2..d96429443dee02 100644
+--- a/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
++++ b/ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h
+@@ -103,6 +103,8 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+                                const std::vector<uint64_t>& modifiers,
+                                uint32_t current_format,
+                                uint32_t planes_count,
++                               const gfx::ColorSpace& color_space,
++                               const gfx::HDRMetadata& hdr_metadata,
+                                uint32_t buffer_id);
+ 
+   // Asks Wayland to create a shared memory based wl_buffer.
+@@ -228,6 +230,8 @@ class WaylandBufferManagerGpu : public ozone::mojom::WaylandBufferManagerGpu {
+                                    const std::vector<uint64_t>& modifiers,
+                                    uint32_t current_format,
+                                    uint32_t planes_count,
++                                   const gfx::ColorSpace& color_space,
++                                   const gfx::HDRMetadata& hdr_metadata,
+                                    uint32_t buffer_id);
+   void CreateShmBasedBufferTask(base::ScopedFD shm_fd,
+                                 size_t length,
+diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
+index fa0c49456f516c..6c54b10f254d34 100644
+--- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
++++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.cc
+@@ -34,6 +34,7 @@
+ #include "ui/ozone/platform/wayland/host/wayland_buffer_handle.h"
+ #include "ui/ozone/platform/wayland/host/wayland_connection.h"
+ #include "ui/ozone/platform/wayland/host/wayland_window.h"
++#include "ui/ozone/platform/wayland/host/wayland_wp_color_manager.h"
+ 
+ namespace ui {
+ 
+@@ -132,6 +133,8 @@ void WaylandBufferManagerHost::CreateDmabufBasedBuffer(
+     const std::vector<uint64_t>& modifiers,
+     uint32_t format,
+     uint32_t planes_count,
++    const gfx::ColorSpace& color_space,
++    const gfx::HDRMetadata& hdr_metadata,
+     uint32_t buffer_id) {
+   DCHECK(base::CurrentUIThread::IsSet());
+   DCHECK(error_message_.empty());
+@@ -153,6 +156,13 @@ void WaylandBufferManagerHost::CreateDmabufBasedBuffer(
+     dma_buffers_.emplace(buffer_id, dup(fd.get()));
+   }
+ 
++  if (auto* color_manager = connection_->wp_color_manager()) {
++    // Cache the image description early so it's available when the
++    // surface is initialized.
++    color_manager->GetImageDescription(color_space, hdr_metadata,
++                                       base::DoNothing());
++  }
++
+   // Check if any of the surfaces has already had a buffer with the same id.
+   auto result = buffer_backings_.emplace(
+       buffer_id, std::make_unique<WaylandBufferBackingDmabuf>(
+diff --git a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
+index 56785585f635a1..29d86788b1666b 100644
+--- a/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
++++ b/ui/ozone/platform/wayland/host/wayland_buffer_manager_host.h
+@@ -93,6 +93,8 @@ class WaylandBufferManagerHost : public ozone::mojom::WaylandBufferManagerHost {
+                                const std::vector<uint64_t>& modifiers,
+                                uint32_t format,
+                                uint32_t planes_count,
++                               const gfx::ColorSpace& color_space,
++                               const gfx::HDRMetadata& hdr_metadata,
+                                uint32_t buffer_id) override;
+   // Called by the GPU and asks to import a wl_buffer based on a shared memory
+   // file descriptor using wl_shm protocol. Check comments in the
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.cc b/ui/ozone/platform/wayland/host/wayland_connection.cc
-index 7d6d6c3a..cdac10e 100644
+index 0d20ccb74df570..7b80cea6e35440 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.cc
 @@ -57,6 +57,7 @@
@@ -300,20 +768,46 @@ index 7d6d6c3a..cdac10e 100644
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
  #include "ui/ozone/platform/wayland/host/wayland_zwp_linux_dmabuf.h"
-@@ -171,6 +172,8 @@
+@@ -157,6 +158,8 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
+                               &SinglePixelBuffer::Instantiate);
+   RegisterGlobalObjectFactory(ToplevelIconManager::kInterfaceName,
+                               &ToplevelIconManager::Instantiate);
++  RegisterGlobalObjectFactory(WaylandCursorShape::kInterfaceName,
++                              &WaylandCursorShape::Instantiate);
+   RegisterGlobalObjectFactory(WaylandDataDeviceManager::kInterfaceName,
+                               &WaylandDataDeviceManager::Instantiate);
+   RegisterGlobalObjectFactory(WaylandDrm::kInterfaceName,
+@@ -169,8 +172,8 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
+                               &WaylandShm::Instantiate);
+   RegisterGlobalObjectFactory(WaylandTabletManager::kInterfaceName,
                                &WaylandTabletManager::Instantiate);
-   RegisterGlobalObjectFactory(WaylandCursorShape::kInterfaceName,
-                               &WaylandCursorShape::Instantiate);
+-  RegisterGlobalObjectFactory(WaylandCursorShape::kInterfaceName,
+-                              &WaylandCursorShape::Instantiate);
 +  RegisterGlobalObjectFactory(WaylandWpColorManager::kInterfaceName,
 +                              &WaylandWpColorManager::Instantiate);
    RegisterGlobalObjectFactory(WaylandZwpLinuxDmabuf::kInterfaceName,
                                &WaylandZwpLinuxDmabuf::Instantiate);
    RegisterGlobalObjectFactory(WaylandZwpPointerConstraints::kInterfaceName,
+@@ -185,12 +188,12 @@ bool WaylandConnection::Initialize(bool use_threaded_polling) {
+                               &XdgForeignWrapper::Instantiate);
+   RegisterGlobalObjectFactory(XdgForeignWrapper::kInterfaceNameV2,
+                               &XdgForeignWrapper::Instantiate);
++  RegisterGlobalObjectFactory(XdgSessionManager::kInterfaceName,
++                              &XdgSessionManager::Instantiate);
+   RegisterGlobalObjectFactory(ZwpIdleInhibitManager::kInterfaceName,
+                               &ZwpIdleInhibitManager::Instantiate);
+   RegisterGlobalObjectFactory(ZwpPrimarySelectionDeviceManager::kInterfaceName,
+                               &ZwpPrimarySelectionDeviceManager::Instantiate);
+-  RegisterGlobalObjectFactory(XdgSessionManager::kInterfaceName,
+-                              &XdgSessionManager::Instantiate);
+ 
+   display_.reset(wl_display_connect(nullptr));
+   if (!display_) {
 diff --git a/ui/ozone/platform/wayland/host/wayland_connection.h b/ui/ozone/platform/wayland/host/wayland_connection.h
-index ed4d61c0..29c30c056 100644
+index 9dcd12525296ee..e3dfc8aa849c57 100644
 --- a/ui/ozone/platform/wayland/host/wayland_connection.h
 +++ b/ui/ozone/platform/wayland/host/wayland_connection.h
-@@ -53,6 +53,7 @@
+@@ -53,6 +53,7 @@ class WaylandCursorBufferListener;
  class WaylandCursorPosition;
  class WaylandCursorShape;
  class WaylandDataDeviceManager;
@@ -321,7 +815,7 @@ index ed4d61c0..29c30c056 100644
  class WaylandDataDragController;
  class WaylandEventSource;
  class WaylandOutputManager;
-@@ -174,6 +175,10 @@
+@@ -176,6 +177,10 @@ class WaylandConnection {
      return zcr_color_manager_.get();
    }
  
@@ -332,7 +826,7 @@ index ed4d61c0..29c30c056 100644
    WaylandCursorShape* wayland_cursor_shape() const {
      return cursor_shape_.get();
    }
-@@ -327,6 +332,7 @@
+@@ -329,6 +334,7 @@ class WaylandConnection {
    friend class WaylandZwpRelativePointerManager;
    friend class WaylandZcrColorManager;
    friend class WaylandCursorShape;
@@ -340,7 +834,7 @@ index ed4d61c0..29c30c056 100644
    friend class XdgActivation;
    friend class XdgForeignWrapper;
    friend class XdgSessionManager;
-@@ -443,6 +449,7 @@
+@@ -445,6 +451,7 @@ class WaylandConnection {
    std::unique_ptr<WaylandTabletManager> tablet_manager_;
    std::unique_ptr<WaylandCursorPosition> cursor_position_;
    std::unique_ptr<WaylandZcrColorManager> zcr_color_manager_;
@@ -349,10 +843,10 @@ index ed4d61c0..29c30c056 100644
    std::unique_ptr<WaylandZwpPointerConstraints> zwp_pointer_constraints_;
    std::unique_ptr<WaylandZwpRelativePointerManager>
 diff --git a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
-index d84f997..40ceda6a 100644
+index d87466162b3fac..39a87ae41a19f5 100644
 --- a/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_frame_manager.cc
-@@ -424,8 +424,9 @@
+@@ -425,8 +425,9 @@ std::optional<bool> WaylandFrameManager::ApplySurfaceConfigure(
    surface->set_contains_video(
        config.priority_hint == gfx::OverlayPriorityHint::kHardwareProtection ||
        config.priority_hint == gfx::OverlayPriorityHint::kVideo);
@@ -365,7 +859,7 @@ index d84f997..40ceda6a 100644
      auto region_px =
          config.enable_blend
 diff --git a/ui/ozone/platform/wayland/host/wayland_output.cc b/ui/ozone/platform/wayland/host/wayland_output.cc
-index c4e2121..02c45c5 100644
+index c4e2121018a047..02c45c57c0c71c 100644
 --- a/ui/ozone/platform/wayland/host/wayland_output.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_output.cc
 @@ -14,6 +14,8 @@
@@ -377,7 +871,7 @@ index c4e2121..02c45c5 100644
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
  #include "ui/ozone/platform/wayland/host/xdg_output.h"
-@@ -137,6 +139,16 @@
+@@ -137,6 +139,16 @@ void WaylandOutput::InitializeColorManagementOutput(
        zcr_color_manager->CreateColorManagementOutput(output_.get()).release());
  }
  
@@ -395,7 +889,7 @@ index c4e2121..02c45c5 100644
    DCHECK(!delegate_);
    delegate_ = delegate;
 diff --git a/ui/ozone/platform/wayland/host/wayland_output.h b/ui/ozone/platform/wayland/host/wayland_output.h
-index 7fc3096d..d811411 100644
+index 7fc3096d20c82d..d811411bc8b1c4 100644
 --- a/ui/ozone/platform/wayland/host/wayland_output.h
 +++ b/ui/ozone/platform/wayland/host/wayland_output.h
 @@ -12,15 +12,18 @@
@@ -420,7 +914,7 @@ index 7fc3096d..d811411 100644
  
  // WaylandOutput objects keep track of wl_output information received through
  // the Wayland protocol, along with other related protocol extensions, such as,
-@@ -105,6 +108,7 @@
+@@ -105,6 +108,7 @@ class WaylandOutput : public wl::GlobalObjectRegistrar<WaylandOutput> {
    void Initialize(Delegate* delegate);
    void InitializeXdgOutput(zxdg_output_manager_v1* manager);
    void InitializeColorManagementOutput(WaylandZcrColorManager* manager);
@@ -428,7 +922,7 @@ index 7fc3096d..d811411 100644
  
    const Metrics& GetMetrics() const;
    void SetMetrics(const Metrics& metrics);
-@@ -116,6 +120,9 @@
+@@ -116,6 +120,9 @@ class WaylandOutput : public wl::GlobalObjectRegistrar<WaylandOutput> {
    WaylandZcrColorManagementOutput* color_management_output() const {
      return color_management_output_.get();
    }
@@ -438,7 +932,7 @@ index 7fc3096d..d811411 100644
  
    // Returns true if the output has all the state information available
    // necessary to represent its associated display. This information arrives
-@@ -183,6 +190,7 @@
+@@ -183,6 +190,7 @@ class WaylandOutput : public wl::GlobalObjectRegistrar<WaylandOutput> {
    wl::Object<wl_output> output_;
    std::unique_ptr<XDGOutput> xdg_output_;
    std::unique_ptr<WaylandZcrColorManagementOutput> color_management_output_;
@@ -447,7 +941,7 @@ index 7fc3096d..d811411 100644
    float scale_factor_ = kDefaultScaleFactor;
    int32_t panel_transform_ = WL_OUTPUT_TRANSFORM_NORMAL;
 diff --git a/ui/ozone/platform/wayland/host/wayland_output_manager.cc b/ui/ozone/platform/wayland/host/wayland_output_manager.cc
-index f245166..e68c48a 100644
+index f245166b2f96e4..e68c48add2c5a8 100644
 --- a/ui/ozone/platform/wayland/host/wayland_output_manager.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_output_manager.cc
 @@ -12,6 +12,7 @@
@@ -458,7 +952,7 @@ index f245166..e68c48a 100644
  
  namespace ui {
  
-@@ -53,6 +54,12 @@
+@@ -53,6 +54,12 @@ void WaylandOutputManager::AddWaylandOutput(WaylandOutput::Id output_id,
      wayland_output->InitializeColorManagementOutput(
          connection_->zcr_color_manager());
    }
@@ -471,7 +965,7 @@ index f245166..e68c48a 100644
    DCHECK(!wayland_output->IsReady());
  
    output_list_[output_id] = std::move(wayland_output);
-@@ -91,6 +98,15 @@
+@@ -91,6 +98,15 @@ void WaylandOutputManager::InitializeAllColorManagementOutputs() {
          connection_->zcr_color_manager());
  }
  
@@ -488,10 +982,10 @@ index f245166..e68c48a 100644
    auto wayland_screen = std::make_unique<WaylandScreen>(connection_);
    wayland_screen_ = wayland_screen->GetWeakPtr();
 diff --git a/ui/ozone/platform/wayland/host/wayland_output_manager.h b/ui/ozone/platform/wayland/host/wayland_output_manager.h
-index 99cb70cd..df0c99c 100644
+index 99cb70cd289631..df0c99ccbfef4b 100644
 --- a/ui/ozone/platform/wayland/host/wayland_output_manager.h
 +++ b/ui/ozone/platform/wayland/host/wayland_output_manager.h
-@@ -43,6 +43,7 @@
+@@ -43,6 +43,7 @@ class WaylandOutputManager : public WaylandOutput::Delegate {
  
    void InitializeAllXdgOutputs();
    void InitializeAllColorManagementOutputs();
@@ -500,7 +994,7 @@ index 99cb70cd..df0c99c 100644
    // Creates a platform screen.
    std::unique_ptr<WaylandScreen> CreateWaylandScreen();
 diff --git a/ui/ozone/platform/wayland/host/wayland_screen.cc b/ui/ozone/platform/wayland/host/wayland_screen.cc
-index 3aec789..2cd2651 100644
+index dcb81cc7e84086..342fe9e56ffdaa 100644
 --- a/ui/ozone/platform/wayland/host/wayland_screen.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_screen.cc
 @@ -39,6 +39,7 @@
@@ -511,7 +1005,7 @@ index 3aec789..2cd2651 100644
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
  #include "ui/ozone/platform/wayland/host/zwp_idle_inhibit_manager.h"
-@@ -230,6 +231,12 @@
+@@ -233,6 +234,12 @@ void WaylandScreen::AddOrUpdateDisplay(const WaylandOutput::Metrics& metrics) {
    changed_display.UpdateWorkAreaFromInsets(metrics.insets);
  
    gfx::DisplayColorSpaces color_spaces;
@@ -525,7 +1019,7 @@ index 3aec789..2cd2651 100644
                                        image_format_alpha_.value());
    changed_display.SetColorSpaces(color_spaces);
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.cc b/ui/ozone/platform/wayland/host/wayland_surface.cc
-index cef9875..6a31a2ec 100644
+index fb741f84ddb07a..6cca9ecb6fcbd8 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_surface.cc
 @@ -43,6 +43,8 @@
@@ -537,7 +1031,7 @@ index cef9875..6a31a2ec 100644
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_output.h"
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_management_surface.h"
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_manager.h"
-@@ -222,6 +224,20 @@
+@@ -222,6 +224,20 @@ bool WaylandSurface::Initialize() {
      }
    }
  
@@ -558,7 +1052,7 @@ index cef9875..6a31a2ec 100644
    return true;
  }
  
-@@ -548,9 +564,20 @@
+@@ -551,9 +567,20 @@ std::optional<bool> WaylandSurface::ApplyPendingState() {
  
    // Setting Color Space of surface.
    // Should be called infrequently: only when color space is changing to a
@@ -582,7 +1076,7 @@ index cef9875..6a31a2ec 100644
      needs_commit = true;
    }
  
-@@ -823,6 +850,7 @@
+@@ -826,6 +853,7 @@ WaylandSurface::State& WaylandSurface::State::operator=(
    opaque_region_px = other.opaque_region_px;
    input_region_px = other.input_region_px;
    color_space = other.color_space;
@@ -590,7 +1084,7 @@ index cef9875..6a31a2ec 100644
    buffer_id = other.buffer_id;
    buffer = other.buffer;
    buffer_size_px = other.buffer_size_px;
-@@ -925,24 +953,17 @@
+@@ -928,24 +956,17 @@ void WaylandSurface::RemoveEnteredOutput(uint32_t output_id) {
      root_window_->OnLeftOutput();
  }
  
@@ -623,7 +1117,7 @@ index cef9875..6a31a2ec 100644
  
  }  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_surface.h b/ui/ozone/platform/wayland/host/wayland_surface.h
-index 8a0a157..78a4603 100644
+index 503852770254f6..c826b2b9e79bf5 100644
 --- a/ui/ozone/platform/wayland/host/wayland_surface.h
 +++ b/ui/ozone/platform/wayland/host/wayland_surface.h
 @@ -20,6 +20,7 @@
@@ -634,7 +1128,7 @@ index 8a0a157..78a4603 100644
  #include "ui/gfx/native_widget_types.h"
  #include "ui/gfx/overlay_priority_hint.h"
  #include "ui/gfx/overlay_transform.h"
-@@ -39,6 +40,7 @@
+@@ -39,6 +40,7 @@ class WaylandConnection;
  class WaylandOutput;
  class WaylandWindow;
  class WaylandBufferHandle;
@@ -642,7 +1136,7 @@ index 8a0a157..78a4603 100644
  class WaylandZcrColorManagementSurface;
  
  // Wrapper of a wl_surface, owned by a WaylandWindow or a WlSubsurface.
-@@ -68,6 +70,10 @@
+@@ -68,6 +70,10 @@ class WaylandSurface {
      return entered_outputs_;
    }
  
@@ -653,7 +1147,7 @@ index 8a0a157..78a4603 100644
    // Requests an explicit release for the next commit.
    void RequestExplicitRelease(ExplicitReleaseCallback callback);
  
-@@ -188,8 +194,9 @@
+@@ -188,8 +194,9 @@ class WaylandSurface {
    // be removed.
    void RemoveEnteredOutput(uint32_t id);
  
@@ -665,7 +1159,7 @@ index 8a0a157..78a4603 100644
  
    // Validates the |pending_state_| and generates the corresponding requests.
    // Then copy |pending_states_| to |states_|.
-@@ -252,8 +259,9 @@
+@@ -252,8 +259,9 @@ class WaylandSurface {
      std::vector<gfx::Rect> opaque_region_px;
      std::vector<gfx::Rect> input_region_px;
  
@@ -677,7 +1171,7 @@ index 8a0a157..78a4603 100644
  
      // The acquire gpu fence to associate with the surface buffer.
      gfx::GpuFenceHandle acquire_fence;
-@@ -355,6 +363,7 @@
+@@ -355,6 +363,7 @@ class WaylandSurface {
    wl::Object<wp_fractional_scale_v1> fractional_scale_;
    std::unique_ptr<WaylandZcrColorManagementSurface>
        zcr_color_management_surface_;
@@ -685,9 +1179,22 @@ index 8a0a157..78a4603 100644
    ExplicitReleaseCallback next_explicit_release_request_;
  
    // A cached copy of connection->supports_viewporter_surface_scaling(). While
+diff --git a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
+index 3469bf4b5784aa..3d3c06b991798e 100644
+--- a/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
++++ b/ui/ozone/platform/wayland/host/wayland_surface_unittest.cc
+@@ -108,7 +108,7 @@ class WaylandSurfaceExplicitSyncTest : public WaylandTestSimple {
+                                uint32_t planes_count = 1) {
+     buffer_manager_gpu_->CreateDmabufBasedBuffer(
+         GetFdFactory()->CreateFd(), kDefaultSize, strides, offsets, modifiers,
+-        format, planes_count, buffer_id);
++        format, planes_count, gfx::ColorSpace(), gfx::HDRMetadata(), buffer_id);
+ 
+     base::RunLoop().RunUntilIdle();
+ 
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
 new file mode 100644
-index 0000000..1fb32055
+index 00000000000000..1fb32055630b99
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.cc
 @@ -0,0 +1,87 @@
@@ -780,7 +1287,7 @@ index 0000000..1fb32055
 +}  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h
 new file mode 100644
-index 0000000..00c2c510
+index 00000000000000..00c2c51072f103
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_output.h
 @@ -0,0 +1,63 @@
@@ -849,7 +1356,7 @@ index 0000000..00c2c510
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_OUTPUT_H_
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc
 new file mode 100644
-index 0000000..2cca0ed
+index 00000000000000..2cca0eddc42bbf
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.cc
 @@ -0,0 +1,89 @@
@@ -944,7 +1451,7 @@ index 0000000..2cca0ed
 +}  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h
 new file mode 100644
-index 0000000..14d7c98
+index 00000000000000..14d7c982b484af
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_management_surface.h
 @@ -0,0 +1,61 @@
@@ -1011,7 +1518,7 @@ index 0000000..14d7c98
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGEMENT_SURFACE_H_
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc
 new file mode 100644
-index 0000000..5db7ef4
+index 00000000000000..5db7ef43f3526e
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.cc
 @@ -0,0 +1,398 @@
@@ -1415,7 +1922,7 @@ index 0000000..5db7ef4
 +}  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h
 new file mode 100644
-index 0000000..e5935df
+index 00000000000000..e5935df64bc585
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_color_manager.h
 @@ -0,0 +1,129 @@
@@ -1550,7 +2057,7 @@ index 0000000..e5935df
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_COLOR_MANAGER_H_
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc b/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc
 new file mode 100644
-index 0000000..36c47dd9
+index 00000000000000..36c47dd957b9f9
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_image_description.cc
 @@ -0,0 +1,344 @@
@@ -1900,7 +2407,7 @@ index 0000000..36c47dd9
 +}  // namespace ui
 diff --git a/ui/ozone/platform/wayland/host/wayland_wp_image_description.h b/ui/ozone/platform/wayland/host/wayland_wp_image_description.h
 new file mode 100644
-index 0000000..d6e9dbd
+index 00000000000000..d6e9dbdbccaff8
 --- /dev/null
 +++ b/ui/ozone/platform/wayland/host/wayland_wp_image_description.h
 @@ -0,0 +1,133 @@
@@ -2038,7 +2545,7 @@ index 0000000..d6e9dbd
 +
 +#endif  // UI_OZONE_PLATFORM_WAYLAND_HOST_WAYLAND_WP_IMAGE_DESCRIPTION_H_
 diff --git a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
-index 33532c7..4b17b2cc 100644
+index 33532c718844e3..4b17b2cc21d6d9 100644
 --- a/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
 +++ b/ui/ozone/platform/wayland/host/wayland_zcr_color_manager_unittest.cc
 @@ -2,6 +2,8 @@
@@ -2065,7 +2572,7 @@ index 33532c7..4b17b2cc 100644
  #include "ui/ozone/platform/wayland/host/wayland_zcr_color_space.h"
  #include "ui/ozone/platform/wayland/test/mock_surface.h"
  #include "ui/ozone/platform/wayland/test/mock_wayland_zcr_color_manager.h"
-@@ -144,7 +146,8 @@
+@@ -144,7 +146,8 @@ TEST_P(WaylandZcrColorManagerTest, DISABLED_CreateColorManagementSurface) {
    connection_->zcr_color_manager()->GetColorSpace(
        gfx::ColorSpace::CreateHDR10());
    connection_->RoundTripQueue();
@@ -2075,7 +2582,7 @@ index 33532c7..4b17b2cc 100644
    surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
        surface, buffer_id));
    surface->ApplyPendingState();
-@@ -195,7 +198,7 @@
+@@ -195,7 +198,7 @@ TEST_P(WaylandZcrColorManagerTest, DISABLED_DoNotSetInvaliColorSpace) {
    // original default color space remains unchanged on the surface.
    connection_->zcr_color_manager()->GetColorSpace(invalid_space);
    connection_->RoundTripQueue();
@@ -2084,11 +2591,34 @@ index 33532c7..4b17b2cc 100644
    surface->AttachBuffer(connection_->buffer_manager_host()->EnsureBufferHandle(
        surface, buffer_id));
    surface->ApplyPendingState();
+diff --git a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
+index 597cb291314c64..8be9bb7d88ba72 100644
+--- a/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
++++ b/ui/ozone/platform/wayland/mojom/wayland_buffer_manager.mojom
+@@ -9,7 +9,9 @@ import "mojo/public/mojom/base/version.mojom";
+ import "ui/gfx/geometry/mojom/geometry.mojom";
+ import "ui/gfx/mojom/accelerated_widget.mojom";
+ import "ui/gfx/mojom/buffer_types.mojom";
++import "ui/gfx/mojom/color_space.mojom";
+ import "ui/gfx/mojom/gpu_fence_handle.mojom";
++import "ui/gfx/mojom/hdr_metadata.mojom";
+ import "ui/gfx/mojom/swap_result.mojom";
+ import "ui/gfx/mojom/frame_data.mojom";
+ import "ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom";
+@@ -45,6 +47,8 @@ interface WaylandBufferManagerHost {
+                           array<uint64> modifiers,
+                           uint32 format,
+                           uint32 planes_count,
++                          gfx.mojom.ColorSpace color_space,
++                          gfx.mojom.HDRMetadata hdr_metadata,
+                           uint32 buffer_id);
+ 
+   // If software rendering path is used, this method can be used to ask
 diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom b/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
-index c085386..ce5050c 100644
+index c08538670ebfb6..ce5050c3724ece 100644
 --- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
 +++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config.mojom
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,7 @@ module wl.mojom;
  
  import "ui/gfx/geometry/mojom/geometry.mojom";
  import "ui/gfx/mojom/color_space.mojom";
@@ -2096,7 +2626,7 @@ index c085386..ce5050c 100644
  import "ui/gfx/mojom/gpu_fence_handle.mojom";
  import "ui/gfx/mojom/overlay_transform.mojom";
  import "ui/gfx/mojom/overlay_priority_hint.mojom";
-@@ -28,6 +29,9 @@
+@@ -28,6 +29,9 @@ struct WaylandOverlayConfig {
    // Optional: specifies the color space data of the wayland config.
    gfx.mojom.ColorSpace? color_space;
  
@@ -2107,10 +2637,10 @@ index c085386..ce5050c 100644
    TransformUnion transform;
  
 diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
-index 135fc384..2dfc0391 100644
+index 135fc384f3ccea..2dfc0391b2c179 100644
 --- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
 +++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.cc
-@@ -65,6 +65,10 @@
+@@ -65,6 +65,10 @@ bool StructTraits<wl::mojom::WaylandOverlayConfigDataView,
    if (!data.ReadColorSpace(&out->color_space))
      return false;
  
@@ -2122,7 +2652,7 @@ index 135fc384..2dfc0391 100644
      return false;
  
 diff --git a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
-index 559817a..1ca4fd38 100644
+index 559817ac573387..1ca4fd38a1a5af 100644
 --- a/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
 +++ b/ui/ozone/platform/wayland/mojom/wayland_overlay_config_mojom_traits.h
 @@ -10,6 +10,7 @@
@@ -2133,7 +2663,7 @@ index 559817a..1ca4fd38 100644
  #include "ui/gfx/mojom/overlay_priority_hint_mojom_traits.h"
  #include "ui/gfx/mojom/overlay_transform_mojom_traits.h"
  #include "ui/gfx/mojom/rrect_f_mojom_traits.h"
-@@ -52,6 +53,11 @@
+@@ -52,6 +53,11 @@ struct StructTraits<wl::mojom::WaylandOverlayConfigDataView,
      return input.color_space;
    }
  
@@ -2145,3 +2675,16 @@ index 559817a..1ca4fd38 100644
    static const std::variant<gfx::OverlayTransform, gfx::Transform>& transform(
        const wl::WaylandOverlayConfig& input) {
      return input.transform;
+diff --git a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
+index 6de74f4a7f253a..6ee814cd7f5c32 100644
+--- a/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
++++ b/ui/ozone/platform/wayland/wayland_buffer_manager_unittest.cc
+@@ -224,7 +224,7 @@ class WaylandBufferManagerTest : public WaylandTest {
+     SetTerminateCallbackExpectationAndDestroyChannel(&callback_, fail);
+     buffer_manager_gpu_->CreateDmabufBasedBuffer(
+         std::move(fd), kDefaultSize, strides, offsets, modifiers, format,
+-        planes_count, buffer_id);
++        planes_count, gfx::ColorSpace(), gfx::HDRMetadata(), buffer_id);
+ 
+     base::RunLoop().RunUntilIdle();
+   }

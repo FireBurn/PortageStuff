@@ -1,16 +1,17 @@
-From 249e52ab70cdd51c2ad6a15d7810d3e37abec08a Mon Sep 17 00:00:00 2001
+From e8d6d7af8d9f7857814119823728ab0486e6635e Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 15:52:36 +0100
 Subject: [PATCH 1/7] device-select: clang-format
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  src/vulkan/device-select-layer/.clang-format  |   4 +
  .../device-select-layer/device_select.h       |  24 +-
- .../device-select-layer/device_select_layer.c | 295 ++++++++++--------
- .../device_select_wayland.c                   |  51 ++-
- .../device-select-layer/device_select_x11.c   | 141 ++++-----
- 5 files changed, 279 insertions(+), 236 deletions(-)
+ .../device-select-layer/device_select_layer.c | 290 ++++++++++--------
+ .../device_select_wayland.c                   |  50 ++-
+ .../device-select-layer/device_select_x11.c   | 141 +++++----
+ 5 files changed, 278 insertions(+), 231 deletions(-)
  create mode 100644 src/vulkan/device-select-layer/.clang-format
 
 diff --git a/src/vulkan/device-select-layer/.clang-format b/src/vulkan/device-select-layer/.clang-format
@@ -72,7 +73,7 @@ index 248878fbc712c..86ec4c53c0f8d 100644
  
  #endif
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 19cfc556f5406..18bc3b34f64ae 100644
+index 19cfc556f5406..74b93cd2545bc 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
 @@ -33,16 +33,16 @@
@@ -189,7 +190,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  {
     struct instance_info *info = device_select_layer_get_instance(instance);
  
-@@ -192,28 +206,31 @@ static void device_select_DestroyInstance(VkInstance instance, const VkAllocatio
+@@ -192,28 +206,33 @@ static void device_select_DestroyInstance(VkInstance instance, const VkAllocatio
     free(info);
  }
  
@@ -216,14 +217,14 @@ index 19cfc556f5406..18bc3b34f64ae 100644
 -   VkPhysicalDevicePCIBusInfoPropertiesEXT ext_pci_properties = (VkPhysicalDevicePCIBusInfoPropertiesEXT) {
 -      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT
 -   };
--   VkPhysicalDeviceProperties2 properties = (VkPhysicalDeviceProperties2){
--      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
--   };
 +   VkPhysicalDevicePCIBusInfoPropertiesEXT ext_pci_properties =
 +      (VkPhysicalDevicePCIBusInfoPropertiesEXT){
-+         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT};
-+   VkPhysicalDeviceProperties2 properties =
-+      (VkPhysicalDeviceProperties2){.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
++         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT,
++      };
+    VkPhysicalDeviceProperties2 properties = (VkPhysicalDeviceProperties2){
+-      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
++      .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+    };
     if (info->has_vulkan11 && info->has_pci_bus)
        properties.pNext = &ext_pci_properties;
     get_device_properties(info, device, &properties);
@@ -233,7 +234,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
     case VK_PHYSICAL_DEVICE_TYPE_OTHER:
     default:
        type = "other";
-@@ -234,23 +251,21 @@ static void print_gpu(const struct instance_info *info, unsigned index, VkPhysic
+@@ -234,23 +253,21 @@ static void print_gpu(const struct instance_info *info, unsigned index, VkPhysic
     fprintf(stderr, "  GPU %d: %x:%x \"%s\" %s", index, properties.properties.vendorID,
             properties.properties.deviceID, properties.properties.deviceName, type);
     if (info->has_vulkan11 && info->has_pci_bus)
@@ -267,7 +268,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  
     if (info->has_vulkan11 && info->has_pci_bus)
        properties.pNext = &ext_pci_properties;
-@@ -260,18 +275,18 @@ static bool fill_drm_device_info(const struct instance_info *info,
+@@ -260,18 +277,18 @@ static bool fill_drm_device_info(const struct instance_info *info,
     drm_device->dev_info.vendor_id = properties.properties.vendorID;
     drm_device->dev_info.device_id = properties.properties.deviceID;
     if (info->has_vulkan11 && info->has_pci_bus) {
@@ -294,7 +295,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  {
     int default_idx = -1;
     unsigned vendor_id, device_id;
-@@ -287,9 +302,9 @@ static int device_select_find_explicit_default(struct device_pci_info *pci_infos
+@@ -287,9 +304,9 @@ static int device_select_find_explicit_default(struct device_pci_info *pci_infos
     return default_idx;
  }
  
@@ -307,7 +308,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  {
     int default_idx = -1;
  
-@@ -303,10 +318,8 @@ static int device_select_find_dri_prime_tag_default(struct device_pci_info *pci_
+@@ -303,10 +320,8 @@ static int device_select_find_dri_prime_tag_default(struct device_pci_info *pci_
  
     for (unsigned i = 0; i < device_count; ++i) {
        char *tag = NULL;
@@ -320,7 +321,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
                     pci_infos[i].bus_info.func) >= 0) {
           if (strncmp(dri_prime, tag, n) == 0)
              default_idx = i;
-@@ -316,20 +329,20 @@ static int device_select_find_dri_prime_tag_default(struct device_pci_info *pci_
+@@ -316,20 +331,20 @@ static int device_select_find_dri_prime_tag_default(struct device_pci_info *pci_
     return default_idx;
  }
  
@@ -346,7 +347,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  
     for (unsigned i = 0; i < 64; i++) {
        snprintf(path, 1023, "/sys/class/drm/card%d/device/boot_vga", i);
-@@ -363,8 +376,7 @@ static int device_select_find_boot_vga_vid_did(struct device_pci_info *pci_infos
+@@ -363,8 +378,7 @@ static int device_select_find_boot_vga_vid_did(struct device_pci_info *pci_infos
        return default_idx;
  
     for (unsigned i = 0; i < device_count; ++i) {
@@ -356,7 +357,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           default_idx = i;
           break;
        }
-@@ -373,15 +385,16 @@ static int device_select_find_boot_vga_vid_did(struct device_pci_info *pci_infos
+@@ -373,15 +387,16 @@ static int device_select_find_boot_vga_vid_did(struct device_pci_info *pci_infos
     return default_idx;
  }
  
@@ -377,7 +378,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
        int fd = open(boot_vga_path, O_RDONLY);
        if (fd != -1) {
           uint8_t val;
-@@ -397,14 +410,14 @@ static int device_select_find_boot_vga_default(struct device_pci_info *pci_infos
+@@ -397,14 +412,14 @@ static int device_select_find_boot_vga_default(struct device_pci_info *pci_infos
     return default_idx;
  }
  
@@ -395,7 +396,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           default_idx = i;
           break;
        }
-@@ -412,10 +425,9 @@ static int device_select_find_non_cpu(struct device_pci_info *pci_infos,
+@@ -412,10 +427,9 @@ static int device_select_find_non_cpu(struct device_pci_info *pci_infos,
     return default_idx;
  }
  
@@ -409,7 +410,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  {
     for (unsigned i = 0; i < device_count; ++i) {
        if (i == skip_idx)
-@@ -431,21 +443,24 @@ static int find_non_cpu_skip(struct device_pci_info *pci_infos,
+@@ -431,21 +445,24 @@ static int find_non_cpu_skip(struct device_pci_info *pci_infos,
     return -1;
  }
  
@@ -442,7 +443,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  {
     int default_idx = -1;
     const char *dri_prime = getenv("DRI_PRIME");
-@@ -460,26 +475,30 @@ static uint32_t get_default_device(const struct instance_info *info,
+@@ -460,26 +477,30 @@ static uint32_t get_default_device(const struct instance_info *info,
           dri_prime_as_int = 0;
     }
  
@@ -478,7 +479,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           *expose_only_one_dev = ends_with_exclamation_mark(dri_prime);
        }
  
-@@ -488,11 +507,14 @@ static uint32_t get_default_device(const struct instance_info *info,
+@@ -488,11 +509,14 @@ static uint32_t get_default_device(const struct instance_info *info,
           if (!info->has_vulkan11 && !info->has_pci_bus)
              fprintf(stderr, "device-select: cannot correctly use DRI_PRIME tag\n");
           else
@@ -495,7 +496,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
              *expose_only_one_dev = ends_with_exclamation_mark(dri_prime);
           }
        }
-@@ -500,12 +522,14 @@ static uint32_t get_default_device(const struct instance_info *info,
+@@ -500,12 +524,14 @@ static uint32_t get_default_device(const struct instance_info *info,
     if (default_idx == -1 && info->has_wayland) {
        default_idx = device_select_find_wayland_pci_default(pci_infos, physical_device_count);
        if (debug && default_idx != -1)
@@ -512,7 +513,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
     }
     if (default_idx == -1) {
        if (info->has_vulkan11 && info->has_pci_bus)
-@@ -534,10 +558,12 @@ static uint32_t get_default_device(const struct instance_info *info,
+@@ -534,10 +560,12 @@ static uint32_t get_default_device(const struct instance_info *info,
     }
     /* DRI_PRIME=n handling - pick any other device than default. */
     if (dri_prime_as_int > 0 && debug)
@@ -527,7 +528,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           if (default_idx != -1) {
              if (debug)
                 fprintf(stderr, "device-select: find_non_cpu_skip selected %i\n", default_idx);
-@@ -549,14 +575,14 @@ static uint32_t get_default_device(const struct instance_info *info,
+@@ -549,14 +577,14 @@ static uint32_t get_default_device(const struct instance_info *info,
     return default_idx == -1 ? 0 : default_idx;
  }
  
@@ -546,7 +547,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
     bool expose_only_one_dev = false;
     if (info->zink && info->xwayland)
        return info->EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
-@@ -565,9 +591,10 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
+@@ -565,9 +593,10 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
     if (result != VK_SUCCESS)
        return result;
  
@@ -560,7 +561,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  
     if (!physical_devices || !selected_physical_devices) {
        result = VK_ERROR_OUT_OF_HOST_MEMORY;
-@@ -583,7 +610,8 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
+@@ -583,7 +612,8 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
        info->EnumerateDeviceExtensionProperties(physical_devices[i], NULL, &count, NULL);
        if (count > 0) {
           VkExtensionProperties *extensions = calloc(count, sizeof(VkExtensionProperties));
@@ -570,7 +571,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
              for (unsigned j = 0; j < count; j++) {
                 if (!strcmp(extensions[j].extensionName, VK_EXT_PCI_BUS_INFO_EXTENSION_NAME))
                    info->has_pci_bus = true;
-@@ -606,7 +634,7 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
+@@ -606,7 +636,7 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
     selected_physical_device_count = physical_device_count;
     selected_physical_devices[0] = physical_devices[selected_index];
     for (unsigned i = 0; i < physical_device_count - 1; ++i) {
@@ -579,7 +580,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
        selected_physical_devices[i + 1] = physical_devices[this_idx];
     }
  
-@@ -618,41 +646,51 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
+@@ -618,41 +648,51 @@ static VkResult device_select_EnumeratePhysicalDevices(VkInstance instance,
  
     /* do not give multiple device option to app if force default device */
     const char *force_default_device = getenv("MESA_VK_DEVICE_SELECT_FORCE_DEFAULT_DEVICE");
@@ -642,7 +643,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
  
     if (!physical_device_groups || !selected_physical_device_groups) {
        result = VK_ERROR_OUT_OF_HOST_MEMORY;
-@@ -662,7 +700,8 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
+@@ -662,7 +702,8 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
     for (unsigned i = 0; i < physical_device_group_count; i++)
        physical_device_groups[i].sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES;
  
@@ -652,15 +653,13 @@ index 19cfc556f5406..18bc3b34f64ae 100644
     if (result != VK_SUCCESS)
        goto out;
  
-@@ -674,15 +713,15 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
-       bool group_has_cpu_device = false;
+@@ -675,14 +716,15 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
        for (unsigned j = 0; j < physical_device_groups[i].physicalDeviceCount; j++) {
           VkPhysicalDevice physical_device = physical_device_groups[i].physicalDevices[j];
--         VkPhysicalDeviceProperties2 properties = (VkPhysicalDeviceProperties2){
+          VkPhysicalDeviceProperties2 properties = (VkPhysicalDeviceProperties2){
 -            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2
--         };
-+         VkPhysicalDeviceProperties2 properties =
-+            (VkPhysicalDeviceProperties2){.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
++            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
+          };
           info->GetPhysicalDeviceProperties(physical_device, &properties.properties);
           group_has_cpu_device = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
        }
@@ -672,7 +671,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           num_cpu_groups++;
        } else {
           selected_physical_device_groups[num_gpu_groups] = physical_device_groups[i];
-@@ -693,7 +732,8 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
+@@ -693,7 +735,8 @@ static VkResult device_select_EnumeratePhysicalDeviceGroups(VkInstance instance,
     assert(result == VK_SUCCESS);
  
     for (unsigned i = 0; i < selected_physical_device_group_count; i++) {
@@ -682,7 +681,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
           *ent = selected_physical_device_groups[i];
        }
     }
-@@ -704,24 +744,25 @@ out:
+@@ -704,24 +747,25 @@ out:
     return result;
  }
  
@@ -716,7 +715,7 @@ index 19cfc556f5406..18bc3b34f64ae 100644
     if (pVersionStruct->loaderLayerInterfaceVersion < 2)
        return VK_ERROR_INITIALIZATION_FAILED;
 diff --git a/src/vulkan/device-select-layer/device_select_wayland.c b/src/vulkan/device-select-layer/device_select_wayland.c
-index 5826803473fa4..ea00b8c9dcf64 100644
+index 5826803473fa4..35f20c6a57edf 100644
 --- a/src/vulkan/device-select-layer/device_select_wayland.c
 +++ b/src/vulkan/device-select-layer/device_select_wayland.c
 @@ -25,13 +25,13 @@
@@ -737,7 +736,7 @@ index 5826803473fa4..ea00b8c9dcf64 100644
  
  struct device_select_wayland_info {
  #ifdef HAVE_BIND_WL_DISPLAY
-@@ -70,26 +70,23 @@ device_select_drm_handle_authenticated(void *data, struct wl_drm *drm)
+@@ -70,26 +70,24 @@ device_select_drm_handle_authenticated(void *data, struct wl_drm *drm)
     /* ignore this event */
  }
  
@@ -754,8 +753,8 @@ index 5826803473fa4..ea00b8c9dcf64 100644
     .format = device_select_drm_handle_format,
     .authenticated = device_select_drm_handle_authenticated,
 -   .capabilities = device_select_drm_handle_capabilities
--};
-+   .capabilities = device_select_drm_handle_capabilities};
++   .capabilities = device_select_drm_handle_capabilities,
+ };
  #endif
  
  static void
@@ -768,7 +767,7 @@ index 5826803473fa4..ea00b8c9dcf64 100644
  {
  
     /* ignore this event */
-@@ -144,8 +141,7 @@ default_dmabuf_feedback_tranche_done(void *data,
+@@ -144,8 +142,7 @@ default_dmabuf_feedback_tranche_done(void *data,
  }
  
  static void
@@ -778,7 +777,7 @@ index 5826803473fa4..ea00b8c9dcf64 100644
  {
     /* ignore this event */
  }
-@@ -171,26 +167,23 @@ device_select_registry_global(void *data, struct wl_registry *registry, uint32_t
+@@ -171,26 +168,23 @@ device_select_registry_global(void *data, struct wl_registry *registry, uint32_t
        wl_drm_add_listener(info->wl_drm, &ds_drm_listener, data);
     } else
  #endif
@@ -815,7 +814,7 @@ index 5826803473fa4..ea00b8c9dcf64 100644
  {
     struct wl_display *display;
     struct wl_registry *registry = NULL;
-@@ -207,8 +200,8 @@ int device_select_find_wayland_pci_default(struct device_pci_info *devices, uint
+@@ -207,8 +201,8 @@ int device_select_find_wayland_pci_default(struct device_pci_info *devices, uint
        return -1;
     }
  
@@ -826,7 +825,7 @@ index 5826803473fa4..ea00b8c9dcf64 100644
  
     wl_registry_add_listener(registry, &registry_listener, &info);
     wl_display_dispatch(display);
-@@ -245,7 +238,7 @@ int device_select_find_wayland_pci_default(struct device_pci_info *devices, uint
+@@ -245,7 +239,7 @@ int device_select_find_wayland_pci_default(struct device_pci_info *devices, uint
        }
     }
  
@@ -1007,12 +1006,13 @@ index 7e15f1534edf5..44313aa741696 100644
 GitLab
 
 
-From 5ead938c46392a72e83051553002d10252470cd8 Mon Sep 17 00:00:00 2001
+From 3f92db88e4fce9007550d7aacd06be6b57001edb Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 16:06:48 +0100
 Subject: [PATCH 2/7] device-select: move get_default_device to it's own file
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  .../device-select-layer/device_select.c       | 350 +++++++++++++++++
  .../device-select-layer/device_select.h       |  24 ++
@@ -1422,7 +1422,7 @@ index 86ec4c53c0f8d..065b92f696fe4 100644
 +
  #endif
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 18bc3b34f64ae..3dc573ca7e27d 100644
+index 74b93cd2545bc..384fda558b39d 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
 @@ -33,10 +33,8 @@
@@ -1476,8 +1476,8 @@ index 18bc3b34f64ae..3dc573ca7e27d 100644
  {
     info->GetPhysicalDeviceProperties(device, &properties->properties);
  
-@@ -228,7 +220,7 @@ print_gpu(const struct instance_info *info, unsigned index, VkPhysicalDevice dev
-       (VkPhysicalDeviceProperties2){.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+@@ -230,7 +222,7 @@ print_gpu(const struct instance_info *info, unsigned index, VkPhysicalDevice dev
+    };
     if (info->has_vulkan11 && info->has_pci_bus)
        properties.pNext = &ext_pci_properties;
 -   get_device_properties(info, device, &properties);
@@ -1485,7 +1485,7 @@ index 18bc3b34f64ae..3dc573ca7e27d 100644
  
     switch (properties.properties.deviceType) {
     case VK_PHYSICAL_DEVICE_TYPE_OTHER:
-@@ -256,325 +248,6 @@ print_gpu(const struct instance_info *info, unsigned index, VkPhysicalDevice dev
+@@ -258,325 +250,6 @@ print_gpu(const struct instance_info *info, unsigned index, VkPhysicalDevice dev
     fprintf(stderr, "\n");
  }
  
@@ -1811,7 +1811,7 @@ index 18bc3b34f64ae..3dc573ca7e27d 100644
  static VkResult
  device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalDeviceCount,
                                         VkPhysicalDevice *pPhysicalDevices)
-@@ -620,7 +293,7 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -622,7 +295,7 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
           free(extensions);
        }
     }
@@ -1820,7 +1820,7 @@ index 18bc3b34f64ae..3dc573ca7e27d 100644
        fprintf(stderr, "selectable devices:\n");
        for (unsigned i = 0; i < physical_device_count; ++i)
           print_gpu(info, i, physical_devices[i]);
-@@ -629,8 +302,8 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -631,8 +304,8 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
           exit(0);
     }
  
@@ -1847,18 +1847,19 @@ index 58f164c7766ae..331a9587ef2c3 100644
 GitLab
 
 
-From a293285598712db7786ea24237e0f3299139f6c7 Mon Sep 17 00:00:00 2001
+From 41dcdabfc5be241fb5bc7851f663bf181496f107 Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 16:27:04 +0100
 Subject: [PATCH 3/7] device-select: simplify adding/removing instances
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  .../device-select-layer/device_select_layer.c | 36 ++++++-------------
  1 file changed, 11 insertions(+), 25 deletions(-)
 
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 3dc573ca7e27d..62cb517f0dd5c 100644
+index 384fda558b39d..9534d1ba2c52e 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
 @@ -45,35 +45,15 @@
@@ -1922,12 +1923,13 @@ index 3dc573ca7e27d..62cb517f0dd5c 100644
 GitLab
 
 
-From dcabd9eb24219159e5dd3925a35030637127b4c6 Mon Sep 17 00:00:00 2001
+From 8db4ec09dc48c54713bb89363282ad1d166dba42 Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 16:38:02 +0100
 Subject: [PATCH 4/7] device-select: do all getenv during instance creation
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  .../device-select-layer/device_select.c       | 49 +++++++++----------
  .../device-select-layer/device_select.h       | 10 ++--
@@ -2100,7 +2102,7 @@ index 065b92f696fe4..8250cf82f7ddd 100644
  
  #endif
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 62cb517f0dd5c..8aed332650738 100644
+index 9534d1ba2c52e..1cbd2d0d55ffc 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
 @@ -151,6 +151,15 @@ device_select_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
@@ -2138,7 +2140,7 @@ index 62cb517f0dd5c..8aed332650738 100644
  void
  device_select_get_properties(const struct instance_info *info, VkPhysicalDevice device,
                               VkPhysicalDeviceProperties2 *properties)
-@@ -241,7 +245,6 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -243,7 +247,6 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
     struct instance_info *info = device_select_layer_get_instance(instance);
     uint32_t physical_device_count = 0;
     uint32_t selected_physical_device_count = 0;
@@ -2146,7 +2148,7 @@ index 62cb517f0dd5c..8aed332650738 100644
     bool expose_only_one_dev = false;
     if (info->zink && info->xwayland)
        return info->EnumeratePhysicalDevices(instance, pPhysicalDeviceCount, pPhysicalDevices);
-@@ -279,16 +282,16 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -281,16 +284,16 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
           free(extensions);
        }
     }
@@ -2166,7 +2168,7 @@ index 62cb517f0dd5c..8aed332650738 100644
                                                         physical_devices, &expose_only_one_dev);
     selected_physical_device_count = physical_device_count;
     selected_physical_devices[0] = physical_devices[selected_index];
-@@ -304,9 +307,7 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -306,9 +309,7 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
     assert(result == VK_SUCCESS);
  
     /* do not give multiple device option to app if force default device */
@@ -2181,19 +2183,20 @@ index 62cb517f0dd5c..8aed332650738 100644
 GitLab
 
 
-From 4b788b46c74991895bfbb7529dbce64bfeece9b8 Mon Sep 17 00:00:00 2001
+From 03d81277c061eb71aa66ed0c677245cc5418547b Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 16:39:37 +0100
 Subject: [PATCH 5/7] device-select: use debug_get_bool_option for
  FORCE_DEFAULT_DEVICE
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  src/vulkan/device-select-layer/device_select_layer.c | 4 ++--
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 8aed332650738..0bafd07f553c4 100644
+index 1cbd2d0d55ffc..f0eefc3d39339 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
 @@ -155,8 +155,8 @@ device_select_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
@@ -2211,12 +2214,13 @@ index 8aed332650738..0bafd07f553c4 100644
 GitLab
 
 
-From 38cd9bc324a7405d1a34c3ae81aae8e49218b562 Mon Sep 17 00:00:00 2001
+From 6508154161be1017c18c448668ab11a2d3ba5571 Mon Sep 17 00:00:00 2001
 From: Rhys Perry <pendingchaos02@gmail.com>
 Date: Fri, 8 Aug 2025 16:56:52 +0100
 Subject: [PATCH 6/7] device-select: refactor device_select_get_default
 
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com>
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  .../device-select-layer/device_select.c       | 165 ++++++++++--------
  .../device-select-layer/device_select.h       |   4 +-
@@ -2453,10 +2457,10 @@ index 8250cf82f7ddd..89a4d0bf92117 100644
  
  #endif
 diff --git a/src/vulkan/device-select-layer/device_select_layer.c b/src/vulkan/device-select-layer/device_select_layer.c
-index 0bafd07f553c4..c186d3da8b79f 100644
+index f0eefc3d39339..13fd9daae24c8 100644
 --- a/src/vulkan/device-select-layer/device_select_layer.c
 +++ b/src/vulkan/device-select-layer/device_select_layer.c
-@@ -291,8 +291,8 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
+@@ -293,8 +293,8 @@ device_select_EnumeratePhysicalDevices(VkInstance instance, uint32_t *pPhysicalD
           exit(0);
     }
  
@@ -2471,7 +2475,7 @@ index 0bafd07f553c4..c186d3da8b79f 100644
 GitLab
 
 
-From cb1a13c15c9611ad5a7d9c47f9217022a3680b67 Mon Sep 17 00:00:00 2001
+From a1943122a0725070f9aa797c704b43a54fdb6fc8 Mon Sep 17 00:00:00 2001
 From: Benjamin Otte <otte@redhat.com>
 Date: Wed, 2 Oct 2024 02:57:35 +0200
 Subject: [PATCH 7/7] device_select: Allow shortcut names for device types
@@ -2488,6 +2492,7 @@ v2:
 
 Signed-off-by: Benjamin Otte <otte@redhat.com>
 Signed-off-by: Rhys Perry <pendingchaos02@gmail.com> (v2)
+Reviewed-by: Georg Lehmann <dadschoorse@gmail.com>
 ---
  .../device-select-layer/device_select.c       | 58 +++++++++++++++++--
  .../device-select-layer/device_select.h       |  2 +-
