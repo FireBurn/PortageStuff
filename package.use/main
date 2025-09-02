@@ -122,4 +122,4 @@ kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 #=www-client/chromium-140.0.7312.0	bundled-toolchain
 dev-debug/gdb				-rocm
-sci-misc/llama-cpp			curl -openmp -vulkan
+sci-misc/llama-cpp			curl -openmp vulkan -hip
