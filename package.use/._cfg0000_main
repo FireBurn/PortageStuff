@@ -123,3 +123,8 @@ dev-java/openjdk			-lto
 #=www-client/chromium-140.0.7312.0	bundled-toolchain
 dev-debug/gdb				-rocm
 sci-misc/llama-cpp			curl -openmp vulkan -hip
+llvm-core/libclc			-spirv
+# required by media-libs/mesa-9999::FireBurn[-video_cards_nvk,-video_cards_intel,-video_cards_asahi,vulkan,opencl]
+# required by @selected
+# required by @world (argument)
+>=llvm-core/libclc-21.1.2 spirv
