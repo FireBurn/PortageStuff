@@ -1,6 +1,3 @@
-# move dev-util/valgrind dev-debug/valgrind
-#games-emulation/citron			clango3lto.conf
-#media-libs/mesa				clangdebug.conf
 app-crypt/efitools			o3.conf
 app-crypt/gpgme				clango3lto.conf
 app-emulation/dxvk			clango3lto.conf
@@ -36,13 +33,16 @@ dev-qt/*				clango3lto.conf
 dev-qt/qttools				clango3.conf
 dev-util/clinfo				clango3.conf
 dev-util/directx-headers		clango3lto.conf
+dev-util/hipify-clang			clango3lto.conf
 dev-util/rocminfo			clango3.conf
 dev-util/spirv-llvm-translator		clango3lto.conf
+dev-util/vulkan-tools			clango3lto.conf
 games-emulation/cemu			clango3lto.conf
 games-emulation/dolphin			clango3lto.conf
 games-emulation/suyu			clango3lto.conf
 games-emulation/torzu			clango3lto.conf
 games-emulation/yuzu			clango3lto.conf
+games-fps/q2rtx				clango3lto.conf
 gui-apps/xwaylandvideobridge		clango3lto.conf
 kde*/*					clango3lto.conf
 kde-frameworks/breeze-icons		clango3.conf
@@ -56,6 +56,7 @@ media-libs/dav1d			o3.conf
 media-libs/embree			o2.conf
 media-libs/flac				o3.conf
 media-libs/gst-plugins-good		o3.conf
+#media-libs/mesa				clangdebug.conf
 media-libs/mesa				clango3lto.conf
 media-libs/x264				o3.conf
 media-video/ffmpeg			clango3lto.conf
@@ -67,6 +68,8 @@ net-libs/nodejs				clango3lto.conf
 net-libs/webkit-gtk			o3.conf
 net-p2p/ktorrent			clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
+sci-misc/llama-cpp			clango3lto.conf
+sci-ml/ollama				clango3lto.conf
 sys-apps/sandbox			o3.conf
 sys-apps/uutils-coreutils		clango3.conf
 sys-boot/gnu-efi			o3.conf
@@ -77,11 +80,6 @@ sys-libs/efivar				o3.conf
 sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
 www-client/chromium			clango3lto.conf
-games-fps/q2rtx				clango3lto.conf
-dev-util/vulkan-tools			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
-dev-util/hipify-clang			clango3lto.conf
-sci-ml/ollama				clango3lto.conf
-sci-misc/llama-cpp			clango3lto.conf
