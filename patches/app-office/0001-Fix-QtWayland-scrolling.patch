@@ -1,0 +1,289 @@
+From 4b7fd8ddee2dcb5e92f7c6afe8fad0c66c76b1ac Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 10 Oct 2025 05:50:16 +0100
+Subject: [PATCH] Fix QtWayland scrolling
+
+---
+ vcl/inc/qt5/QtWidget.hxx |  33 ++++++-----
+ vcl/qt5/QtWidget.cxx     | 117 +++++++++++++++++++++++++--------------
+ 2 files changed, 90 insertions(+), 60 deletions(-)
+
+diff --git a/vcl/inc/qt5/QtWidget.hxx b/vcl/inc/qt5/QtWidget.hxx
+index 9284cf401f2d..93121eee9808 100644
+--- a/vcl/inc/qt5/QtWidget.hxx
++++ b/vcl/inc/qt5/QtWidget.hxx
+@@ -20,9 +20,11 @@
+ #pragma once
+ 
+ #include <QtCore/QRect>
++#include <QtCore/QElapsedTimer>
+ #include <QtWidgets/QGestureEvent>
+ #include <QtWidgets/QWidget>
+ #include <rtl/ustring.hxx>
++#include <memory>
+ 
+ #include <com/sun/star/uno/Reference.hxx>
+ #include <com/sun/star/accessibility/XAccessibleEditableText.hpp>
+@@ -40,18 +42,14 @@ class QtWidget : public QWidget
+     bool m_bNonEmptyIMPreeditSeen;
+     mutable bool m_bInInputMethodQueryCursorRectangle;
+     mutable QRect m_aImCursorRectangle;
+-    int m_nDeltaX;
+-    int m_nDeltaY;
+-
+-    static void commitText(QtFrame&, const QString& aText);
+-    static void deleteReplacementText(QtFrame& rFrame, int nReplacementStart,
+-                                      int nReplacementLength);
+-    static bool handleGestureEvent(QtFrame& rFrame, QGestureEvent* pGestureEvent);
+-    static bool handleKeyEvent(QtFrame&, const QWidget&, QKeyEvent*);
+-    static void handleMouseEnterLeaveEvents(const QtFrame&, QEvent*);
+-    static void fillSalAbstractMouseEvent(const QtFrame& rFrame, const QInputEvent* pQEvent,
+-                                          const QPoint& rPos, Qt::MouseButtons eButtons, int nWidth,
+-                                          SalAbstractMouseEvent& aSalEvent);
++
++private Q_SLOTS:
++    void dispatchAccumulatedWheelEvent();
++
++private:
++    QPoint m_aAccumulatedWheelDelta;
++    QElapsedTimer m_wheelTimestamp;
++    static constexpr qint64 WHEEL_DISPATCH_INTERVAL = 16; // ms, for ~60 FPS
+ 
+     virtual bool event(QEvent*) override;
+ 
+@@ -83,7 +81,6 @@ class QtWidget : public QWidget
+ 
+     void inputMethodEvent(QInputMethodEvent*) override;
+     QVariant inputMethodQuery(Qt::InputMethodQuery) const override;
+-    static void closePopup();
+ 
+ public:
+     QtWidget(QtFrame& rFrame, Qt::WindowFlags f = Qt::WindowFlags());
+@@ -93,15 +90,17 @@ public:
+     void fakeResize();
+ 
+     static bool handleEvent(QtFrame&, QWidget&, QEvent*);
++    static bool handleKeyEvent(QtFrame& rFrame, QWidget& rWidget, QKeyEvent* pEvent);
+     // key events might be propagated further down => call base on false
+-    static inline bool handleKeyReleaseEvent(QtFrame&, const QWidget&, QKeyEvent*);
++    static inline bool handleKeyReleaseEvent(QtFrame& rFrame, QWidget& rWidget, QKeyEvent* pEvent);
+     // mouse events are always accepted
+-    static void handleMouseButtonEvent(const QtFrame&, const QMouseEvent*);
++    static void handleMouseButtonEvent(const QtFrame& rFrame, const QMouseEvent* pEvent);
++    static void closePopup();
+ };
+ 
+-bool QtWidget::handleKeyReleaseEvent(QtFrame& rFrame, const QWidget& rWidget, QKeyEvent* pEvent)
++inline bool QtWidget::handleKeyReleaseEvent(QtFrame& rFrame, QWidget& rWidget, QKeyEvent* pEvent)
+ {
+     return handleKeyEvent(rFrame, rWidget, pEvent);
+ }
+ 
+-/* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g0,N-s cinkeys+=0=break: */
++/* vim:set shiftwidth=4 softtabstop=4 expandtab cinoptions=b1,g.0,N-s cinkeys+=0=break: */
+diff --git a/vcl/qt5/QtWidget.cxx b/vcl/qt5/QtWidget.cxx
+index f6a932068ba2..1acb4db86bfb 100644
+--- a/vcl/qt5/QtWidget.cxx
++++ b/vcl/qt5/QtWidget.cxx
+@@ -63,19 +63,9 @@
+ 
+ using namespace com::sun::star;
+ 
+-void QtWidget::paintEvent(QPaintEvent* pEvent) { m_rFrame.handlePaintEvent(pEvent, this); }
+-
+-void QtWidget::resizeEvent(QResizeEvent* pEvent) { m_rFrame.handleResizeEvent(pEvent); }
+-
+-void QtWidget::fakeResize()
+-{
+-    QResizeEvent aEvent(size(), QSize());
+-    resizeEvent(&aEvent);
+-}
+-
+-void QtWidget::fillSalAbstractMouseEvent(const QtFrame& rFrame, const QInputEvent* pQEvent,
+-                                         const QPoint& rPos, Qt::MouseButtons eButtons, int nWidth,
+-                                         SalAbstractMouseEvent& aSalEvent)
++static void fillSalAbstractMouseEvent(const QtFrame& rFrame, const QInputEvent* pQEvent,
++                                          const QPoint& rPos, Qt::MouseButtons eButtons, int nWidth,
++                                          SalAbstractMouseEvent& aSalEvent)
+ {
+     const qreal fRatio = rFrame.devicePixelRatioF();
+     const Point aPos = toPoint(rPos * fRatio);
+@@ -89,6 +79,18 @@ void QtWidget::fillSalAbstractMouseEvent(const QtFrame& rFrame, const QInputEven
+ #define FILL_SAME(rFrame, nWidth)                                                                  \
+     fillSalAbstractMouseEvent(rFrame, pEvent, pEvent->pos(), pEvent->buttons(), nWidth, aEvent)
+ 
++
++void QtWidget::paintEvent(QPaintEvent* pEvent) { m_rFrame.handlePaintEvent(pEvent, this); }
++
++void QtWidget::resizeEvent(QResizeEvent* pEvent) { m_rFrame.handleResizeEvent(pEvent); }
++
++void QtWidget::fakeResize()
++{
++    QResizeEvent aEvent(size(), QSize());
++    resizeEvent(&aEvent);
++}
++
++
+ void QtWidget::handleMouseButtonEvent(const QtFrame& rFrame, const QMouseEvent* pEvent)
+ {
+     SalMouseEvent aEvent;
+@@ -131,14 +133,12 @@ void QtWidget::mouseMoveEvent(QMouseEvent* pEvent)
+ {
+     SalMouseEvent aEvent;
+     FILL_SAME(m_rFrame, width());
+-
+     aEvent.mnButton = 0;
+-
+     m_rFrame.CallCallback(SalEvent::MouseMove, &aEvent);
+     pEvent->accept();
+ }
+ 
+-void QtWidget::handleMouseEnterLeaveEvents(const QtFrame& rFrame, QEvent* pQEvent)
++static void handleMouseEnterLeaveEvents(const QtFrame& rFrame, QEvent* pQEvent)
+ {
+     const qreal fRatio = rFrame.devicePixelRatioF();
+     const QWidget* pWidget = rFrame.GetQWidget();
+@@ -175,40 +175,71 @@ void QtWidget::enterEvent(QEvent* pEvent)
+ 
+ void QtWidget::wheelEvent(QWheelEvent* pEvent)
+ {
+-    SalWheelMouseEvent aEvent;
+-    fillSalAbstractMouseEvent(m_rFrame, pEvent, pEvent->position().toPoint(), pEvent->buttons(),
+-                              width(), aEvent);
++    m_aAccumulatedWheelDelta += pEvent->angleDelta();
++    bool shouldDispatch = false;
+ 
+-    // mouse wheel ticks are 120, which we map to 3 lines.
+-    // we have to accumulate for touch scroll to keep track of the absolute delta.
++    Qt::ScrollPhase phase = pEvent->phase();
+ 
+-    int nDelta = pEvent->angleDelta().y(), lines;
+-    aEvent.mbHorz = nDelta == 0;
+-    if (aEvent.mbHorz)
++    if (phase == Qt::NoScrollPhase || phase == Qt::ScrollBegin || phase == Qt::ScrollEnd)
+     {
+-        nDelta = (QGuiApplication::isLeftToRight() ? 1 : -1) * pEvent->angleDelta().x();
+-        if (!nDelta)
+-            return;
++        shouldDispatch = true;
++    }
++    else if (phase == Qt::ScrollUpdate)
++    {
++        if (m_wheelTimestamp.elapsed() >= WHEEL_DISPATCH_INTERVAL)
++        {
++            shouldDispatch = true;
++        }
++    }
+ 
+-        m_nDeltaX += nDelta;
+-        lines = m_nDeltaX / 40;
+-        m_nDeltaX = m_nDeltaX % 40;
++    if (shouldDispatch)
++    {
++        dispatchAccumulatedWheelEvent();
++        m_wheelTimestamp.restart();
+     }
+-    else
++
++    pEvent->accept();
++}
++
++void QtWidget::dispatchAccumulatedWheelEvent()
++{
++    if (m_aAccumulatedWheelDelta.isNull())
++        return;
++
++    QPoint aDelta = m_aAccumulatedWheelDelta;
++    m_aAccumulatedWheelDelta = QPoint(0, 0);
++
++    SalWheelMouseEvent aEvent;
++    const qreal fRatio = m_rFrame.devicePixelRatioF();
++    const Point aPos = toPoint(mapFromGlobal(QCursor::pos()) * fRatio);
++
++    aEvent.mnX = QGuiApplication::isLeftToRight() ? aPos.X() : round(width() * fRatio) - aPos.X();
++    aEvent.mnY = aPos.Y();
++    aEvent.mnTime = 0;
++    aEvent.mnCode = GetKeyModCode(QGuiApplication::keyboardModifiers()) | GetMouseModCode(QGuiApplication::mouseButtons());
++
++    int nDelta = aDelta.y();
++    aEvent.mbHorz = (nDelta == 0);
++    if (aEvent.mbHorz)
+     {
+-        m_nDeltaY += nDelta;
+-        lines = m_nDeltaY / 40;
+-        m_nDeltaY = m_nDeltaY % 40;
++        nDelta = (QGuiApplication::isLeftToRight() ? 1 : -1) * aDelta.x();
++        if (nDelta == 0)
++            return;
+     }
+ 
++    int lines = nDelta / 40;
++
+     aEvent.mnDelta = nDelta;
+-    aEvent.mnNotchDelta = nDelta < 0 ? -1 : 1;
++    aEvent.mnNotchDelta = nDelta / 120;
+     aEvent.mnScrollLines = std::abs(lines);
+ 
+-    m_rFrame.CallCallback(SalEvent::WheelMouse, &aEvent);
+-    pEvent->accept();
++    if (aEvent.mnScrollLines != 0 || aDelta.y() != 0 || aDelta.x() != 0)
++    {
++        m_rFrame.CallCallback(SalEvent::WheelMouse, &aEvent);
++    }
+ }
+ 
++
+ void QtWidget::dragEnterEvent(QDragEnterEvent* event)
+ {
+     if (qobject_cast<const QtMimeData*>(event->mimeData()))
+@@ -414,7 +445,7 @@ static sal_uInt16 GetKeyCode(int keyval, Qt::KeyboardModifiers modifiers)
+     return nCode;
+ }
+ 
+-void QtWidget::commitText(QtFrame& rFrame, const QString& aText)
++static void commitText(QtFrame& rFrame, const QString& aText)
+ {
+     SalExtTextInputEvent aInputEvent;
+     aInputEvent.mpTextAttr = nullptr;
+@@ -429,7 +460,7 @@ void QtWidget::commitText(QtFrame& rFrame, const QString& aText)
+         rFrame.CallCallback(SalEvent::EndExtTextInput, nullptr);
+ }
+ 
+-void QtWidget::deleteReplacementText(QtFrame& rFrame, int nReplacementStart, int nReplacementLength)
++static void deleteReplacementText(QtFrame& rFrame, int nReplacementStart, int nReplacementLength)
+ {
+     // get the surrounding text
+     SolarMutexGuard aGuard;
+@@ -456,7 +487,7 @@ void QtWidget::deleteReplacementText(QtFrame& rFrame, int nReplacementStart, int
+     rFrame.CallCallback(SalEvent::DeleteSurroundingTextRequest, &aEvt);
+ }
+ 
+-bool QtWidget::handleGestureEvent(QtFrame& rFrame, QGestureEvent* pGestureEvent)
++static bool handleGestureEvent(QtFrame& rFrame, QGestureEvent* pGestureEvent)
+ {
+     if (QGesture* pGesture = pGestureEvent->gesture(Qt::PinchGesture))
+     {
+@@ -502,7 +533,7 @@ bool QtWidget::handleGestureEvent(QtFrame& rFrame, QGestureEvent* pGestureEvent)
+     return false;
+ }
+ 
+-bool QtWidget::handleKeyEvent(QtFrame& rFrame, const QWidget& rWidget, QKeyEvent* pEvent)
++bool QtWidget::handleKeyEvent(QtFrame& rFrame, QWidget& rWidget, QKeyEvent* pEvent)
+ {
+     const bool bIsKeyPressed
+         = pEvent->type() == QEvent::KeyPress || pEvent->type() == QEvent::ShortcutOverride;
+@@ -713,9 +744,9 @@ QtWidget::QtWidget(QtFrame& rFrame, Qt::WindowFlags f)
+     , m_rFrame(rFrame)
+     , m_bNonEmptyIMPreeditSeen(false)
+     , m_bInInputMethodQueryCursorRectangle(false)
+-    , m_nDeltaX(0)
+-    , m_nDeltaY(0)
+ {
++    m_wheelTimestamp.start();
++
+     setAttribute(Qt::WA_TranslucentBackground);
+     setAttribute(Qt::WA_OpaquePaintEvent);
+     setAttribute(Qt::WA_NoSystemBackground);
+-- 
+2.51.0
+

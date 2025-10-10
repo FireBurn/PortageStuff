@@ -1,0 +1,48 @@
+From b0014676cf155d3db2c18cce9015c9f9d872e2b7 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Fri, 10 Oct 2025 04:06:16 +0100
+Subject: [PATCH] Fix too request repaints in Wayland
+
+---
+ src/difftextwindow.cpp    | 4 ++--
+ src/mergeresultwindow.cpp | 2 +-
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/difftextwindow.cpp b/src/difftextwindow.cpp
+index e753125a..76c5190f 100644
+--- a/src/difftextwindow.cpp
++++ b/src/difftextwindow.cpp
+@@ -830,7 +830,7 @@ void DiffTextWindow::mouseMoveEvent(QMouseEvent* e)
+         {
+             d->m_scrollDeltaX = deltaX;
+             d->m_scrollDeltaY = deltaY;
+-            d->myUpdate(0);
++            d->myUpdate(16); // Throttle updates to ~60fps
+         }
+     }
+ }
+@@ -2042,7 +2042,7 @@ void DiffTextWindowFrame::setFirstLine(const LineRef firstLine)
+             s += u' ' + QString::number(topVisiableLine + 1);
+ 
+         m_pTopLine->setText(s);
+-        m_pTopLine->repaint();
++        m_pTopLine->update();
+     }
+ }
+ 
+diff --git a/src/mergeresultwindow.cpp b/src/mergeresultwindow.cpp
+index c75605cb..21bb442d 100644
+--- a/src/mergeresultwindow.cpp
++++ b/src/mergeresultwindow.cpp
+@@ -1864,7 +1864,7 @@ void MergeResultWindow::mouseMoveEvent(QMouseEvent* e)
+         if(!m_selection.isEmpty() && selectionWasEmpty)
+             Q_EMIT newSelection();
+ 
+-        myUpdate(0);
++        myUpdate(16); // Throttle updates to ~60fps
+ 
+         // Scroll because mouse moved out of the window
+         const QFontMetrics& fm = fontMetrics();
+-- 
+2.51.0
+
