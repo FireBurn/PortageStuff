@@ -1,0 +1,26 @@
+From 381947993b86789ce9f1c1e2128feed7ef739494 Mon Sep 17 00:00:00 2001
+From: David Rosca <david.rosca@amd.com>
+Date: Fri, 10 Oct 2025 16:13:14 +0200
+Subject: [PATCH] ac/surface: Limit video modifiers to 64K_S also for VCN 2.2
+
+Closes: https://gitlab.freedesktop.org/mesa/mesa/-/issues/14032
+---
+ src/amd/common/ac_surface.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/amd/common/ac_surface.c b/src/amd/common/ac_surface.c
+index 3e572083774b1..c75cbef791925 100644
+--- a/src/amd/common/ac_surface.c
++++ b/src/amd/common/ac_surface.c
+@@ -166,7 +166,7 @@ bool ac_modifier_supports_video(const struct radeon_info *info, uint64_t modifie
+          return false;
+ 
+       /* Only "S" swizzle modes supported */
+-      if (info->vcn_ip_version < VCN_2_2_0 &&
++      if (info->vcn_ip_version < VCN_3_0_0 &&
+           AMD_FMT_MOD_GET(TILE, modifier) != AMD_FMT_MOD_TILE_GFX9_64K_S)
+          return false;
+    }
+-- 
+GitLab
+
