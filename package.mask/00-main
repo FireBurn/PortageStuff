@@ -11,3 +11,4 @@ dev-java/icedtea:7
 =app-office/libreoffice-24.2.4.2-r1
 =dev-util/pkgconf-2.4.1
 =media-video/pipewire-1.4.3
+=dev-lang/rust-1.90.0-r1
