@@ -154,3 +154,8 @@ sci-ml/ollama				-unroll
 # required by @selected
 # required by @world (argument)
 >=dev-libs/lzo-2.10 abi_x86_32
+# required by kde-plasma/kscreen-6.5.0::kde
+# required by kde-plasma/plasma-meta-6.5.0::kde
+# required by @selected
+# required by @world (argument)
+>=kde-frameworks/kimageformats-6.19.0 avif
