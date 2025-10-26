@@ -159,3 +159,10 @@ sci-ml/ollama				-unroll
 # required by @selected
 # required by @world (argument)
 >=kde-frameworks/kimageformats-6.19.0 avif
+# required by sci-libs/blas-lapack-aux-wrapper-0-r1::gentoo
+# required by virtual/cblas-3.8-r1::gentoo[flexiblas]
+# required by dev-python/numpy-2.3.4::gentoo[lapack,-test]
+# required by sci-misc/llama-cpp-9999::FireBurn
+# required by @selected
+# required by @world (argument)
+>=sci-libs/lapack-3.12.1-r2 lapacke
