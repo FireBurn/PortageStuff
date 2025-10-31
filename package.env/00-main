@@ -85,3 +85,7 @@ www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
 app-text/doxygen			clango3lto.conf
+dev-libs/protobuf			o3.conf
+dev-cpp/abseil-cpp			o3.conf
+dev-libs/xrt				o3.conf
+dev-libs/xdna-driver			clango3lto.conf
