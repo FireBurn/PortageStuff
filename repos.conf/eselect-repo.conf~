@@ -5,15 +5,6 @@ location = /var/db/repos/x11
 sync-type = git
 sync-uri = https://github.com/gentoo-mirror/x11.git
 
-[steam-overlay]
-location = /var/db/repos/steam-overlay
-sync-type = git
-sync-uri = https://github.com/gentoo-mirror/steam-overlay.git
-
-[kde]
-location = /var/db/repos/kde
-sync-type = git
-sync-uri = https://github.com/gentoo-mirror/kde.git
 
 
 
@@ -21,20 +12,29 @@ sync-uri = https://github.com/gentoo-mirror/kde.git
 [crossdev]
 location = /var/db/repos/crossdev
 sync-type = git
-sync-uri = https://github.com/gentoo-mirror/crossdev.git
-
-[qt]
-location = /var/db/repos/qt
-sync-type = git
-sync-uri = https://github.com/gentoo-mirror/qt.git
-
+sync-uri = https://github.com/alphallc/crossdev.git
 
 [gamerlay]
 location = /var/db/repos/gamerlay
 sync-type = git
-sync-uri = https://github.com/gentoo-mirror/gamerlay.git
+sync-uri = https://anongit.gentoo.org/git/proj/gamerlay.git
 
 [guru]
 location = /var/db/repos/guru
 sync-type = git
 sync-uri = https://github.com/gentoo-mirror/guru.git
+
+[kde]
+location = /var/db/repos/kde
+sync-type = git
+sync-uri = https://anongit.gentoo.org/git/proj/kde.git
+
+[qt]
+location = /var/db/repos/qt
+sync-type = git
+sync-uri = https://anongit.gentoo.org/git/proj/qt.git
+
+[steam-overlay]
+location = /var/db/repos/steam-overlay
+sync-type = git
+sync-uri = https://github.com/anyc/steam-overlay.git
