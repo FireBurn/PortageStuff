@@ -1,0 +1,31 @@
+From 63a67da3cc99ed837294646f3c23d8f492995db1 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 4 Dec 2025 00:15:15 +0000
+Subject: [PATCH] Fix
+
+---
+ daemon/actions/bundled/handlebuttonevents.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/daemon/actions/bundled/handlebuttonevents.cpp b/daemon/actions/bundled/handlebuttonevents.cpp
+index 14f351d7..5df5f1b6 100644
+--- a/daemon/actions/bundled/handlebuttonevents.cpp
++++ b/daemon/actions/bundled/handlebuttonevents.cpp
+@@ -142,7 +142,13 @@ void HandleButtonEvents::onWakeupFromIdle()
+ void HandleButtonEvents::onLidClosedChanged(bool closed)
+ {
+     if (closed) {
+-        if (m_oldKeyboardBrightness.has_value()) {
++        const int currentBrightness = core()->keyboardBrightnessController()->brightness();
++
++        if (currentBrightness > 0) {
++            m_oldKeyboardBrightness = currentBrightness;
++        }
++
++        if (m_oldKeyboardBrightness.has_value() && m_oldKeyboardBrightness.value() > 0) {
+             core()->keyboardBrightnessController()->setBrightness(0);
+         }
+ 
+-- 
+2.52.0
+
