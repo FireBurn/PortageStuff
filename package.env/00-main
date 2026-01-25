@@ -79,9 +79,9 @@ x11-misc/sddm				clango3lto.conf
 net-wireless/wpa_supplicant		clango3lto.conf
 app-emulation/dxvk			clango3lto.conf
 app-emulation/vkd3d-proton		clango3lto.conf
-sys-libs/glibc				o3.conf
 dev-util/hipify-clang			clango3lto.conf
 dev-libs/rccl				clango3.conf
 sci-ml/ollama				clango3lto.conf
 sci-misc/llama-cpp			clango3lto.conf
 app-text/doxygen			clango3lto.conf
+sys-libs/glibc				o3.conf
