@@ -78,7 +78,6 @@ sys-boot/grub				o3.conf
 sys-devel/gcc				o3.conf
 sys-devel/llvm-roc			clango3.conf
 sys-libs/efivar				o3.conf
-sys-libs/glibc				o3.conf
 sys-libs/libfaketime			o3.conf
 www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
@@ -89,3 +88,4 @@ dev-libs/protobuf			o3.conf
 dev-cpp/abseil-cpp			o3.conf
 dev-libs/xrt				o3.conf
 dev-libs/xdna-driver			clango3lto.conf
+sys-devel/glibc				o3.conf
