@@ -9,3 +9,4 @@ app-emulation/vkd3d-proton		**
 <app-office/libreoffice-24.2.99		**
 <app-office/libreoffice-l10n-24.2.99	**
 #<www-client/chromium-9999		**
+media-libs/libsdl2			**
