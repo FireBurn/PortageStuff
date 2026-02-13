@@ -173,3 +173,9 @@ sci-ml/ollama				-unroll
 # required by llvm-runtimes/clang-runtime-21.1.5::gentoo[compiler-rt]
 # required by llvm-core/clang-common-21.1.5::gentoo
 >=virtual/zlib-1.3.1-r1 abi_x86_32
+# required by kde-frameworks/kdnssd-6.22.0-r1::gentoo
+# required by kde-apps/kio-extras-25.12.2::gentoo[samba]
+# required by kde-apps/dolphin-25.12.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=net-dns/avahi-0.9_rc3 mdnsresponder-compat
