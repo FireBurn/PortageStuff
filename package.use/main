@@ -124,6 +124,7 @@ dev-java/openjdk			-lto
 #=www-client/chromium-140.0.7312.0	bundled-toolchain
 dev-debug/gdb				-rocm
 sci-misc/llama-cpp			curl -openmp vulkan -hip
+sci-misc/llama-cpp-omni			curl -openmp vulkan -hip
 # required by sci-libs/blas-lapack-aux-wrapper-0-r1::gentoo
 # required by virtual/cblas-3.8-r1::gentoo[flexiblas]
 # required by dev-python/numpy-2.3.4::gentoo[lapack,-test]
