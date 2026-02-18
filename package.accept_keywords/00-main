@@ -10,3 +10,5 @@ app-emulation/vkd3d-proton		**
 #=cross-i686-w64-mingw32/binutils-9999 **
 #=cross-x86_64-w64-mingw32/binutils-9999 **
 media-libs/libsdl2			**
+=kde-plasma/kscreen-6.6.0		**
+=kde-plasma/plasma-login-manager-6.6.0	**
