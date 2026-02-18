@@ -10,3 +10,6 @@ app-emulation/vkd3d-proton		**
 <app-office/libreoffice-l10n-24.2.99	**
 #<www-client/chromium-9999		**
 media-libs/libsdl2			**
+=kde-plasma/kscreen-6.6.0		**
+=kde-plasma/plasma-login-manager-6.6.0	**
+
