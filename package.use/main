@@ -146,3 +146,8 @@ sci-misc/llama-cpp-omni			curl -openmp vulkan -hip
 # required by @selected
 # required by @world (argument)
 >=net-dns/avahi-0.9_rc3 mdnsresponder-compat
+# required by net-fs/samba-4.23.5-r1::gentoo
+# required by app-emulation/wine-staging-11.3::gentoo[samba]
+# required by @selected
+# required by @world (argument)
+>=net-libs/ngtcp2-1.20.0-r1 gnutls
