@@ -75,3 +75,4 @@ x11-libs/libdrm			abi_x86_32
 x11-libs/libxcb			abi_x86_32
 x11-libs/libxshmfence		abi_x86_32
 x11-libs/xcb-util-keysyms	abi_x86_32
+media-libs/libdisplay-info	abi_x86_32
