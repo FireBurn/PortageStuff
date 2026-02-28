@@ -1,0 +1,21 @@
+--- /dev/null
++++ b/external/skia/clang22-builtins.patch.1
+@@ -0,0 +1,20 @@
++--- a/modules/skcms/src/Transform_inl.h
+++++ b/modules/skcms/src/Transform_inl.h
++@@ -157,3 +157,3 @@
++ #if defined(__clang__)
++-    return __builtin_ia32_vcvtph2ps256((I16)half);
+++    return _mm256_cvtph_ps((__m128i)half);
++ #elif defined(__GNUC__)
++@@ -172,3 +172,3 @@
++ #if defined(__clang__)
++-    return (U16)__builtin_ia32_vcvtps2ph256(f, 0x04);
+++    return (U16)_mm256_cvtps_ph((__m256)f, 0x04);
++ #elif defined(__GNUC__)
+--- a/external/skia/UnpackedTarball_skia.mk
++++ b/external/skia/UnpackedTarball_skia.mk
+@@ -35,2 +35,3 @@
+ 	external/skia/skia-missing-standard-include.patch.1 \
++	external/skia/clang22-builtins.patch.1 \
+ ))
