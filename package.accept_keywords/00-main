@@ -12,3 +12,4 @@ app-emulation/vkd3d-proton		**
 media-libs/libsdl2			**
 =kde-plasma/kscreen-6.6.0		**
 =kde-plasma/plasma-login-manager-6.6.0	**
+media-libs/zxing-cpp			**
