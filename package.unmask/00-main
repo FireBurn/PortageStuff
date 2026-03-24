@@ -23,3 +23,5 @@ dev-util/hip
 dev-util/hipcc
 <app-office/libreoffice-9999
 <app-office/libreoffice-l10n-9999
+dev-libs/libixion
+dev-libs/liborcus
