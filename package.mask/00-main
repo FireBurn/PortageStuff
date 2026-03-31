@@ -10,5 +10,3 @@ dev-java/icedtea:7
 =dev-util/pkgconf-2.4.1
 =media-video/pipewire-1.4.3
 =dev-lang/rust-1.90.0-r1
-=cross-i686-w64-mingw32/mingw64-runtime-14.0.0
-=cross-x86_64-w64-mingw32/mingw64-runtime-14.0.0
