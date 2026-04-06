@@ -89,3 +89,4 @@ dev-cpp/abseil-cpp			o3.conf
 dev-libs/xrt				o3.conf
 dev-libs/xdna-driver			clango3lto.conf
 sys-devel/glibc				o3.conf
+dev-util/DirectXShaderCompiler		clango3lto.conf
