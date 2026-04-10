@@ -38,7 +38,7 @@ media-libs/libpulse		abi_x86_32
 media-libs/libsndfile		abi_x86_32
 media-libs/libva		abi_x86_32
 media-libs/libvorbis		abi_x86_32
-media-libs/mesa			abi_x86_32
+#media-libs/mesa			abi_x86_32
 media-libs/opus			abi_x86_32
 media-libs/vulkan-layers	abi_x86_32
 media-libs/vulkan-loader	abi_x86_32
