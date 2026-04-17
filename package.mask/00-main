@@ -4,7 +4,7 @@ dev-java/icedtea:7
 =dev-lang/python-3.10*
 =dev-lang/python-3.11*
 =dev-lang/python-3.12*
-=dev-lang/python-3.14*
+=dev-lang/python-3.15*
 =dev-build/ninja-1.12.0
 =app-office/libreoffice-24.2.4.2-r1
 =dev-util/pkgconf-2.4.1
