@@ -1,0 +1,37 @@
+From ac1474d3521c7816a212e2f590bd3ffaa33242a7 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 4 May 2026 17:55:24 +0100
+Subject: [PATCH] Unfix the fix
+
+---
+ .../rust/chromium_crates_io/vendor/bytemuck-v1/src/pod.rs        | 1 -
+ .../rust/chromium_crates_io/vendor/bytemuck-v1/src/zeroable.rs   | 1 -
+ 2 files changed, 2 deletions(-)
+
+diff --git a/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/pod.rs b/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/pod.rs
+index e8597f1..393aaee 100644
+--- a/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/pod.rs
++++ b/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/pod.rs
+@@ -152,7 +152,6 @@ impl_unsafe_marker_for_simd!(
+ unsafe impl<T, const N: usize> Pod for core::simd::Simd<T, N>
+ where
+   T: core::simd::SimdElement + Pod,
+-  core::simd::LaneCount<N>: core::simd::SupportedLaneCount,
+ {
+ }
+ 
+diff --git a/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/zeroable.rs b/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/zeroable.rs
+index f3f9ef7..a6e5825 100644
+--- a/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/zeroable.rs
++++ b/third_party/rust/chromium_crates_io/vendor/bytemuck-v1/src/zeroable.rs
+@@ -231,7 +231,6 @@ impl_unsafe_marker_for_simd!(
+ unsafe impl<T, const N: usize> Zeroable for core::simd::Simd<T, N>
+ where
+   T: core::simd::SimdElement + Zeroable,
+-  core::simd::LaneCount<N>: core::simd::SupportedLaneCount,
+ {
+ }
+ 
+-- 
+2.54.0
+
