@@ -1,0 +1,96 @@
+From dbd7e2925ebdb0d6d0cb81961f9aff6ee6d710df Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 29 Jun 2026 01:06:14 +0100
+Subject: [PATCH] wayland/outputmanagement_v2: reject configs that overlap
+ outputs
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+kde_output_configuration_v2_apply() already validates per-output invariants
+(self-mirror, custom modes, sane positions) but never checks the resulting
+multi-output layout. A client that changes only an output's mode without also
+sending new positions — e.g. kscreen-doctor doing output.X.mode.N — can enlarge
+an output so it overlaps its neighbour. kwin applies it as-is (it only normalizes
+the top-left corner to 0,0, never re-packs), so the desktop ends up with two
+outputs occupying the same region and windows/panels drawn across both until the
+layout is reset by hand.
+
+This is easy to hit with DisplayLink docks: their monitors re-enumerate (dock
+power-cycle / hotplug) and can come up at a different mode than the stored layout
+assumed, turning a previously valid arrangement into an overlapping one.
+
+Enforce non-overlap at apply time, mirroring the existing validation style: build
+each enabled output's resulting logical rect (new mode size mapped by transform,
+divided by scale, at its resulting position) and refuse the config if any two
+intersect. Edge-adjacent (touching) outputs are fine — QRect's inclusive
+right()/bottom() mean butted-together outputs don't intersect — so normal
+side-by-side layouts are unaffected; only genuinely overlapping ones are rejected.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/wayland/outputmanagement_v2.cpp | 41 +++++++++++++++++++++++++++++
+ 1 file changed, 41 insertions(+)
+
+diff --git a/src/wayland/outputmanagement_v2.cpp b/src/wayland/outputmanagement_v2.cpp
+index c56eeda43c..c021e3f97a 100644
+--- a/src/wayland/outputmanagement_v2.cpp
++++ b/src/wayland/outputmanagement_v2.cpp
+@@ -18,6 +18,7 @@
+ #include "qwayland-server-kde-output-management-v2.h"
+ 
+ #include <KLocalizedString>
++#include <QRect>
+ #include <cmath>
+ #include <optional>
+ 
+@@ -707,6 +708,46 @@ void OutputConfigurationV2Interface::kde_output_configuration_v2_apply(Resource
+         }
+     }
+ 
++    // Reject configurations that would make two enabled outputs overlap. A well-behaved client
++    // (e.g. the System Settings display module) always sends non-overlapping positions, but a
++    // client that changes only an output's mode without repositioning (e.g. kscreen-doctor) can
++    // enlarge an output so it overlaps its neighbour, leaving the desktop with windows and panels
++    // drawn across both screens until the layout is reset. This is especially easy to hit with
++    // DisplayLink docks, whose monitors can re-enumerate at a different mode than the stored layout
++    // assumed. Overlapping outputs are neither supported nor expected, so refuse the configuration
++    // rather than apply a broken layout. Edge-adjacent (touching) outputs do not count as
++    // overlapping: QRect treats right()/bottom() as inclusive, so two outputs butted together
++    // (e.g. at x and x+width) do not intersect.
++    const auto isEnabled = [](const std::shared_ptr<OutputChangeSet> &changeset, BackendOutput *output) {
++        return changeset && changeset->enabled.has_value() ? *changeset->enabled : output->isEnabled();
++    };
++    const auto resultingGeometry = [](const std::shared_ptr<OutputChangeSet> &changeset, BackendOutput *output) -> QRect {
++        const QSize modeSize = changeset && changeset->currentMode ? changeset->currentMode->size() : output->modeSize();
++        const auto transform = changeset && changeset->transform ? *changeset->transform : output->transform();
++        const QSize pixelSize = transform.map(modeSize);
++        const double scale = changeset && changeset->scale ? *changeset->scale : output->scale();
++        const QSize logicalSize(std::ceil(pixelSize.width() / scale), std::ceil(pixelSize.height() / scale));
++        const QPoint pos = changeset && changeset->pos ? *changeset->pos : output->position();
++        return QRect(pos, logicalSize);
++    };
++    for (auto it = allOutputs.begin(); it != allOutputs.end(); ++it) {
++        const auto aChange = config.constChangeSet(*it);
++        if (!isEnabled(aChange, *it)) {
++            continue;
++        }
++        const QRect aGeom = resultingGeometry(aChange, *it);
++        for (auto jt = std::next(it); jt != allOutputs.end(); ++jt) {
++            const auto bChange = config.constChangeSet(*jt);
++            if (!isEnabled(bChange, *jt)) {
++                continue;
++            }
++            if (aGeom.intersects(resultingGeometry(bChange, *jt))) {
++                sendFailure(resource, i18n("Outputs %1 and %2 would overlap", (*it)->name(), (*jt)->name()));
++                return;
++            }
++        }
++    }
++
+     config.source = OutputConfiguration::Source::User;
+     switch (workspace()->applyOutputConfiguration(config)) {
+     case OutputConfigurationError::None:
+-- 
+2.54.0
+

@@ -1,0 +1,57 @@
+From b80e206d4de6678797c13f1ec4d7cb8b5f5f7922 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 28 Jun 2026 20:16:09 +0100
+Subject: [PATCH] core/output: never let an output mirror itself
+
+OutputConfigurationV2Interface::kde_output_configuration_v2_apply() rejects any
+client config that sets an output's replicationSource to its own uuid ("%1
+cannot mirror itself"). That guard only covers configs coming in over the
+protocol, but the invalid state is also reachable internally.
+
+When two displays share the same EDID and have each been connected to more than
+one connector over time, OutputConfigurationStore matches a display to a stored
+output state by EDID hash and assigns it that state's uuid. After a hotplug
+(e.g. a dock power-cycle) a display can be re-matched to a uuid that a still
+present, previously valid replicationSource points at. The mirror relationship
+that was legal when it was stored (source uuid != own uuid) silently becomes a
+self-reference once the uuid is reassigned.
+
+Because applyChanges() commits this directly to the BackendOutput, it never
+passes through the apply guard. The output is then reported to clients as
+mirroring itself, and every subsequent client config that echoes the state back
+is rejected, leaving the output permanently un-configurable until the stored
+config is wiped. This reproduces reliably with dual-head DisplayLink docks
+(identical EDIDs, connectors swap on re-enumeration).
+
+Enforce the invariant at the single point where output state is applied: if the
+resulting replicationSource equals the output's own uuid, drop it so the output
+falls back to a normal (non-mirrored) configuration.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+---
+ src/core/backendoutput.cpp | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/src/core/backendoutput.cpp b/src/core/backendoutput.cpp
+index 1bca7fdd71..dc929567fa 100644
+--- a/src/core/backendoutput.cpp
++++ b/src/core/backendoutput.cpp
+@@ -355,6 +355,15 @@ void BackendOutput::applyChanges(const OutputConfiguration &config)
+     next.desiredMode = props->desiredMode.value_or(m_state.desiredMode);
+     next.uuid = props->uuid.value_or(m_state.uuid);
+     next.replicationSource = props->replicationSource.value_or(m_state.replicationSource);
++    // An output can never mirror itself. This invalid state is reachable without going
++    // through the kde_output_configuration_v2 apply guard: when two displays with the same
++    // EDID have been used on multiple connectors, a hotplug can re-match a display to its
++    // historical uuid which then equals a previously-stored replicationSource, turning a
++    // once-valid mirror into a self-reference. Drop it so the output stays usable (otherwise
++    // every later client config that echoes it back is rejected as "cannot mirror itself").
++    if (next.replicationSource == next.uuid) {
++        next.replicationSource.clear();
++    }
+     next.priority = props->priority.value_or(m_state.priority);
+     next.deviceOffset = props->deviceOffset.value_or(m_state.deviceOffset);
+ 
+-- 
+2.54.0
+
