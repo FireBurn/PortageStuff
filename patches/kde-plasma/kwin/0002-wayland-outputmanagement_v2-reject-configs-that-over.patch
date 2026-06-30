@@ -1,16 +1,13 @@
-From dbd7e2925ebdb0d6d0cb81961f9aff6ee6d710df Mon Sep 17 00:00:00 2001
+From ae1cfbdafc7dc8c23aa382c27f2305527c177f42 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
-Date: Mon, 29 Jun 2026 01:06:14 +0100
-Subject: [PATCH] wayland/outputmanagement_v2: reject configs that overlap
+Date: Mon, 29 Jun 2026 16:42:14 +0100
+Subject: [PATCH 2/2] wayland/outputmanagement_v2: reject configs that overlap
  outputs
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
 
 kde_output_configuration_v2_apply() already validates per-output invariants
 (self-mirror, custom modes, sane positions) but never checks the resulting
 multi-output layout. A client that changes only an output's mode without also
-sending new positions — e.g. kscreen-doctor doing output.X.mode.N — can enlarge
+sending new positions -- e.g. kscreen-doctor doing output.X.mode.N -- can enlarge
 an output so it overlaps its neighbour. kwin applies it as-is (it only normalizes
 the top-left corner to 0,0, never re-packs), so the desktop ends up with two
 outputs occupying the same region and windows/panels drawn across both until the
@@ -23,11 +20,11 @@ assumed, turning a previously valid arrangement into an overlapping one.
 Enforce non-overlap at apply time, mirroring the existing validation style: build
 each enabled output's resulting logical rect (new mode size mapped by transform,
 divided by scale, at its resulting position) and refuse the config if any two
-intersect. Edge-adjacent (touching) outputs are fine — QRect's inclusive
-right()/bottom() mean butted-together outputs don't intersect — so normal
+intersect. Edge-adjacent (touching) outputs are fine -- QRect's inclusive
+right()/bottom() mean butted-together outputs don't intersect -- so normal
 side-by-side layouts are unaffected; only genuinely overlapping ones are rejected.
 
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>
 ---
  src/wayland/outputmanagement_v2.cpp | 41 +++++++++++++++++++++++++++++
  1 file changed, 41 insertions(+)

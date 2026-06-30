@@ -1,0 +1,72 @@
+From 0d686360843c409ab26518c4a130e1ffc280da2d Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 29 Jun 2026 16:42:01 +0100
+Subject: [PATCH 1/2] core/outputconfigurationstore: drop a runtime self-mirror
+ in applyMirroring
+
+An output can never mirror itself: kde_output_configuration_v2_apply() already
+rejects a client config whose replicationSource is the output's own uuid ("%1
+cannot mirror itself"). The json reader likewise refuses to load a stored
+self-reference. But the same invalid state is reachable at runtime, with a
+perfectly clean stored config, and nothing repairs it there.
+
+Outputs that share an EDID are told apart only by connector name
+(findOutputIndex() falls through to the name once the EDID identifier, EDID hash
+and MST path all fail to disambiguate). DisplayLink docks expose exactly this:
+two identical monitors, no MST path, and connectors that re-enumerate (rename,
+and reappear one at a time) across a dock power-cycle. The connector-name -> uuid
+binding is therefore unstable. At the same time a mirroring output keeps its
+replicationSource in runtime state after its source output disappears -- there is
+no cleanup, and applyQueuedChanges() preserves it via value_or(). When a connector
+rename then re-matches that output to the stored identity whose uuid equals its
+stale replicationSource, the output is mirroring itself.
+
+This never reaches disk (the json reader drops it), so it cannot be cleared by
+editing the stored config. It lives purely in the compositor's running state, and
+because apply() rejects the whole configuration, kscreen -- which rebuilds every
+config from the current, wedged state -- has every apply rejected in turn. All
+outputs become unconfigurable until the session is restarted. It is easy to hit
+with dual-head DisplayLink docks (identical EDIDs, connectors swap on
+re-enumeration).
+
+Enforce the invariant where every backend's generated configuration is assembled:
+in applyMirroring(), if an output's resulting replicationSource equals its own
+resulting uuid, clear it so the output falls back to a normal, non-mirrored
+configuration. Set it explicitly to an empty string rather than leaving the change
+unset, so a stale self-reference already on the output is actually overwritten
+when the configuration is applied.
+
+Signed-off-by: Mike Lothian <mike@fireburn.co.uk>
+---
+ src/outputconfigurationstore.cpp | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/outputconfigurationstore.cpp b/src/outputconfigurationstore.cpp
+index 9322314c8b..4fcf241650 100644
+--- a/src/outputconfigurationstore.cpp
++++ b/src/outputconfigurationstore.cpp
+@@ -137,6 +137,21 @@ void OutputConfigurationStore::applyMirroring(OutputConfiguration &config, const
+     }) | std::ranges::to<QList>();
+     for (BackendOutput *output : enabledOutputs) {
+         auto cfg = config.changeSet(output);
++        // An output can never mirror itself, but that invalid state is reachable at runtime even
++        // when the stored configuration is clean. Outputs that share an EDID (e.g. two identical
++        // monitors on a DisplayLink dock) are told apart only by connector name, which DisplayLink
++        // reshuffles across a dock power-cycle; combined with a replicationSource that is not
++        // cleared when its source output disappears, an output can end up re-matched to the very
++        // uuid its (stale) replicationSource points at. The json reader already drops such a
++        // self-reference on load; enforce the same invariant here, at the single point every
++        // backend's generated configuration passes through. Set it explicitly to an empty string
++        // rather than leaving it unset, so the stale value on the output is actually overwritten.
++        // Without this the self-mirror is committed and re-advertised, and every subsequent client
++        // configuration echoing it back is rejected ("cannot mirror itself"), leaving all outputs
++        // unconfigurable until the session is restarted.
++        if (cfg->replicationSource.value_or(output->replicationSource()) == cfg->uuid.value_or(output->uuid())) {
++            cfg->replicationSource = QString();
++        }
+         const auto srcIt = std::ranges::find_if(enabledOutputs, [&cfg, &config, output](BackendOutput *other) {
+             if (output == other) {
+                 return false;
+-- 
+2.54.0
+
