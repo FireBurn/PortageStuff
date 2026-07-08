@@ -185,3 +185,10 @@ sci-ml/ollama				-unroll
 # required by @world (argument)
 >=net-libs/ngtcp2-1.20.0-r1 gnutls
 gui-apps/sddm-gentoo-config weston
+# required by gui-apps/sddm-gentoo-config-0::gentoo[weston]
+# required by x11-misc/sddm-0.21.0_p20251101::gentoo
+# required by kde-plasma/sddm-kcm-6.7.2::gentoo
+# required by kde-plasma/plasma-meta-6.7.2::gentoo[display-manager,sddm]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/weston-15.0.92 kiosk
