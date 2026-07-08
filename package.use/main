@@ -151,3 +151,4 @@ sci-misc/llama-cpp-omni			curl -openmp vulkan -hip
 # required by @selected
 # required by @world (argument)
 >=net-libs/ngtcp2-1.20.0-r1 gnutls
+gui-apps/sddm-gentoo-config		weston
