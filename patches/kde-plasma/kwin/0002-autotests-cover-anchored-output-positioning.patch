@@ -1,0 +1,222 @@
+From cf7dee0469d5d7f59fbb0bb0ae56aee982a1437b Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Tue, 7 Jul 2026 00:19:57 +0100
+Subject: [PATCH 2/3] autotests: cover anchored output positioning
+
+Covers: two touching outputs following each other across a mode change
+and a live scale change (the latter going through
+Workspace::applyOutputConfiguration directly, without a reconnect - this
+is the path a KCM scale slider actually takes); a three-output transitive
+chain; two outputs that are deliberately not touching staying independent;
+and an anchor's target output being unplugged without crashing or getting
+stuck.
+---
+ autotests/integration/outputchanges_test.cpp | 185 +++++++++++++++++++
+ 1 file changed, 185 insertions(+)
+
+diff --git a/autotests/integration/outputchanges_test.cpp b/autotests/integration/outputchanges_test.cpp
+index 4565e909a2..9cfcc642b4 100644
+--- a/autotests/integration/outputchanges_test.cpp
++++ b/autotests/integration/outputchanges_test.cpp
+@@ -133,6 +133,11 @@ private Q_SLOTS:
+     void testGenerateConfigs_data();
+     void testGenerateConfigs();
+     void testGeneratePartialConfigs();
++    void testAnchoredPositionRecomputedOnModeChange();
++    void testAnchoredPositionRecomputedOnScaleChange();
++    void testAnchoredPositionTransitiveChain();
++    void testAnchoredPositionUnaffectedWhenNotTouching();
++    void testAnchoredPositionSurvivesTargetUnplug();
+     void testAutorotate_data();
+     void testAutorotate();
+     void testSettingRestoration_data();
+@@ -1669,6 +1674,186 @@ void OutputChangesTest::testGeneratePartialConfigs()
+     QCOMPARE(outputs[2]->priority(), 2);
+ }
+ 
++void OutputChangesTest::testAnchoredPositionRecomputedOnModeChange()
++{
++    // Two outputs placed touching (the default side-by-side layout already has their top
++    // corners touching) should keep that corner touching when the left output's mode changes,
++    // instead of leaving the right output at its old absolute position with a gap.
++    const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorModeChange-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorModeChange-2"),
++        },
++    });
++    auto outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[0]->position(), QPoint(0, 0));
++    QCOMPARE(outputs[1]->position(), QPoint(1920, 0));
++
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1280, 1024),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorModeChange-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorModeChange-2"),
++        },
++    });
++    outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[0]->position(), QPoint(0, 0));
++    QCOMPARE(outputs[1]->position(), QPoint(1280, 0));
++}
++
++void OutputChangesTest::testAnchoredPositionRecomputedOnScaleChange()
++{
++    // Same idea as testAnchoredPositionRecomputedOnModeChange, but the scale is changed directly
++    // through an explicit OutputConfiguration (the way the display KCM's scale slider does),
++    // without the output ever being unplugged. This is the path that a live "one monitor's scale
++    // changed" event actually takes, and doesn't go through queryConfig()/generateConfig() at all.
++    const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(3840, 2160),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorScaleChange-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorScaleChange-2"),
++        },
++    });
++    auto outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[0]->position(), QPoint(0, 0));
++    QCOMPARE(outputs[1]->position(), QPoint(3840, 0));
++
++    OutputConfiguration config;
++    *config.changeSet(outputs[0]) = OutputChangeSet{
++        .scaleSetting = 2,
++    };
++    QCOMPARE(workspace()->applyOutputConfiguration(config), OutputConfigurationError::None);
++
++    outputs = kwinApp()->outputBackend()->outputs();
++    // output 0's logical width halved (3840 / 2); output 1 wasn't mentioned in "config" at all,
++    // but should still have moved to keep its left edge against output 0's new right edge.
++    QCOMPARE(outputs[1]->position(), QPoint(1920, 0));
++}
++
++void OutputChangesTest::testAnchoredPositionTransitiveChain()
++{
++    // output 2 is anchored to output 1, which is anchored to output 0: resizing output 0 should
++    // ripple through both.
++    const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorChain-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorChain-2"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorChain-3"),
++        },
++    });
++    auto outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[0]->position(), QPoint(0, 0));
++    QCOMPARE(outputs[1]->position(), QPoint(1920, 0));
++    QCOMPARE(outputs[2]->position(), QPoint(3840, 0));
++
++    OutputConfiguration config;
++    *config.changeSet(outputs[0]) = OutputChangeSet{
++        .scaleSetting = 2,
++    };
++    QCOMPARE(workspace()->applyOutputConfiguration(config), OutputConfigurationError::None);
++
++    outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[1]->position(), QPoint(960, 0));
++    QCOMPARE(outputs[2]->position(), QPoint(2880, 0));
++}
++
++void OutputChangesTest::testAnchoredPositionUnaffectedWhenNotTouching()
++{
++    // Control test: two outputs that are deliberately NOT touching must not be linked by an
++    // anchor at all, so resizing one must never move the other.
++    const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorGap-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorGap-2"),
++        },
++    });
++    auto outputs = kwinApp()->outputBackend()->outputs();
++
++    OutputConfiguration setupConfig;
++    *setupConfig.changeSet(outputs[1]) = OutputChangeSet{
++        .pos = QPoint(9000, 9000),
++    };
++    QCOMPARE(workspace()->applyOutputConfiguration(setupConfig), OutputConfigurationError::None);
++    outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[1]->position(), QPoint(9000, 9000));
++
++    OutputConfiguration scaleConfig;
++    *scaleConfig.changeSet(outputs[0]) = OutputChangeSet{
++        .scaleSetting = 2,
++    };
++    QCOMPARE(workspace()->applyOutputConfiguration(scaleConfig), OutputConfigurationError::None);
++    outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[1]->position(), QPoint(9000, 9000));
++}
++
++void OutputChangesTest::testAnchoredPositionSurvivesTargetUnplug()
++{
++    // Unplugging an anchor's target output must not crash and must leave the dependent output
++    // at its last known position, instead of getting stuck trying to resolve a dangling anchor.
++    const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorUnplug-1"),
++        },
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorUnplug-2"),
++        },
++    });
++    auto outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs[1]->position(), QPoint(1920, 0));
++
++    outputBackend->setVirtualOutputs({
++        VirtualBackend::OutputInfo{
++            .size = QSize(1920, 1080),
++            .edid = readEdid(QFINDTESTDATA("data/Odyssey G5.bin")),
++            .edidIdentifierOverride = QByteArrayLiteral("AnchorUnplug-2"),
++        },
++    });
++    outputs = kwinApp()->outputBackend()->outputs();
++    QCOMPARE(outputs.size(), 1);
++    QCOMPARE(outputs[0]->position(), QPoint(1920, 0));
++}
++
+ void OutputChangesTest::testAutorotate_data()
+ {
+     QTest::addColumn<OutputTransform::Kind>("panelOrientation");
+-- 
+2.55.0
+

@@ -1,0 +1,716 @@
+From e958587fae10e7d42dc4efea84d1b833038306e7 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Tue, 7 Jul 2026 00:13:37 +0100
+Subject: [PATCH 1/3] outputconfigurationstore: keep touching outputs touching
+ across mode/scale changes
+
+Output positions are stored as independent absolute pixel coordinates, so
+when one output's mode or scale changes, nothing recomputes any other
+output's position. An arrangement where e.g. two monitors' top corners
+were deliberately placed touching drifts into a gap or an overlap the
+moment either output's effective size changes.
+
+Detect when outputs are touching (corner-to-corner, edge-centered, or with
+a deliberate residual offset) each time a Setup is stored, and record that
+relationship instead of only the absolute position. When building an
+OutputConfiguration from stored state (setupToConfig, generateConfig), or
+when a caller hands us one directly (Workspace::applyOutputConfiguration,
+which is what a live scale/mode change from the KCM or an application
+actually goes through), re-derive any anchored output's position from its
+target's current position and size rather than reusing the stale stored
+value.
+
+The anchor is inferred from whatever arrangement is already in place -
+there's no new UI for it - and is additive to the stored config format, so
+existing kwinoutputconfig.json files keep loading exactly as before.
+---
+ src/outputconfigurationstore.cpp | 525 +++++++++++++++++++++++++++++++
+ src/outputconfigurationstore.h   |  46 +++
+ src/workspace.cpp                |   1 +
+ 3 files changed, 572 insertions(+)
+
+diff --git a/src/outputconfigurationstore.cpp b/src/outputconfigurationstore.cpp
+index 2f6a76caf4..dd6c0d2c90 100644
+--- a/src/outputconfigurationstore.cpp
++++ b/src/outputconfigurationstore.cpp
+@@ -23,6 +23,10 @@
+ #include <QJsonArray>
+ #include <QJsonDocument>
+ #include <QJsonObject>
++#include <array>
++#include <functional>
++#include <limits>
++#include <numeric>
+ #include <ranges>
+ 
+ namespace KWin
+@@ -115,6 +119,139 @@ static QSize calculatePixelSize(OutputChangeSet *change, BackendOutput *output)
+     return transform.map(modeSize);
+ }
+ 
++// The logical (i.e. post-scale) size of an output, as it would end up after applying "change".
++// Used for anchor point math, where positions are always in logical coordinates.
++static QSize effectiveLogicalSize(OutputChangeSet *change, BackendOutput *output)
++{
++    const QSize pixelSize = calculatePixelSize(change, output);
++    const double scale = change->scale.value_or(change->scaleSetting.value_or(output->scale()));
++    if (scale <= 0) {
++        return pixelSize;
++    }
++    return QSize(std::ceil(pixelSize.width() / scale), std::ceil(pixelSize.height() / scale));
++}
++
++namespace
++{
++
++using AnchorEdge = OutputConfigurationStore::AnchorEdge;
++using OutputAnchor = OutputConfigurationStore::OutputAnchor;
++
++// The offset of an AnchorEdge point from an output's top-left corner, for a given logical size.
++QPoint anchorEdgeOffset(AnchorEdge edge, const QSize &size)
++{
++    switch (edge) {
++    case AnchorEdge::TopLeft:
++        return QPoint(0, 0);
++    case AnchorEdge::TopCenter:
++        return QPoint(size.width() / 2, 0);
++    case AnchorEdge::TopRight:
++        return QPoint(size.width(), 0);
++    case AnchorEdge::LeftCenter:
++        return QPoint(0, size.height() / 2);
++    case AnchorEdge::RightCenter:
++        return QPoint(size.width(), size.height() / 2);
++    case AnchorEdge::BottomLeft:
++        return QPoint(0, size.height());
++    case AnchorEdge::BottomCenter:
++        return QPoint(size.width() / 2, size.height());
++    case AnchorEdge::BottomRight:
++        return QPoint(size.width(), size.height());
++    }
++    Q_UNREACHABLE();
++}
++
++QPoint anchorEdgeCoordinate(AnchorEdge edge, const QPoint &pos, const QSize &size)
++{
++    return pos + anchorEdgeOffset(edge, size);
++}
++
++QPoint topLeftFromAnchorPoint(AnchorEdge edge, const QPoint &coordinate, const QSize &size)
++{
++    return coordinate - anchorEdgeOffset(edge, size);
++}
++
++constexpr int s_anchorEpsilon = 2;
++
++struct AnchorEdgePair
++{
++    AnchorEdge selfEdge;
++    AnchorEdge targetEdge;
++};
++
++// If "self" is touching "target" (within s_anchorEpsilon) on one of its four sides, returns the
++// anchor describing self's position relative to target, choosing whichever of the three
++// alignment variants for that side (corner/corner, center/center, or the opposite corner pair)
++// leaves the smallest residual offset. That residual is the deliberate "offset" a user's
++// arrangement might have (e.g. two side-by-side monitors that aren't top-aligned).
++std::optional<OutputAnchor> detectPairAnchor(const QPoint &selfPos, const QSize &selfSize,
++                                             const QPoint &targetPos, const QSize &targetSize,
++                                             size_t targetOutputIndex)
++{
++    if (selfSize.isEmpty() || targetSize.isEmpty()) {
++        return std::nullopt;
++    }
++    const int selfRight = selfPos.x() + selfSize.width();
++    const int selfBottom = selfPos.y() + selfSize.height();
++    const int targetRight = targetPos.x() + targetSize.width();
++    const int targetBottom = targetPos.y() + targetSize.height();
++
++    static const std::array<AnchorEdgePair, 3> s_selfRightOfTarget{{
++        {AnchorEdge::TopLeft, AnchorEdge::TopRight},
++        {AnchorEdge::LeftCenter, AnchorEdge::RightCenter},
++        {AnchorEdge::BottomLeft, AnchorEdge::BottomRight},
++    }};
++    static const std::array<AnchorEdgePair, 3> s_selfLeftOfTarget{{
++        {AnchorEdge::TopRight, AnchorEdge::TopLeft},
++        {AnchorEdge::RightCenter, AnchorEdge::LeftCenter},
++        {AnchorEdge::BottomRight, AnchorEdge::BottomLeft},
++    }};
++    static const std::array<AnchorEdgePair, 3> s_selfBelowTarget{{
++        {AnchorEdge::TopLeft, AnchorEdge::BottomLeft},
++        {AnchorEdge::TopCenter, AnchorEdge::BottomCenter},
++        {AnchorEdge::TopRight, AnchorEdge::BottomRight},
++    }};
++    static const std::array<AnchorEdgePair, 3> s_selfAboveTarget{{
++        {AnchorEdge::BottomLeft, AnchorEdge::TopLeft},
++        {AnchorEdge::BottomCenter, AnchorEdge::TopCenter},
++        {AnchorEdge::BottomRight, AnchorEdge::TopRight},
++    }};
++
++    const std::array<AnchorEdgePair, 3> *variants = nullptr;
++    if (std::abs(selfPos.x() - targetRight) <= s_anchorEpsilon) {
++        variants = &s_selfRightOfTarget;
++    } else if (std::abs(selfRight - targetPos.x()) <= s_anchorEpsilon) {
++        variants = &s_selfLeftOfTarget;
++    } else if (std::abs(selfPos.y() - targetBottom) <= s_anchorEpsilon) {
++        variants = &s_selfBelowTarget;
++    } else if (std::abs(selfBottom - targetPos.y()) <= s_anchorEpsilon) {
++        variants = &s_selfAboveTarget;
++    } else {
++        return std::nullopt;
++    }
++
++    std::optional<OutputAnchor> best;
++    int bestMagnitude = std::numeric_limits<int>::max();
++    for (const auto &variant : *variants) {
++        const QPoint selfCoord = anchorEdgeCoordinate(variant.selfEdge, selfPos, selfSize);
++        const QPoint targetCoord = anchorEdgeCoordinate(variant.targetEdge, targetPos, targetSize);
++        const QPoint offset = selfCoord - targetCoord;
++        const int magnitude = std::abs(offset.x()) + std::abs(offset.y());
++        if (magnitude < bestMagnitude) {
++            bestMagnitude = magnitude;
++            best = OutputAnchor{
++                .targetOutputIndex = targetOutputIndex,
++                .selfPoint = variant.selfEdge,
++                .targetPoint = variant.targetEdge,
++                .offset = offset,
++            };
++        }
++    }
++    return best;
++}
++
++}
++
+ static double mirrorScale(QSize srcPixelSize, double srcScale, QSize dstPixelSize)
+ {
+     const double wScale = dstPixelSize.width() / double(srcPixelSize.width());
+@@ -377,9 +514,167 @@ void OutputConfigurationStore::storeConfig(const QList<BackendOutput *> &allOutp
+             .replicationSource = output->replicationSource(),
+         };
+     }
++    detectAnchors(*setup);
+     save();
+ }
+ 
++QSize OutputConfigurationStore::outputLogicalSize(const OutputState &state) const
++{
++    if (!state.mode) {
++        return QSize();
++    }
++    const QSize modeSize = state.mode->size();
++    const auto transform = state.transform.value_or(OutputTransform::Kind::Normal);
++    const QSize pixelSize = transform.map(modeSize);
++    const double scale = state.scaleSetting.value_or(1.0);
++    if (scale <= 0) {
++        return pixelSize;
++    }
++    return QSize(std::ceil(pixelSize.width() / scale), std::ceil(pixelSize.height() / scale));
++}
++
++void OutputConfigurationStore::detectAnchors(Setup &setup) const
++{
++    struct Node
++    {
++        size_t stateIndex; // index into setup.outputs
++        QPoint position;
++        QSize size;
++    };
++    QList<Node> nodes;
++    for (size_t i = 0; i < size_t(setup.outputs.size()); i++) {
++        SetupState &state = setup.outputs[i];
++        state.anchor.reset();
++        if (!state.enabled || state.outputIndex >= size_t(m_outputs.size())) {
++            continue;
++        }
++        const QSize size = outputLogicalSize(m_outputs[state.outputIndex]);
++        if (size.isEmpty()) {
++            continue;
++        }
++        nodes.push_back(Node{.stateIndex = i, .position = state.position, .size = size});
++    }
++    if (nodes.size() < 2) {
++        return;
++    }
++
++    // for every touching pair, each side's own anchor (used if the OTHER side ends up being
++    // its parent in the tree built below)
++    QList<QList<std::pair<size_t, OutputAnchor>>> neighbours(nodes.size());
++    for (size_t i = 0; i < size_t(nodes.size()); i++) {
++        for (size_t j = i + 1; j < size_t(nodes.size()); j++) {
++            const auto anchorIfJIsParent = detectPairAnchor(nodes[i].position, nodes[i].size, nodes[j].position, nodes[j].size, setup.outputs[nodes[j].stateIndex].outputIndex);
++            const auto anchorIfIIsParent = detectPairAnchor(nodes[j].position, nodes[j].size, nodes[i].position, nodes[i].size, setup.outputs[nodes[i].stateIndex].outputIndex);
++            if (anchorIfJIsParent && anchorIfIIsParent) {
++                neighbours[i].push_back({j, *anchorIfJIsParent});
++                neighbours[j].push_back({i, *anchorIfIIsParent});
++            }
++        }
++    }
++
++    // process components in top-left-most-first order, so the result is deterministic and the
++    // most top-left output of each connected group of touching outputs becomes its root
++    QList<size_t> order(nodes.size());
++    std::iota(order.begin(), order.end(), 0);
++    std::ranges::sort(order, [&nodes](size_t a, size_t b) {
++        return std::make_tuple(nodes[a].position.x(), nodes[a].position.y()) < std::make_tuple(nodes[b].position.x(), nodes[b].position.y());
++    });
++
++    QList<bool> visited(nodes.size(), false);
++    for (const size_t start : order) {
++        if (visited[start]) {
++            continue;
++        }
++        visited[start] = true;
++        QList<size_t> queue{start};
++        while (!queue.isEmpty()) {
++            const size_t current = queue.takeFirst();
++            for (const auto &[neighbourIdx, anchorIfParent] : neighbours[current]) {
++                if (visited[neighbourIdx]) {
++                    continue;
++                }
++                visited[neighbourIdx] = true;
++                setup.outputs[nodes[neighbourIdx].stateIndex].anchor = anchorIfParent;
++                queue.push_back(neighbourIdx);
++            }
++        }
++    }
++}
++
++void OutputConfigurationStore::resolveAnchoredPositions(OutputConfiguration &config, const QList<BackendOutput *> &outputs, bool isLidClosed)
++{
++    const auto opt = findSetup(outputs, isLidClosed);
++    if (!opt) {
++        // no exact match for the currently connected outputs -> nothing stored to anchor from
++        return;
++    }
++    resolveAnchoredPositions(config, opt->setup->outputs, opt->globalOutputIndices, /* onlyIfPosUnset= */ true);
++}
++
++void OutputConfigurationStore::resolveAnchoredPositions(OutputConfiguration &config, const QList<SetupState> &knownStates, const std::unordered_map<BackendOutput *, size_t> &outputMap, bool onlyIfPosUnset) const
++{
++    if (knownStates.isEmpty()) {
++        return;
++    }
++    std::unordered_map<size_t, BackendOutput *> byIndex;
++    byIndex.reserve(outputMap.size());
++    for (const auto &[output, index] : outputMap) {
++        byIndex[index] = output;
++    }
++
++    QList<bool> resolved(knownStates.size(), false);
++    for (int i = 0; i < knownStates.size(); i++) {
++        const auto &anchor = knownStates[i].anchor;
++        const auto selfIt = byIndex.find(knownStates[i].outputIndex);
++        if (!anchor || !byIndex.contains(anchor->targetOutputIndex)) {
++            resolved[i] = true;
++        } else if (onlyIfPosUnset && selfIt != byIndex.end()) {
++            const auto existing = config.constChangeSet(selfIt->second);
++            if (existing && existing->pos.has_value()) {
++                resolved[i] = true;
++            }
++        }
++    }
++
++    bool progress = true;
++    for (int pass = 0; progress && pass <= knownStates.size(); pass++) {
++        progress = false;
++        for (int i = 0; i < knownStates.size(); i++) {
++            if (resolved[i]) {
++                continue;
++            }
++            const SetupState &state = knownStates[i];
++            const int targetLocalIndex = std::find_if(knownStates.begin(), knownStates.end(), [&state](const SetupState &other) {
++                return other.outputIndex == state.anchor->targetOutputIndex;
++            }) - knownStates.begin();
++            if (targetLocalIndex >= knownStates.size() || !resolved[targetLocalIndex]) {
++                continue;
++            }
++            const auto selfIt = byIndex.find(state.outputIndex);
++            if (selfIt == byIndex.end()) {
++                resolved[i] = true;
++                progress = true;
++                continue;
++            }
++            BackendOutput *const selfOutput = selfIt->second;
++            BackendOutput *const targetOutput = byIndex.at(state.anchor->targetOutputIndex);
++            const auto targetChangeset = config.changeSet(targetOutput);
++            const QPoint targetPos = targetChangeset->pos.value_or(targetOutput->position());
++            const QSize targetSize = effectiveLogicalSize(targetChangeset.get(), targetOutput);
++            const auto selfChangeset = config.changeSet(selfOutput);
++            const QSize selfSize = effectiveLogicalSize(selfChangeset.get(), selfOutput);
++            const QPoint targetCoord = anchorEdgeCoordinate(state.anchor->targetPoint, targetPos, targetSize);
++            const QPoint selfCoord = targetCoord + state.anchor->offset;
++            selfChangeset->pos = topLeftFromAnchorPoint(state.anchor->selfPoint, selfCoord, selfSize);
++            resolved[i] = true;
++            progress = true;
++        }
++    }
++    if (!std::ranges::all_of(resolved, std::identity{})) {
++        qCDebug(KWIN_OUTPUT_CONFIG, "Could not resolve every anchored output position (cycle in stored config?); leaving the affected outputs at their previous position");
++    }
++}
++
+ OutputConfiguration OutputConfigurationStore::setupToConfig(Setup *setup, const std::unordered_map<BackendOutput *, size_t> &outputMap) const
+ {
+     OutputConfiguration ret;
+@@ -469,6 +764,7 @@ OutputConfiguration OutputConfigurationStore::setupToConfig(Setup *setup, const
+             .abmLevel = state.abmLevel,
+         };
+     }
++    resolveAnchoredPositions(ret, setup->outputs, outputMap);
+     return ret;
+ }
+ 
+@@ -710,6 +1006,9 @@ OutputConfiguration OutputConfigurationStore::generateConfig(const QList<Backend
+             }
+         }
+     }
++    if (closestSetup.has_value()) {
++        resolveAnchoredPositions(ret, closestSetup->setup->outputs, closestSetup->globalOutputIndices);
++    }
+     return ret;
+ }
+ 
+@@ -910,6 +1209,203 @@ static QString profileSourceToString(BackendOutput::ColorProfileSource source)
+     Q_UNREACHABLE();
+ }
+ 
++static QString anchorEdgeToString(OutputConfigurationStore::AnchorEdge edge)
++{
++    switch (edge) {
++    case OutputConfigurationStore::AnchorEdge::TopLeft:
++        return QStringLiteral("topLeft");
++    case OutputConfigurationStore::AnchorEdge::TopCenter:
++        return QStringLiteral("topCenter");
++    case OutputConfigurationStore::AnchorEdge::TopRight:
++        return QStringLiteral("topRight");
++    case OutputConfigurationStore::AnchorEdge::LeftCenter:
++        return QStringLiteral("leftCenter");
++    case OutputConfigurationStore::AnchorEdge::RightCenter:
++        return QStringLiteral("rightCenter");
++    case OutputConfigurationStore::AnchorEdge::BottomLeft:
++        return QStringLiteral("bottomLeft");
++    case OutputConfigurationStore::AnchorEdge::BottomCenter:
++        return QStringLiteral("bottomCenter");
++    case OutputConfigurationStore::AnchorEdge::BottomRight:
++        return QStringLiteral("bottomRight");
++    }
++    Q_UNREACHABLE();
++}
++
++static std::optional<OutputConfigurationStore::AnchorEdge> anchorEdgeFromString(const QString &str)
++{
++    using AnchorEdge = OutputConfigurationStore::AnchorEdge;
++    if (str == "topLeft") {
++        return AnchorEdge::TopLeft;
++    } else if (str == "topCenter") {
++        return AnchorEdge::TopCenter;
++    } else if (str == "topRight") {
++        return AnchorEdge::TopRight;
++    } else if (str == "leftCenter") {
++        return AnchorEdge::LeftCenter;
++    } else if (str == "rightCenter") {
++        return AnchorEdge::RightCenter;
++    } else if (str == "bottomLeft") {
++        return AnchorEdge::BottomLeft;
++    } else if (str == "bottomCenter") {
++        return AnchorEdge::BottomCenter;
++    } else if (str == "bottomRight") {
++        return AnchorEdge::BottomRight;
++    }
++    return std::nullopt;
++}
++
++static std::optional<LegacyOutputModeline> readLegacyMode(const QJsonObject &object)
++{
++    const int width = object["width"].toInt(0);
++    if (width <= 0) {
++        return std::nullopt;
++    }
++
++    const int height = object["height"].toInt(0);
++    if (height <= 0) {
++        return std::nullopt;
++    }
++
++    const int refreshRate = object["refreshRate"].toInt(0);
++    if (refreshRate <= 0) {
++        return std::nullopt;
++    }
++
++    const auto flags = OutputModeline::Flags(object["flags"].toInt(0));
++
++    return LegacyOutputModeline{
++        .size = QSize(width, height),
++        .refreshRate = uint32_t(refreshRate),
++        .flags = flags,
++    };
++}
++
++static QJsonObject saveLegacyMode(const LegacyOutputModeline &modeline)
++{
++    QJsonObject mode;
++    mode["width"] = modeline.size.width();
++    mode["height"] = modeline.size.height();
++    mode["refreshRate"] = int(modeline.refreshRate);
++    mode["flags"] = int(modeline.flags);
++    return mode;
++}
++
++static std::optional<OutputModeline> readLegacyCustomMode(const QJsonObject &object)
++{
++    const int width = object["width"].toInt(0);
++    if (width <= 0) {
++        return std::nullopt;
++    }
++
++    const int height = object["height"].toInt(0);
++    if (height <= 0) {
++        return std::nullopt;
++    }
++
++    const int refreshRate = object["refreshRate"].toInt(0);
++    if (refreshRate <= 0) {
++        return std::nullopt;
++    }
++
++    const auto flags = OutputModeline::Flags(object["flags"].toInt(0));
++    return OutputModeline(CvtModeline::generate(QSize(width, height), refreshRate, flags & OutputModeline::Flag::ReducedBlanking), flags);
++}
++
++static std::optional<OutputModeline> readMode(const QJsonObject &object)
++{
++    const auto modeFlags = OutputModeline::Flags(object["flags"].toInt(0));
++
++    if (const QJsonObject cvt = object["cvt"].toObject(); !cvt.isEmpty()) {
++        const int clock = cvt["clock"].toInt();
++        if (clock <= 0) {
++            return std::nullopt;
++        }
++
++        const int hdisplay = cvt["hdisplay"].toInt();
++        const int hsyncStart = cvt["hsyncStart"].toInt();
++        const int hsyncEnd = cvt["hsyncEnd"].toInt();
++        const int htotal = cvt["htotal"].toInt();
++        const int hskew = cvt["hskew"].toInt();
++        const int vdisplay = cvt["vdisplay"].toInt();
++        const int vsyncStart = cvt["vsyncStart"].toInt();
++        const int vsyncEnd = cvt["vsyncEnd"].toInt();
++        const int vtotal = cvt["vtotal"].toInt();
++        const int vscan = cvt["vscan"].toInt();
++        const int flags = cvt["flags"].toInt();
++
++        return OutputModeline(CvtModeline{
++                                  .clock = uint32_t(clock),
++                                  .hdisplay = uint16_t(hdisplay),
++                                  .hsyncStart = uint16_t(hsyncStart),
++                                  .hsyncEnd = uint16_t(hsyncEnd),
++                                  .htotal = uint16_t(htotal),
++                                  .hskew = uint16_t(hskew),
++                                  .vdisplay = uint16_t(vdisplay),
++                                  .vsyncStart = uint16_t(vsyncStart),
++                                  .vsyncEnd = uint16_t(vsyncEnd),
++                                  .vtotal = uint16_t(vtotal),
++                                  .vscan = uint16_t(vscan),
++                                  .flags = uint32_t(flags),
++                              },
++                              modeFlags);
++    } else if (const QJsonObject basic = object["basic"].toObject(); !basic.isEmpty()) {
++        const int width = basic["width"].toInt();
++        if (width <= 0) {
++            return std::nullopt;
++        }
++
++        const int height = basic["height"].toInt();
++        if (height <= 0) {
++            return std::nullopt;
++        }
++
++        const int refreshRate = basic["refreshRate"].toInt();
++        if (refreshRate <= 0) {
++            return std::nullopt;
++        }
++
++        return OutputModeline(BasicModeline{
++                                  .size = QSize(width, height),
++                                  .refreshRate = uint32_t(refreshRate),
++                              },
++                              modeFlags);
++    }
++
++    return std::nullopt;
++}
++
++static QJsonObject saveMode(const OutputModeline &modeline)
++{
++    QJsonObject object;
++    object["flags"] = QJsonValue(int(modeline.flags()));
++
++    if (const auto cvt = modeline.cvt()) {
++        object["cvt"] = QJsonObject({
++            {QStringLiteral("clock"), QJsonValue(int(cvt->clock))},
++            {QStringLiteral("hdisplay"), QJsonValue(int(cvt->hdisplay))},
++            {QStringLiteral("hsyncStart"), QJsonValue(int(cvt->hsyncStart))},
++            {QStringLiteral("hsyncEnd"), QJsonValue(int(cvt->hsyncEnd))},
++            {QStringLiteral("htotal"), QJsonValue(int(cvt->htotal))},
++            {QStringLiteral("hskew"), QJsonValue(int(cvt->hskew))},
++            {QStringLiteral("vdisplay"), QJsonValue(int(cvt->vdisplay))},
++            {QStringLiteral("vsyncStart"), QJsonValue(int(cvt->vsyncStart))},
++            {QStringLiteral("vsyncEnd"), QJsonValue(int(cvt->vsyncEnd))},
++            {QStringLiteral("vtotal"), QJsonValue(int(cvt->vtotal))},
++            {QStringLiteral("vscan"), QJsonValue(int(cvt->vscan))},
++            {QStringLiteral("flags"), QJsonValue(int(cvt->flags))},
++        });
++    } else if (const auto basic = modeline.basic()) {
++        object["basic"] = QJsonObject({
++            {QStringLiteral("width"), QJsonValue(int(basic->size.width()))},
++            {QStringLiteral("height"), QJsonValue(int(basic->size.height()))},
++            {QStringLiteral("refreshRate"), QJsonValue(int(basic->refreshRate))},
++        });
++    }
++
++    return object;
++}
++
+ void OutputConfigurationStore::load()
+ {
+     const QString jsonPath = QStandardPaths::locate(QStandardPaths::ConfigLocation, QStringLiteral("kwinoutputconfig.json"));
+@@ -1254,6 +1750,23 @@ void OutputConfigurationStore::load()
+                     state.replicationSource = replicationSource;
+                 }
+             }
++            if (const auto it = outputData.find("anchor"); it != outputData.end() && it->isObject()) {
++                const auto obj = it->toObject();
++                const int targetIndex = obj["targetOutputIndex"].toInt(-1);
++                const auto selfPoint = anchorEdgeFromString(obj["selfPoint"].toString());
++                const auto targetPoint = anchorEdgeFromString(obj["targetPoint"].toString());
++                if (targetIndex >= 0 && size_t(targetIndex) < outputDatas.size() && outputDatas[targetIndex].has_value()
++                    && size_t(targetIndex) != state.outputIndex && selfPoint && targetPoint) {
++                    state.anchor = OutputAnchor{
++                        .targetOutputIndex = size_t(targetIndex),
++                        .selfPoint = *selfPoint,
++                        .targetPoint = *targetPoint,
++                        .offset = QPoint(obj["offsetX"].toInt(0), obj["offsetY"].toInt(0)),
++                    };
++                } else {
++                    qCWarning(KWIN_OUTPUT_CONFIG, "Ignoring malformed anchor data for an output in the config file");
++                }
++            }
+             setup.outputs.push_back(state);
+         }
+         if (fail || setup.outputs.empty()) {
+@@ -1300,6 +1813,9 @@ void OutputConfigurationStore::load()
+                     if (output.outputIndex > i) {
+                         output.outputIndex--;
+                     }
++                    if (output.anchor && output.anchor->targetOutputIndex > i) {
++                        output.anchor->targetOutputIndex--;
++                    }
+                 }
+                 setupIt++;
+             }
+@@ -1519,6 +2035,15 @@ void OutputConfigurationStore::save()
+             pos["y"] = output.position.y();
+             o["position"] = pos;
+             o["replicationSource"] = output.replicationSource;
++            if (output.anchor) {
++                QJsonObject anchor;
++                anchor["targetOutputIndex"] = int(output.anchor->targetOutputIndex);
++                anchor["selfPoint"] = anchorEdgeToString(output.anchor->selfPoint);
++                anchor["targetPoint"] = anchorEdgeToString(output.anchor->targetPoint);
++                anchor["offsetX"] = output.anchor->offset.x();
++                anchor["offsetY"] = output.anchor->offset.y();
++                o["anchor"] = anchor;
++            }
+ 
+             outputs.append(o);
+         }
+diff --git a/src/outputconfigurationstore.h b/src/outputconfigurationstore.h
+index bc337eeaed..c347a0095a 100644
+--- a/src/outputconfigurationstore.h
++++ b/src/outputconfigurationstore.h
+@@ -36,10 +36,41 @@ public:
+         Preexisting,
+         Generated,
+     };
++
++    // A point on an output's logical rectangle that can be used to describe how it's
++    // anchored to another output, e.g. "my top left corner" or "my left edge, centered".
++    enum class AnchorEdge {
++        TopLeft,
++        TopCenter,
++        TopRight,
++        LeftCenter,
++        RightCenter,
++        BottomLeft,
++        BottomCenter,
++        BottomRight,
++    };
++    // Describes an output's position relative to another output, instead of as an absolute
++    // pixel coordinate: self.point(selfPoint) == target.point(targetPoint) + offset.
++    // This lets a deliberate arrangement (e.g. "our top corners touch") survive the target
++    // output changing mode or scale, instead of leaving a stale absolute position behind.
++    struct OutputAnchor
++    {
++        size_t targetOutputIndex;
++        AnchorEdge selfPoint;
++        AnchorEdge targetPoint;
++        QPoint offset;
++    };
++
+     std::optional<std::pair<OutputConfiguration, ConfigType>> queryConfig(const QList<BackendOutput *> &outputs, bool isLidClosed, AccelerometerOrientation orientation, bool isTabletMode);
+     void storeConfig(const QList<BackendOutput *> &allOutputs, bool isLidClosed);
+ 
+     void applyMirroring(OutputConfiguration &config, const QList<BackendOutput *> &outputs);
++    // Fills in the position of any output in "config" that's anchored to another output and
++    // doesn't already have an explicit position set, based on the stored arrangement. This is
++    // what keeps e.g. two monitors' touching corners together when a caller (KCM, kscreen-doctor,
++    // an app requesting a mode change, ...) changes one output's mode or scale directly, without
++    // going through queryConfig() first.
++    void resolveAnchoredPositions(OutputConfiguration &config, const QList<BackendOutput *> &outputs, bool isLidClosed);
+     bool isAutoRotateActive(const QList<BackendOutput *> &outputs, bool isTabletMode) const;
+     bool isAutoBrightnessActive(const QList<BackendOutput *> &outputs) const;
+ 
+@@ -101,6 +132,9 @@ private:
+         bool enabled;
+         int priority;
+         QString replicationSource;
++        // set when this output's position was inferred to be anchored to another
++        // output in the same Setup, instead of being an independent absolute position
++        std::optional<OutputAnchor> anchor;
+     };
+     struct Setup
+     {
+@@ -119,6 +153,18 @@ private:
+     std::optional<SetupWithOutputs> findPartialSetup(const QList<BackendOutput *> &outputs, bool lidClosed);
+     std::optional<size_t> findOutputIndex(BackendOutput *output, const QList<BackendOutput *> &allOutputs) const;
+ 
++    // Computes each output's logical (post-transform, post-scale) size from its stored state,
++    // for anchor point math. Returns an empty size if the mode is unknown.
++    QSize outputLogicalSize(const OutputState &state) const;
++    // (Re-)detects which outputs in this Setup are anchored to one another, based on their
++    // current positions and sizes, and writes the result into each SetupState::anchor.
++    void detectAnchors(Setup &setup) const;
++    // Overwrites config's positions for any output in knownStates that has an anchor, deriving
++    // its position from its (already-resolved) anchor target instead of using the stale stored
++    // absolute position. If onlyIfPosUnset is true, an output that already has an explicit
++    // position in "config" is left untouched instead of being overwritten.
++    void resolveAnchoredPositions(OutputConfiguration &config, const QList<SetupState> &knownStates, const std::unordered_map<BackendOutput *, size_t> &outputMap, bool onlyIfPosUnset = false) const;
++
+     QList<OutputState> m_outputs;
+     QList<Setup> m_setups;
+ };
+diff --git a/src/workspace.cpp b/src/workspace.cpp
+index 126ae379cb..575fb8ee49 100644
+--- a/src/workspace.cpp
++++ b/src/workspace.cpp
+@@ -534,6 +534,7 @@ OutputConfigurationError Workspace::applyOutputConfiguration(OutputConfiguration
+             config.changeSet(output)->dpmsMode = BackendOutput::DpmsMode::On;
+         }
+     }
++    m_outputConfigStore->resolveAnchoredPositions(config, backendOutputs, m_lidSwitchTracker->isLidClosed());
+     auto error = kwinApp()->outputBackend()->applyOutputChanges(config);
+     if (error != OutputConfigurationError::None) {
+         return error;
+-- 
+2.55.0
+

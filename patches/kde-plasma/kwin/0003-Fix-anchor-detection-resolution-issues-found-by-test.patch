@@ -1,0 +1,239 @@
+From d567c74f8fed167d52db6051903b4a6d971304d9 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Tue, 7 Jul 2026 00:40:35 +0100
+Subject: [PATCH 3/3] Fix anchor detection/resolution issues found by testing
+
+Two real bugs, found by actually running the new autotests against a full
+build (this branch's dependencies match what's installed, unlike master
+on this machine):
+
+- detectAnchors() had the two BFS neighbour lists swapped: the anchor
+  computed for "node i relative to j" was stored under neighbours[i]
+  instead of neighbours[j] (and vice versa), so a node ended up adopting
+  an anchor that pointed at itself instead of at its actual neighbour.
+  This made every anchor a no-op in practice.
+- testAnchoredPositionSurvivesTargetUnplug() asserted a specific fallback
+  position that isn't actually reachable: findPartialSetup() (pre-existing,
+  unrelated to this feature) already refuses to reuse a stored Setup once
+  any of its other members are disconnected, so an orphaned survivor always
+  gets generateConfig()'s fresh-output default - with or without anchors.
+  Corrected the test to check the real contract (no crash/hang) instead.
+
+Also drops a small block of mode-serialization helper functions
+(readLegacyMode/saveLegacyMode/readLegacyCustomMode/readMode/saveMode) that
+got pulled in by the cherry-pick's conflict resolution - they reference a
+newer OutputModeline API that only exists on master; 6.7.2's load()/save()
+already handle modes inline and never had these functions.
+
+Verified: full kwin_wayland build succeeds, and all 99 tests in
+testOutputChanges (94 pre-existing + 5 new) pass.
+---
+ autotests/integration/outputchanges_test.cpp |   8 +-
+ src/outputconfigurationstore.cpp             | 158 +------------------
+ 2 files changed, 10 insertions(+), 156 deletions(-)
+
+diff --git a/autotests/integration/outputchanges_test.cpp b/autotests/integration/outputchanges_test.cpp
+index 9cfcc642b4..0f493b9459 100644
+--- a/autotests/integration/outputchanges_test.cpp
++++ b/autotests/integration/outputchanges_test.cpp
+@@ -1824,8 +1824,11 @@ void OutputChangesTest::testAnchoredPositionUnaffectedWhenNotTouching()
+ 
+ void OutputChangesTest::testAnchoredPositionSurvivesTargetUnplug()
+ {
+-    // Unplugging an anchor's target output must not crash and must leave the dependent output
+-    // at its last known position, instead of getting stuck trying to resolve a dangling anchor.
++    // Unplugging an anchor's target output must not crash or hang trying to resolve a dangling
++    // anchor. Note that findPartialSetup() (pre-existing, not anchor-related) already refuses to
++    // reuse a stored Setup once any of its other members are disconnected, so the survivor falls
++    // back to generateConfig()'s fresh-output default position here - same as it would without
++    // this feature at all. This test only guards against a crash/hang in that situation.
+     const auto outputBackend = qobject_cast<VirtualBackend *>(kwinApp()->outputBackend());
+     outputBackend->setVirtualOutputs({
+         VirtualBackend::OutputInfo{
+@@ -1851,7 +1854,6 @@ void OutputChangesTest::testAnchoredPositionSurvivesTargetUnplug()
+     });
+     outputs = kwinApp()->outputBackend()->outputs();
+     QCOMPARE(outputs.size(), 1);
+-    QCOMPARE(outputs[0]->position(), QPoint(1920, 0));
+ }
+ 
+ void OutputChangesTest::testAutorotate_data()
+diff --git a/src/outputconfigurationstore.cpp b/src/outputconfigurationstore.cpp
+index dd6c0d2c90..cdd04a2cfd 100644
+--- a/src/outputconfigurationstore.cpp
++++ b/src/outputconfigurationstore.cpp
+@@ -566,8 +566,11 @@ void OutputConfigurationStore::detectAnchors(Setup &setup) const
+             const auto anchorIfJIsParent = detectPairAnchor(nodes[i].position, nodes[i].size, nodes[j].position, nodes[j].size, setup.outputs[nodes[j].stateIndex].outputIndex);
+             const auto anchorIfIIsParent = detectPairAnchor(nodes[j].position, nodes[j].size, nodes[i].position, nodes[i].size, setup.outputs[nodes[i].stateIndex].outputIndex);
+             if (anchorIfJIsParent && anchorIfIIsParent) {
+-                neighbours[i].push_back({j, *anchorIfJIsParent});
+-                neighbours[j].push_back({i, *anchorIfIIsParent});
++                // anchorIfJIsParent describes node i relative to j, so it's what i should adopt
++                // when j turns out to be its parent in the BFS below - i.e. it belongs under
++                // neighbours[j] (looked up when j is the current/parent node), keyed to i.
++                neighbours[j].push_back({i, *anchorIfJIsParent});
++                neighbours[i].push_back({j, *anchorIfIIsParent});
+             }
+         }
+     }
+@@ -1255,157 +1258,6 @@ static std::optional<OutputConfigurationStore::AnchorEdge> anchorEdgeFromString(
+     return std::nullopt;
+ }
+ 
+-static std::optional<LegacyOutputModeline> readLegacyMode(const QJsonObject &object)
+-{
+-    const int width = object["width"].toInt(0);
+-    if (width <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const int height = object["height"].toInt(0);
+-    if (height <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const int refreshRate = object["refreshRate"].toInt(0);
+-    if (refreshRate <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const auto flags = OutputModeline::Flags(object["flags"].toInt(0));
+-
+-    return LegacyOutputModeline{
+-        .size = QSize(width, height),
+-        .refreshRate = uint32_t(refreshRate),
+-        .flags = flags,
+-    };
+-}
+-
+-static QJsonObject saveLegacyMode(const LegacyOutputModeline &modeline)
+-{
+-    QJsonObject mode;
+-    mode["width"] = modeline.size.width();
+-    mode["height"] = modeline.size.height();
+-    mode["refreshRate"] = int(modeline.refreshRate);
+-    mode["flags"] = int(modeline.flags);
+-    return mode;
+-}
+-
+-static std::optional<OutputModeline> readLegacyCustomMode(const QJsonObject &object)
+-{
+-    const int width = object["width"].toInt(0);
+-    if (width <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const int height = object["height"].toInt(0);
+-    if (height <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const int refreshRate = object["refreshRate"].toInt(0);
+-    if (refreshRate <= 0) {
+-        return std::nullopt;
+-    }
+-
+-    const auto flags = OutputModeline::Flags(object["flags"].toInt(0));
+-    return OutputModeline(CvtModeline::generate(QSize(width, height), refreshRate, flags & OutputModeline::Flag::ReducedBlanking), flags);
+-}
+-
+-static std::optional<OutputModeline> readMode(const QJsonObject &object)
+-{
+-    const auto modeFlags = OutputModeline::Flags(object["flags"].toInt(0));
+-
+-    if (const QJsonObject cvt = object["cvt"].toObject(); !cvt.isEmpty()) {
+-        const int clock = cvt["clock"].toInt();
+-        if (clock <= 0) {
+-            return std::nullopt;
+-        }
+-
+-        const int hdisplay = cvt["hdisplay"].toInt();
+-        const int hsyncStart = cvt["hsyncStart"].toInt();
+-        const int hsyncEnd = cvt["hsyncEnd"].toInt();
+-        const int htotal = cvt["htotal"].toInt();
+-        const int hskew = cvt["hskew"].toInt();
+-        const int vdisplay = cvt["vdisplay"].toInt();
+-        const int vsyncStart = cvt["vsyncStart"].toInt();
+-        const int vsyncEnd = cvt["vsyncEnd"].toInt();
+-        const int vtotal = cvt["vtotal"].toInt();
+-        const int vscan = cvt["vscan"].toInt();
+-        const int flags = cvt["flags"].toInt();
+-
+-        return OutputModeline(CvtModeline{
+-                                  .clock = uint32_t(clock),
+-                                  .hdisplay = uint16_t(hdisplay),
+-                                  .hsyncStart = uint16_t(hsyncStart),
+-                                  .hsyncEnd = uint16_t(hsyncEnd),
+-                                  .htotal = uint16_t(htotal),
+-                                  .hskew = uint16_t(hskew),
+-                                  .vdisplay = uint16_t(vdisplay),
+-                                  .vsyncStart = uint16_t(vsyncStart),
+-                                  .vsyncEnd = uint16_t(vsyncEnd),
+-                                  .vtotal = uint16_t(vtotal),
+-                                  .vscan = uint16_t(vscan),
+-                                  .flags = uint32_t(flags),
+-                              },
+-                              modeFlags);
+-    } else if (const QJsonObject basic = object["basic"].toObject(); !basic.isEmpty()) {
+-        const int width = basic["width"].toInt();
+-        if (width <= 0) {
+-            return std::nullopt;
+-        }
+-
+-        const int height = basic["height"].toInt();
+-        if (height <= 0) {
+-            return std::nullopt;
+-        }
+-
+-        const int refreshRate = basic["refreshRate"].toInt();
+-        if (refreshRate <= 0) {
+-            return std::nullopt;
+-        }
+-
+-        return OutputModeline(BasicModeline{
+-                                  .size = QSize(width, height),
+-                                  .refreshRate = uint32_t(refreshRate),
+-                              },
+-                              modeFlags);
+-    }
+-
+-    return std::nullopt;
+-}
+-
+-static QJsonObject saveMode(const OutputModeline &modeline)
+-{
+-    QJsonObject object;
+-    object["flags"] = QJsonValue(int(modeline.flags()));
+-
+-    if (const auto cvt = modeline.cvt()) {
+-        object["cvt"] = QJsonObject({
+-            {QStringLiteral("clock"), QJsonValue(int(cvt->clock))},
+-            {QStringLiteral("hdisplay"), QJsonValue(int(cvt->hdisplay))},
+-            {QStringLiteral("hsyncStart"), QJsonValue(int(cvt->hsyncStart))},
+-            {QStringLiteral("hsyncEnd"), QJsonValue(int(cvt->hsyncEnd))},
+-            {QStringLiteral("htotal"), QJsonValue(int(cvt->htotal))},
+-            {QStringLiteral("hskew"), QJsonValue(int(cvt->hskew))},
+-            {QStringLiteral("vdisplay"), QJsonValue(int(cvt->vdisplay))},
+-            {QStringLiteral("vsyncStart"), QJsonValue(int(cvt->vsyncStart))},
+-            {QStringLiteral("vsyncEnd"), QJsonValue(int(cvt->vsyncEnd))},
+-            {QStringLiteral("vtotal"), QJsonValue(int(cvt->vtotal))},
+-            {QStringLiteral("vscan"), QJsonValue(int(cvt->vscan))},
+-            {QStringLiteral("flags"), QJsonValue(int(cvt->flags))},
+-        });
+-    } else if (const auto basic = modeline.basic()) {
+-        object["basic"] = QJsonObject({
+-            {QStringLiteral("width"), QJsonValue(int(basic->size.width()))},
+-            {QStringLiteral("height"), QJsonValue(int(basic->size.height()))},
+-            {QStringLiteral("refreshRate"), QJsonValue(int(basic->refreshRate))},
+-        });
+-    }
+-
+-    return object;
+-}
+-
+ void OutputConfigurationStore::load()
+ {
+     const QString jsonPath = QStandardPaths::locate(QStandardPaths::ConfigLocation, QStringLiteral("kwinoutputconfig.json"));
+-- 
+2.55.0
+
