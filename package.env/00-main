@@ -41,6 +41,7 @@ dev-qt/*				clango3lto.conf
 dev-qt/qttools				clango3.conf
 dev-util/DirectXShaderCompiler		clango3lto.conf
 dev-util/clinfo				clango3.conf
+dev-util/codex				clango3lto.conf
 dev-util/directx-headers		clango3lto.conf
 dev-util/hipify-clang			clango3lto.conf
 dev-util/rocminfo			clango3.conf
@@ -92,4 +93,3 @@ www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
 x11-misc/sddm				clango3lto.conf
-kde-plasma/kwin				clangdebug.conf
