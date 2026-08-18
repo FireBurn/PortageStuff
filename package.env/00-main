@@ -86,3 +86,6 @@ sci-ml/ollama				clango3lto.conf
 sci-misc/llama-cpp			clango3lto.conf
 app-text/doxygen			clango3lto.conf
 sys-libs/glibc				o3.conf
+dev-libs/xrt				clango3lto.conf
+sci-libs/fastflowlm			clango3lto.conf
+app-misc/lemonade			clango3lto.conf
