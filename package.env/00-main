@@ -72,7 +72,7 @@ llvm-core/llvm				clango3lto.conf
 sys-devel/llvm-roc			clango3.conf
 sys-libs/efivar				o3.conf
 sys-libs/libfaketime			o3.conf
-llvm-runtimes/openmp			o3.conf
+llvm-runtimes/openmp			clango3lto.conf
 www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
