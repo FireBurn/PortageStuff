@@ -108,7 +108,7 @@ virtual/mysql				embedded
 virtual/notification-daemon		kde
 virtual/rust				profiler
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
-www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6
+www-client/chromium			custom-cflags hangouts lto official proprietary-codecs system-ffmpeg system-icu system-libvpx vaapi wayland widevine -libcxx -ozone -X -qt5 qt6 -bundled-toolchain
 www-client/firefox			custom-cflags custom-optimization extra hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx system-sqlite -X system-pipewire
 www-servers/apache			apache2_modules_auth_digest
 x11-apps/mesa-progs			egl gles2
@@ -122,7 +122,6 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 dev-java/openjdk			-lto
 media-libs/libmpeg2			-sdl
-#=www-client/chromium-140.0.7312.0	bundled-toolchain
 dev-debug/gdb				-rocm
 sci-misc/llama-cpp			curl vulkan -hip -openmp
 sci-ml/ollama				-unroll
