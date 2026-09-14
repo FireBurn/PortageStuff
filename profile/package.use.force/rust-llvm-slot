@@ -1,0 +1,2 @@
+# Base profile forces llvm_slot_22 for rust 1.98.1; allow LLVM_SLOT="23" from make.conf instead
+dev-lang/rust:1.98.1 -llvm_slot_22
