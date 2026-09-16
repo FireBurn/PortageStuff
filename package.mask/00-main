@@ -1,3 +1,7 @@
+virtual/jdk:26
+virtual/jre:26
+virtual/jdk:27
+virtual/jre:27
 =x11-libs/gtk+-2.24.32-r666
 =dev-lang/python-3.10*
 =dev-lang/python-3.11*
