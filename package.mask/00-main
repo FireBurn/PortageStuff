@@ -1,5 +1,9 @@
 virtual/jdk:7
 virtual/jre:7
+virtual/jdk:26
+virtual/jre:26
+virtual/jdk:27
+virtual/jre:27
 dev-java/icedtea:7
 =dev-lang/python-3.10*
 =dev-lang/python-3.11*
