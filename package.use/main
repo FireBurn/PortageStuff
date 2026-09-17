@@ -125,6 +125,7 @@ media-libs/libmpeg2			-sdl
 dev-debug/gdb				-rocm
 sci-misc/llama-cpp			curl vulkan -hip -openmp
 sci-ml/ollama				-unroll
+dev-util/electron			-X
 # required by media-libs/freetype-2.14.0::gentoo[harfbuzz]
 # required by www-client/chromium-141.0.7390.7::FireBurn
 # required by @selected
