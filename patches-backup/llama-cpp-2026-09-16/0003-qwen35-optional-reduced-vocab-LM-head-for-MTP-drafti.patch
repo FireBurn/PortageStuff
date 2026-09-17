@@ -1,7 +1,7 @@
-From 43a11a72d274da05d95717b4b94d66699e5ddef7 Mon Sep 17 00:00:00 2001
+From 042da3494ba58374c65841152cf4e1a69bb863f1 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Wed, 16 Sep 2026 15:38:10 +0100
-Subject: [PATCH 3/5] qwen35: optional reduced-vocab LM head for MTP drafting
+Subject: [PATCH 3/3] qwen35: optional reduced-vocab LM head for MTP drafting
 
 LLAMA_MTP_DRAFT_NVOCAB=N makes the MTP draft head score only the first N
 tokens (a view of the LM head, no copy). With N=98304 on Qwen3.8-27B the
