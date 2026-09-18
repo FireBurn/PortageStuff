@@ -1,6 +1,4 @@
--glamor
 -input_devices_libinput
--gentoo-vm
 -custom-cflags
 -llvm_slot_20
 #llvm_slot_19

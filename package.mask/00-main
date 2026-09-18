@@ -1,17 +1,8 @@
-virtual/jdk:7
-virtual/jre:7
-virtual/jdk:26
-virtual/jre:26
 virtual/jdk:27
 virtual/jre:27
-dev-java/icedtea:7
 =dev-lang/python-3.10*
 =dev-lang/python-3.11*
 =dev-lang/python-3.12*
 =dev-lang/python-3.13*
 =dev-lang/python-3.15*
-=dev-build/ninja-1.12.0
-=app-office/libreoffice-24.2.4.2-r1
-=dev-util/pkgconf-2.4.1
-=media-video/pipewire-1.4.3
 =dev-lang/rust-1.90.0-r1

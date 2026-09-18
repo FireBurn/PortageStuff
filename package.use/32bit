@@ -1,16 +1,13 @@
-app-admin/gamemode		abi_x86_32
 app-arch/bzip2			abi_x86_32
 app-arch/lz4			abi_x86_32
 app-arch/xz-utils		abi_x86_32
 app-arch/zstd			abi_x86_32
 app-emulation/d7vk		abi_x86_32 crossdev-mingw
 app-emulation/dxvk		abi_x86_32 crossdev-mingw
-app-emulation/vkd3d		abi_x86_32 crossdev-mingw
 app-emulation/vkd3d-proton	abi_x86_32 crossdev-mingw
 app-emulation/wine-gecko	abi_x86_32
 app-emulation/wine-proton	crossdev-mingw wow64 -abi_x86_32
 app-emulation/wine-staging	wow64 -abi_x86_32 -mingw
-app-emulation/winetricks	kde -gtk
 dev-lang/rust			abi_x86_32
 dev-libs/elfutils		abi_x86_32
 dev-libs/expat			abi_x86_32
@@ -63,7 +60,7 @@ virtual/libiconv		abi_x86_32
 virtual/libintl			abi_x86_32
 virtual/libudev			abi_x86_32
 virtual/opengl			abi_x86_32
-virtual/wine			proton -abi_x86_32 -d3d9
+virtual/wine -abi_x86_32
 x11-libs/libX11			abi_x86_32
 x11-libs/libXau			abi_x86_32
 x11-libs/libXdmcp		abi_x86_32
