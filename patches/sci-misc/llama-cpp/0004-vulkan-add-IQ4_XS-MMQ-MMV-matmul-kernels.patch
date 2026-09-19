@@ -346,8 +346,8 @@ index d3f425968..4630a8fa5 100644
          };
  
  #if defined(GGML_VULKAN_INTEGER_DOT_GLSLC_SUPPORT)
--        if (!f16acc && !coopmat && !coopmat2 && !dot2 && (is_legacy_quant(tname) || is_k_quant(tname) || tname == "mxfp4")) {
-+        if (!f16acc && !coopmat && !coopmat2 && !dot2 && (is_legacy_quant(tname) || is_k_quant(tname) || tname == "iq4_xs" || tname == "mxfp4")) {
+-        if (!f16acc && !coopmat && !coopmat2 && !dot2 && (is_legacy_quant(tname) || is_k_quant(tname) || tname == "mxfp4" || tname == "iq3_s")) {
++        if (!f16acc && !coopmat && !coopmat2 && !dot2 && (is_legacy_quant(tname) || is_k_quant(tname) || tname == "iq4_xs" || tname == "mxfp4" || tname == "iq3_s")) {
              string_to_spv(shader_name + "_" + tname + "_q8_1", "mul_mmq.comp", merge_maps(merge_maps(base_dict, float_type_dict), {{data_a_key, "1"}, {"D_TYPE", "float"},}), fp16, coopmat, coopmat2, f16acc);
          }
  #endif
@@ -393,4 +393,3 @@ index dc529a352..70ca1893f 100644
                  test_cases.emplace_back(new test_mul_mat_id_fusion(type_a, type_b, 32, 4, false, 1792, bs, 2048, 1));
 -- 
 2.55.0
-
