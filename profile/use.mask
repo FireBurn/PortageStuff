@@ -1,11 +1,7 @@
--glamor
 -qt5
--kf6compat
 -input_devices_libinput
--gentoo-vm
 -custom-cflags
 -lua
--zink
 -llvm_slot_23
 llvm_slot_19
 llvm_targets_AArch64
