@@ -88,6 +88,7 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 sci-misc/llama-cpp curl -openmp vulkan
 dev-util/electron			-X
+gui-wm/gamescope			-gui
 # required by sci-libs/blas-lapack-aux-wrapper-0-r1::gentoo
 # required by virtual/cblas-3.8-r1::gentoo[flexiblas]
 # required by dev-python/numpy-2.3.4::gentoo[lapack,-test]
