@@ -66,7 +66,6 @@ sys-apps/pciutils			-zlib
 sys-apps/systemd			elfutils sysv-utils -gcrypt
 sys-boot/gnu-efi			-custom-cflags
 sys-devel/gcc				zstd
-# move sys-devel/llvm llvm-core/llvm
 llvm-core/llvm				-ncurses
 sys-fs/cryptsetup			-gcrypt
 sys-libs/ncurses			tinfo
@@ -89,6 +88,7 @@ kde-plasma/plasma-login-sessions	-X
 media-libs/libmpeg2			-sdl
 sci-misc/llama-cpp			curl hip opencl vulkan -openmp
 dev-util/electron			-X
+gui-wm/gamescope			-gui
 # required by media-libs/freetype-2.14.0::gentoo[harfbuzz]
 # required by www-client/chromium-141.0.7390.7::FireBurn
 # required by @selected
