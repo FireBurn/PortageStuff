@@ -89,3 +89,4 @@ sci-libs/hipFFT				clango3lto.conf
 sci-libs/rocFFT				clango3lto.conf
 sci-libs/rocRAND			clango3lto.conf
 dev-util/aqlprofile			clango3lto.conf
+dev-libs/rocm-opencl-runtime		clango3lto.conf
