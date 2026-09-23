@@ -6,3 +6,4 @@ virtual/jre:27
 =dev-lang/python-3.15*
 =dev-lang/rust-1.90.0-r1
 >sys-firmware/edk2-bin-202408
+>dev-python/flit-core-4
