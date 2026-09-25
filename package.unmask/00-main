@@ -2,7 +2,7 @@ dev-qt/*
 media-libs/mesa
 x11-drivers/xf86-video-intel
 <net-libs/nodejs-99
-#www-client/chromium
+www-client/chromium
 net-misc/networkmanager
 www-plugins/chrome-binary-plugins
 dev-util/spirv-llvm-translator
