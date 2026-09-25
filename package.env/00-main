@@ -75,6 +75,7 @@ app-emulation/vkd3d-proton		clango3lto.conf
 dev-util/hipify-clang			clango3lto.conf
 dev-libs/rccl				clango3lto.conf
 sci-misc/llama-cpp			clango3lto.conf
+sci-misc/stable-diffusion-cpp		clango3lto.conf
 app-text/doxygen			clango3lto.conf
 sys-libs/glibc				o3.conf
 dev-libs/xrt				clango3lto.conf

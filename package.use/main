@@ -87,6 +87,7 @@ kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
 media-libs/libmpeg2			-sdl
 sci-misc/llama-cpp			curl hip opencl vulkan -openmp
+sci-misc/stable-diffusion-cpp		hip opencl vulkan webm webp -openmp
 dev-util/electron			-X
 gui-wm/gamescope			-gui
 # required by media-libs/freetype-2.14.0::gentoo[harfbuzz]
@@ -127,6 +128,7 @@ gui-wm/gamescope			-gui
 # required by virtual/cblas-3.8-r1::gentoo[flexiblas]
 # required by dev-python/numpy-2.3.4::gentoo[lapack,-test]
 # required by sci-misc/llama-cpp-9999::FireBurn
+sci-misc/stable-diffusion-cpp		hip opencl vulkan -openmp
 # required by @selected
 # required by @world (argument)
 >=sci-libs/lapack-3.12.1-r2 lapacke
