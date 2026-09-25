@@ -76,17 +76,18 @@ sys-libs/tdb				python
 sys-libs/tevent				python
 virtual/notification-daemon		kde
 www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
-www-client/chromium custom-cflags hangouts official proprietary-codecs system-icu vaapi wayland widevine -X qt6 -bundled-toolchain
-www-client/firefox hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx -X system-pipewire
+www-client/chromium 			custom-cflags hangouts official proprietary-codecs system-icu vaapi wayland widevine -X qt6 -bundled-toolchain
+www-client/firefox 			hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx -X system-pipewire
 www-servers/apache			apache2_modules_auth_digest
-x11-apps/mesa-progs gles2
-x11-base/xorg-drivers -video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel
+x11-apps/mesa-progs 			gles2
+x11-base/xorg-drivers 			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel
 x11-base/xwayland			libei
 x11-libs/wxGTK				-gstreamer
-x11-misc/sddm -X
+x11-misc/sddm				-X
 kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
-sci-misc/llama-cpp curl -openmp vulkan hip
+sci-misc/llama-cpp 			curl -openmp vulkan hip
+sci-libs/hipBLASLt			amdgpu_targets_gfx90a
 dev-util/electron			-X
 gui-wm/gamescope			-gui
 # required by sci-libs/blas-lapack-aux-wrapper-0-r1::gentoo
