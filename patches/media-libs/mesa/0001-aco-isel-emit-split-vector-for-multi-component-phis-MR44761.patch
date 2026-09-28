@@ -1,0 +1,45 @@
+From 5e3d10b859e3fa186b1a944413eb41b4faf27d87 Mon Sep 17 00:00:00 2001
+From: Georg Lehmann <dadschoorse@gmail.com>
+Date: Mon, 28 Sep 2026 07:57:09 +0200
+Subject: [PATCH] aco/isel: emit split vector for multi component phis
+
+Avoids copies for e.g. vec4 phi0.x, phi0.y, phi1.x, phi1.y
+
+Foz-DB Navi48:
+Totals from 297 (0.14% of 209079) affected shaders:
+MaxWaves: 4035 -> 4033 (-0.05%)
+Instrs: 1754513 -> 1753105 (-0.08%); split: -0.11%, +0.03%
+CodeSize: 10332520 -> 10328076 (-0.04%); split: -0.08%, +0.04%
+VGPRs: 34144 -> 34168 (+0.07%); split: -0.07%, +0.14%
+SpillVGPRs: 20241 -> 20321 (+0.40%)
+Scratch: 1219584 -> 1226752 (+0.59%)
+Latency: 12707166 -> 12712005 (+0.04%); split: -0.07%, +0.10%
+InvThroughput: 2660873 -> 2672295 (+0.43%); split: -0.12%, +0.55%
+VClause: 33628 -> 33626 (-0.01%); split: -0.06%, +0.05%
+SClause: 36302 -> 36300 (-0.01%)
+Copies: 200614 -> 199335 (-0.64%); split: -0.78%, +0.15%
+Branches: 54530 -> 54505 (-0.05%); split: -0.08%, +0.03%
+PreVGPRs: 30724 -> 30808 (+0.27%)
+VALU: 860203 -> 858832 (-0.16%); split: -0.22%, +0.06%
+SALU: 312383 -> 312265 (-0.04%); split: -0.05%, +0.02%
+VMEM: 86905 -> 87066 (+0.19%)
+VOPD: 116516 -> 116608 (+0.08%); split: +0.84%, -0.76%
+---
+ src/amd/compiler/instruction_selection/aco_select_nir.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/amd/compiler/instruction_selection/aco_select_nir.cpp b/src/amd/compiler/instruction_selection/aco_select_nir.cpp
+index a12f44c9c14..7491c067258 100644
+--- a/src/amd/compiler/instruction_selection/aco_select_nir.cpp
++++ b/src/amd/compiler/instruction_selection/aco_select_nir.cpp
+@@ -709,6 +709,7 @@ visit_phi(isel_context* ctx, nir_phi_instr* instr)
+       phi->operands[i++] = get_phi_operand(ctx, src.second, dst.regClass());
+    phi->definitions[0] = Definition(dst);
+    ctx->block->instructions.emplace(ctx->block->instructions.begin(), std::move(phi));
++   emit_split_vector(ctx, dst, instr->def.num_components);
+ }
+ 
+ void
+-- 
+2.55.0
+
