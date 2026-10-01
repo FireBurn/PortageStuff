@@ -1,0 +1,14 @@
+std::launder is declared in <new>, which this never includes. libstdc++
+happens to bring it along through one of the others; libc++ does not, so
+building the PE side with clang stops here.
+
+--- a/subprojects/dxil-spirv/subprojects/dxbc-spirv/util/util_small_vector.h
++++ b/subprojects/dxil-spirv/subprojects/dxbc-spirv/util/util_small_vector.h
+@@ -4,6 +4,7 @@
+ #include <cstddef>
+ #include <cstdint>
+ #include <memory>
++#include <new>
+ #include <initializer_list>
+ #include <type_traits>
+ #include <utility>

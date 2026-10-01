@@ -1,0 +1,30 @@
+Use lambdas rather than the address of unique_ptr::operator* as projections.
+The standard does not let a program take the address of a library member
+function, and libc++ declares operator* so that it cannot be deduced.
+
+diff -ru a/alc/alc.cpp b/alc/alc.cpp
+--- a/alc/alc.cpp
++++ b/alc/alc.cpp
+@@ -1781,7 +1781,8 @@
+          * configuration in aluInitEffectPanning.
+          */
+         std::ranges::for_each(context->mEffectSlotClusters
+-            | std::views::transform(&ContextBase::EffectSlotCluster::operator*)
++            | std::views::transform([](ContextBase::EffectSlotCluster const &cluster)
++                -> auto& { return *cluster; })
+             | std::views::join, [](EffectSlotBase &slot)
+         {
+             slot.mWetBuffer.clear();
+diff -ru a/alc/backends/pipewire.cpp b/alc/backends/pipewire.cpp
+--- a/alc/backends/pipewire.cpp
++++ b/alc/backends/pipewire.cpp
+@@ -1408,7 +1408,8 @@
+     RemoveDevice(id);
+ 
+     auto node_end = std::ranges::remove_if(mNodeList, [id](NodeProxy const &node) noexcept
+-    { return node.mId == id; }, &std::unique_ptr<NodeProxy>::operator*);
++    { return node.mId == id; },
++        [](std::unique_ptr<NodeProxy> const &node) -> NodeProxy& { return *node; });
+     mNodeList.erase(node_end.begin(), node_end.end());
+ 
+     if(mDefaultMetadata && mDefaultMetadata->mId == id)

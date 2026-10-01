@@ -1,0 +1,14 @@
+A system whose lib64 is a link to lib has one tree, not the old split
+between lib and lib64, so its slots are not legacy installations.
+
+--- a/wine.eselect
++++ b/wine.eselect
+@@ -339,7 +339,7 @@
+ 	fi
+ 
+ 	# older wine ebuilds split between lib{,32} and lib64, this is unsupported
+-	if [[ -d ${WINEREL}/usr/lib64/${slot} ]] &&
++	if [[ -d ${WINEREL}/usr/lib64/${slot} && ! -L ${WINEREL}/usr/lib64 ]] &&
+ 		[[ ! -L ${WINEREL}/usr/lib || -d ${WINEREL}/usr/lib32/${slot} ]]
+ 	then
+ 		write_warning_msg "ignored legacy installation at ${EROOT}/usr/lib64/${slot}"

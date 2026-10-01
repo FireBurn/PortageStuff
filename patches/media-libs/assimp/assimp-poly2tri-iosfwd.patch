@@ -1,0 +1,12 @@
+poly2tri declares operator<< in terms of std::ostream without including a
+header which declares it, and libc++ does not bring it in through another.
+
+--- a/contrib/poly2tri/poly2tri/common/shapes.h
++++ b/contrib/poly2tri/poly2tri/common/shapes.h
+@@ -35,6 +35,7 @@
+ 
+ #include <cmath>
+ #include <cstddef>
++#include <iosfwd>
+ #include <stdexcept>
+ #include <vector>

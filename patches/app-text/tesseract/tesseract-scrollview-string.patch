@@ -1,0 +1,13 @@
+scrollview.h holds a std::string member without including <string>, and
+libc++ does not bring it in through <memory> or <mutex> as libstdc++ does.
+
+--- a/src/viewer/scrollview.h
++++ b/src/viewer/scrollview.h
+@@ -38,6 +38,7 @@
+ #include <cstdio>
+ #include <memory>
+ #include <mutex>
++#include <string>
+ 
+ namespace tesseract {
+ 

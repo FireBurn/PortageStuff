@@ -1,0 +1,7 @@
+Patches for building on llvm-libc that must not apply to a glibc build.
+Portage does not read this directory. The image reads them from its own
+/etc/portage/patches.
+
+vkd3d-proton: add the <new> and <exception> includes that libc++ needs. The
+live (9999) source here already has the first one, so on this host the patch
+no longer applies and would stop the build. They were written for 3.0.1.

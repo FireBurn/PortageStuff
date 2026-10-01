@@ -1,0 +1,23 @@
+Do not name the C library's internal struct tags for FILE and DIR.
+
+The forward declarations here spell glibc's internal tags, which musl also
+uses. llvm-libc names them differently, so the typedefs clash with the real
+ones. Where the tags are not known, the headers that define the types are
+included instead.
+
+--- a/src/basic/forward.h
++++ b/src/basic/forward.h
+@@ -60,8 +60,13 @@
+ 
+ /* To forward declare FILE and DIR, we have to declare the internal struct names for them. Since these are
+  * used for C++ symbol name mangling, they're effectively part of the ABI and won't actually change. */
++#if defined(__LLVM_LIBC__)
++#include <dirent.h>
++#include <stdio.h>
++#else
+ typedef struct _IO_FILE FILE;
+ typedef struct __dirstream DIR;
++#endif
+ 
+ /* 3rd-party library forward declarations */
+ 

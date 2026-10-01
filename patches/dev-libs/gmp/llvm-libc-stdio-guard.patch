@@ -1,0 +1,18 @@
+Recognise LLVM's libc when deciding whether <stdio.h> has been included.
+
+gmp works out whether FILE is available by testing the include guard each C
+library happens to use, and declares its FILE-taking interfaces only if one
+of them matches. LLVM's libc is not in the list, so the declarations were
+left out and mpz/inp_str.c called mpz_inp_str_nowhite before declaring it.
+
+--- a/gmp-h.in
++++ b/gmp-h.in
+@@ -269,7 +269,8 @@
+   || defined (_ISO_STDIO_ISO_H)       /* Sun C++ */		\
+   || defined (__STDIO_LOADED)         /* VMS */			\
+   || defined (_STDIO)                 /* HPE NonStop */         \
+-  || defined (__DEFINED_FILE)         /* musl */
++  || defined (__DEFINED_FILE)         /* musl */                \
++  || defined (_LLVM_LIBC_STDIO_H)     /* LLVM libc */
+ #define _GMP_H_HAVE_FILE 1
+ #endif

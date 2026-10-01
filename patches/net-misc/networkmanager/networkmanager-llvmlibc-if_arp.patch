@@ -1,0 +1,27 @@
+The kernel header is skipped for anything that is not glibc, because on
+musl it would clash with <net/if_arp.h>. Nothing includes that header in
+these two files, and llvm-libc has to get ARPHRD_* from somewhere, so it
+takes the same path glibc does.
+
+--- a/src/libnm-systemd-core/src/libsystemd-network/sd-dhcp6-client.c
++++ b/src/libnm-systemd-core/src/libsystemd-network/sd-dhcp6-client.c
+@@ -6,7 +6,7 @@
+ #include "nm-sd-adapt-core.h"
+ 
+ #include <errno.h>
+-#ifdef __GLIBC__
++#if defined(__GLIBC__) || defined(__LLVM_LIBC__)
+ #include <linux/if_arp.h>
+ #endif
+ #include <linux/if_infiniband.h>
+--- a/src/libnm-systemd-core/sd-adapt-core/netif-util.c
++++ b/src/libnm-systemd-core/sd-adapt-core/netif-util.c
+@@ -3,7 +3,7 @@
+ #include "nm-sd-adapt-core.h"
+ 
+ #include <linux/if.h>
+-#ifdef __GLIBC__
++#if defined(__GLIBC__) || defined(__LLVM_LIBC__)
+ #include <linux/if_arp.h>
+ #endif
+ 
