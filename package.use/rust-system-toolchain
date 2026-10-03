@@ -1,1 +1,2 @@
+dev-lang/rust:1.99.0 rustc-dev rust-src rustfmt system-llvm
 dev-lang/rust:1.98.1 rustc-dev rust-src rustfmt system-llvm
