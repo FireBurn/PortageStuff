@@ -128,3 +128,8 @@ gui-apps/sddm-gentoo-config		weston
 # required by @selected
 # required by @world (argument)
 >=dev-lang/rust-1.98.1 rustc-dev
+# required by net-libs/nodejs-26.10.0-r3::gentoo
+# required by games-util/heroic-2.22.3::FireBurn
+# required by @selected
+# required by @world (argument)
+>=dev-cpp/simdutf-9.2.1 atomic-base64
