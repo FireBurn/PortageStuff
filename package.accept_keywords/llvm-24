@@ -1,0 +1,17 @@
+=llvm-core/llvm-24.0.0_pre20260919	**
+=llvm-core/clang-24.0.0_pre20260919	**
+=llvm-core/lld-24.0.0_pre20260919	**
+=llvm-core/clang-common-24.0.0_pre20260919	**
+=llvm-core/llvm-common-24.0.0_pre20260919	**
+=llvm-runtimes/compiler-rt-24.0.0_pre20260919	**
+=llvm-runtimes/compiler-rt-sanitizers-24.0.0_pre20260919	**
+=llvm-runtimes/openmp-24.0.0_pre20260919	**
+=llvm-runtimes/clang-runtime-24	**
+=llvm-runtimes/clang-rtlib-config-24	**
+=llvm-runtimes/clang-unwindlib-config-24	**
+=llvm-runtimes/clang-stdlib-config-24	**
+=llvm-core/clang-linker-config-24	**
+=llvm-core/lld-toolchain-symlinks-24	**
+=llvm-core/llvm-toolchain-symlinks-24	**
+=llvm-core/clang-toolchain-symlinks-24	**
+=llvm-core/llvmgold-24	**
