@@ -1,0 +1,135 @@
+app-accessibility/speech-dispatcher	python
+app-crypt/libsecret			gnutls -introspection -vala
+app-crypt/pinentry			-gtk
+app-editors/vim				-X
+app-misc/mime-types			nginx
+app-office/libreoffice -gtk -gtk3 java kde
+dev-cpp/cpp-httplib			-zstd
+dev-db/sqlite				secure-delete
+dev-lang/python				sqlite
+dev-libs/boost				context python
+dev-libs/folks				eds
+dev-libs/libdbusmenu			gtk3
+dev-libs/libgdata			gnome-online-accounts vala
+dev-libs/libical			vala
+dev-libs/libpcre2 pcre32
+dev-libs/modsecurity fuzzyhash geoip2 json lmdb lua
+dev-libs/weston				gles2 wayland-compositor xwayland fullscreen
+dev-libs/xmlsec				nss -gnutls -openssl
+dev-qt/qtbase				libproxy -accessibility
+dev-qt/qttools				designer qdbus
+# move dev-util/apitrace dev-debug/apitrace
+dev-util/vulkan-tools			cube -X
+dev-vcs/git				tk -safe-directory
+dev-vcs/subversion			perl -kwallet
+games-emulation/cemu			sdl
+games-emulation/yuzu			sdl
+games-util/steam-launcher		steamruntime desktop-portal trayicon
+gnome-base/gvfs				cdda
+gnome-extra/evolution-data-server	vala
+kde-apps/kio-extras			mtp samba
+kde-plasma/plasma-meta			-browser-integration -crypt -cups -firewall -xwayland
+kde-plasma/powerdevil			brightness-control
+media-gfx/exiv2				xmp
+media-gfx/graphviz			python
+media-gfx/pstoedit			plotutils
+media-libs/cogl				gles2
+media-libs/embree raymask -ispc
+#media-libs/freetype			-harfbuzz
+media-libs/gegl				jpeg2k raw
+media-libs/gst-plugins-base		-gles2
+media-libs/libpng			-apng
+media-libs/libsdl2			gles2 haptic -X
+media-libs/libsdl3			-X
+media-libs/mesa proprietary-codecs llvm opencl -video_cards_intel -video_cards_radeon
+media-libs/x264				-opencl
+media-plugins/alsa-plugins		-pulseaudio
+media-plugins/grilo-plugins		tracker
+media-plugins/gst-plugins-vaapi		-gles2
+media-video/ffmpeg amr chromium fdk x265 -opencl
+media-video/pipewire			extra sound-server
+net-dns/dnsmasq				-lua
+net-fs/cifs-utils			-acl
+net-fs/samba client winbind
+net-irc/konversation			-crypt
+net-libs/gnutls				pkcs11
+net-libs/libpsl				-idn
+net-libs/mbedtls			cmac
+net-libs/nodejs				inspector lto
+net-misc/networkmanager			gnutls modemmanager -nss
+net-nds/openldap			-gnutls
+net-p2p/ktorrent -rss -webengine
+net-p2p/transmission -gtk
+net-proxy/haproxy			lua -slz
+net-wireless/wpa_supplicant tkip wep
+sys-apps/fwupd flashrom gnutls nvme synaptics tpm uefi
+sys-apps/pciutils			-zlib
+sys-apps/systemd			elfutils sysv-utils -gcrypt
+sys-boot/gnu-efi			-custom-cflags
+sys-devel/gcc				zstd
+# move sys-devel/llvm llvm-core/llvm
+llvm-core/llvm				-ncurses
+sys-fs/cryptsetup			-gcrypt
+sys-libs/ncurses			tinfo
+sys-libs/talloc				python
+sys-libs/tdb				python
+sys-libs/tevent				python
+virtual/notification-daemon		kde
+www-apache/mod_security			fuzzyhash geoip jit json mlogc -lua
+www-client/chromium 			custom-cflags hangouts official proprietary-codecs system-icu vaapi wayland widevine -X qt6 -bundled-toolchain
+www-client/firefox 			hwaccel jumbo-build system-harfbuzz system-icu system-jpeg system-libevent system-libvpx -X system-pipewire
+www-servers/apache			apache2_modules_auth_digest
+x11-apps/mesa-progs 			gles2
+x11-base/xorg-drivers 			-video_cards_amdgpu -video_cards_radeon -video_cards_radeonsi -video_cards_intel
+x11-base/xwayland			libei
+x11-libs/wxGTK				-gstreamer
+x11-misc/sddm				-X
+kde-plasma/plasma-meta			-X
+kde-plasma/plasma-login-sessions	-X
+sci-misc/llama-cpp 			curl -openmp vulkan hip
+sci-libs/hipBLASLt			amdgpu_targets_gfx90a
+dev-util/electron			-X
+gui-wm/gamescope			-gui
+# required by sci-libs/blas-lapack-aux-wrapper-0-r1::gentoo
+# required by virtual/cblas-3.8-r1::gentoo[flexiblas]
+# required by dev-python/numpy-2.3.4::gentoo[lapack,-test]
+# required by sci-misc/llama-cpp-9999::FireBurn
+# required by @selected
+# required by @world (argument)
+>=sci-libs/lapack-3.12.1-r2 lapacke
+# required by dev-libs/libxml2-2.15.1::gentoo
+# required by llvm-core/clang-21.1.5::gentoo[xml]
+# required by llvm-core/lldb-21.1.5::gentoo
+# required by kde-plasma/drkonqi-6.5.2::gentoo
+# required by kde-plasma/plasma-meta-6.5.2::gentoo[crash-handler,systemd]
+# required by @selected
+# required by @world (argument)
+>=virtual/zlib-1.3.1-r1 abi_x86_32
+# required by kde-frameworks/kdnssd-6.22.0-r1::gentoo
+# required by kde-apps/kio-extras-25.12.2::gentoo[samba]
+# required by kde-apps/dolphin-25.12.2::gentoo
+# required by @selected
+# required by @world (argument)
+>=net-dns/avahi-0.9_rc3 mdnsresponder-compat
+# required by net-fs/samba-4.23.5-r1::gentoo
+# required by app-emulation/wine-staging-11.3::gentoo[samba]
+# required by @selected
+# required by @world (argument)
+>=net-libs/ngtcp2-1.20.0-r1 gnutls
+gui-apps/sddm-gentoo-config		weston
+# required by gui-apps/sddm-gentoo-config-0::gentoo[weston]
+# required by x11-misc/sddm-0.21.0_p20251101::gentoo
+# required by kde-plasma/sddm-kcm-6.7.2::gentoo
+# required by kde-plasma/plasma-meta-6.7.2::gentoo[display-manager,sddm]
+# required by @selected
+# required by @world (argument)
+>=dev-libs/weston-15.0.92 kiosk
+# required by www-client/chromium-155.0.8040.2::FireBurn[-bundled-toolchain,llvm_slot_23]
+# required by @selected
+# required by @world (argument)
+>=dev-lang/rust-1.98.1 rustc-dev
+# required by net-libs/nodejs-26.10.0-r3::gentoo
+# required by games-util/heroic-2.22.3::FireBurn
+# required by @selected
+# required by @world (argument)
+>=dev-cpp/simdutf-9.2.1 atomic-base64
