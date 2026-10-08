@@ -1,0 +1,32 @@
+[ThinLTO] Do not import a default-version .symver for a symbol the module does not define
+
+When a function is imported as available_externally, the .symver for it is
+copied into the importing module, where the symbol is undefined. For a default
+version (@@) the assembler then fails with "default version symbol must be
+defined", which broke alsa-lib, libxcrypt, pciutils and fuse built with
+-flto=thin. A non-default version on an undefined symbol is a reference to
+that version and is still imported (PR48214).
+
+--- a/llvm/lib/Linker/IRMover.cpp
++++ b/llvm/lib/Linker/IRMover.cpp
+@@ -1571,7 +1571,19 @@
+     // Import any symver directives for symbols in DstM.
+     ModuleSymbolTable::CollectAsmSymvers(*SrcM,
+                                          [&](StringRef Name, StringRef Alias) {
+-      if (DstM.getNamedValue(Name)) {
++      GlobalValue *GV = DstM.getNamedValue(Name);
++      // A default version (foo@@V, not foo@@@V) names a definition, and the
++      // assembler rejects it for a symbol the module does not define, which
++      // includes an available_externally function imported only to be
++      // inlined. The module that defines the symbol keeps its own directive.
++      // A non-default version on an undefined symbol is a reference to that
++      // version, and the importing module needs it.
++      StringRef Version = Alias.substr(Alias.find('@') == StringRef::npos
++                                           ? Alias.size()
++                                           : Alias.find('@'));
++      bool IsDefaultVersion =
++          Version.starts_with("@@") && !Version.starts_with("@@@");
++      if (GV && !(IsDefaultVersion && GV->isDeclarationForLinker())) {
+         SmallString<256> S(".symver ");
+         S += Name;
+         S += ", ";

@@ -1,0 +1,13 @@
+env.cpp calls qsort, strtol and free without including <stdlib.h>.
+libstdc++ brings it in through <vector> or <algorithm>; libc++ does not.
+
+--- a/src/roff/troff/env.cpp
++++ b/src/roff/troff/env.cpp
+@@ -24,6 +24,7 @@
+ 
+ #include <errno.h> // errno
+ #include <math.h> // ceil(), fabs()
++#include <stdlib.h> // free(), qsort(), strtol()
+ 
+ #include <vector>
+ #include <algorithm> // find()

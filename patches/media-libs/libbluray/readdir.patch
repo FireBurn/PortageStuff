@@ -1,0 +1,22 @@
+readdir_r is absent from llvm-libc on purpose, so take the readdir path there.
+errno comes with <errno.h>, which glibc brings in through another header.
+
+--- a/src/file/dir_posix.c
++++ b/src/file/dir_posix.c
+@@ -26,6 +26,7 @@
+ #include "util/logging.h"
+ #include "util/strutl.h"
+ 
++#include <errno.h>
+ #include <stdlib.h>
+ #include <string.h>
+ #if defined(HAVE_DIRENT_H)
+@@ -63,7 +64,7 @@
+ {
+     struct dirent *p_e;
+ 
+-#ifdef USE_READDIR
++#if defined(USE_READDIR) || defined(__LLVM_LIBC__)
+     errno = 0;
+     p_e = readdir((DIR*)dir->internal);
+     if (!p_e && errno) {

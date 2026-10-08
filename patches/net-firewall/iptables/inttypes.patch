@@ -1,0 +1,13 @@
+xtables-monitor.c uses PRIx64 without including <inttypes.h>. glibc's
+headers happen to bring it in.
+
+--- a/iptables/xtables-monitor.c
++++ b/iptables/xtables-monitor.c
+@@ -13,6 +13,7 @@
+ #include "config.h"
+ #include <errno.h>
+ #include <stdlib.h>
++#include <inttypes.h>
+ #include <time.h>
+ #include <string.h>
+ #include <netinet/ether.h>
