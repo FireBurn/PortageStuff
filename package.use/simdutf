@@ -1,0 +1,8 @@
+dev-lang/rust:1.99.0 rustc-dev rust-src rustfmt system-llvm
+dev-lang/rust:1.98.1 rustc-dev rust-src rustfmt system-llvm
+# required by net-libs/nodejs-26.10.0-r3::gentoo
+# required by dev-lang/typescript-6.0.3::gentoo
+# required by www-client/chromium-156.0.8078.4::FireBurn
+# required by @selected
+# required by @world (argument)
+>=dev-cpp/simdutf-9.2.1 atomic-base64

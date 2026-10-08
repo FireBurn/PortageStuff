@@ -8,3 +8,5 @@ app-emulation/vkd3d-proton		**
 media-libs/libsdl2			**
 media-libs/zxing-cpp			**
 
+=sci-misc/llama-cpp-9999		**
+=dev-util/openrgp-9999		**

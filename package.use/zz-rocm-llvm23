@@ -1,0 +1,14 @@
+# Test: build the ROCm stack against the system LLVM 23
+dev-libs/rocm-comgr llvm_slot_23 -llvm_slot_24
+dev-libs/rocm-device-libs llvm_slot_23 -llvm_slot_24
+dev-libs/rocm-opencl-runtime llvm_slot_23 -llvm_slot_24
+dev-libs/rocr-runtime llvm_slot_23 -llvm_slot_24
+dev-libs/roct-thunk-interface llvm_slot_23 -llvm_slot_24
+dev-util/Tensile llvm_slot_23 -llvm_slot_24
+dev-util/hip llvm_slot_23 -llvm_slot_24
+dev-util/hipcc llvm_slot_23 -llvm_slot_24
+dev-util/hipify-clang llvm_slot_23 -llvm_slot_24
+dev-util/rocprofiler llvm_slot_23 -llvm_slot_24
+sci-libs/hipBLASLt llvm_slot_23 -llvm_slot_24
+sci-libs/miopen llvm_slot_23 -llvm_slot_24
+sci-libs/rocBLAS llvm_slot_23 -llvm_slot_24
