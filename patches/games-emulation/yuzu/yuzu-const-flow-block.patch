@@ -1,0 +1,13 @@
+A const member without an initialiser has to be initialised by every constructor.
+
+--- a/src/shader_recompiler/frontend/maxwell/structured_control_flow.cpp	2026-10-09 13:12:57.014852465 +0100
++++ b/src/shader_recompiler/frontend/maxwell/structured_control_flow.cpp	2026-10-09 13:12:57.015923638 +0100
+@@ -976,7 +976,7 @@
+     Environment& env;
+     IR::AbstractSyntaxList& syntax_list;
+     bool uses_demote_to_helper{};
+-    const Flow::Block dummy_flow_block;
++    const Flow::Block dummy_flow_block{};
+ };
+ } // Anonymous namespace
+ 
