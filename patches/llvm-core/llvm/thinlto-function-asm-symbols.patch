@@ -1,0 +1,559 @@
+[LTO] Find the global symbols that inline asm in function bodies defines
+
+ModuleSymbolTable only parsed module level asm, so a symbol defined by inline
+asm inside a function was unknown to the linker. The symbol is missing from the
+symbol table, so references to it are reported undefined, and the function
+holding the asm is deleted by LTO as dead because nothing in the IR calls it.
+wine defines the RTTI symbols of its C++ runtime emulation this way, and its
+PE build cannot use LTO because of it.
+
+Parse the inline asm of each call whose string contains .glob or .weak,
+standing in 0 for the operands, which are not known here, and honouring the
+dialect alternatives. Global definitions and references are reported like those
+of module asm, and the function that defines a symbol is flagged used in the
+irsymtab so ThinLTO and regular LTO keep it. Its summary is marked noinline so
+the asm is not copied. Regular LTO reads the bodies of a lazily loaded module
+when its irsymtab has symbols the module does not show without them.
+
+diff --git a/llvm/include/llvm/Object/ModuleSymbolTable.h b/llvm/include/llvm/Object/ModuleSymbolTable.h
+index 564ce76b3feb..e5c5b61297a2 100644
+--- a/llvm/include/llvm/Object/ModuleSymbolTable.h
++++ b/llvm/include/llvm/Object/ModuleSymbolTable.h
+@@ -17,6 +17,7 @@
+ 
+ #include "llvm/ADT/ArrayRef.h"
+ #include "llvm/ADT/PointerUnion.h"
++#include "llvm/ADT/SmallPtrSet.h"
+ #include "llvm/IR/Mangler.h"
+ #include "llvm/Object/SymbolicFile.h"
+ #include "llvm/Support/Allocator.h"
+@@ -28,6 +29,7 @@
+ 
+ namespace llvm {
+ 
++class Function;
+ class GlobalValue;
+ class Module;
+ 
+@@ -42,6 +44,7 @@ private:
+   SpecificBumpPtrAllocator<AsmSymbol> AsmSymbols;
+   std::vector<Symbol> SymTab;
+   Mangler Mang;
++  SmallPtrSet<const GlobalValue *, 4> AsmDefiningFunctions;
+ 
+ public:
+   ArrayRef<Symbol> symbols() const { return SymTab; }
+@@ -50,14 +53,29 @@ public:
+   LLVM_ABI void printSymbolName(raw_ostream &OS, Symbol S) const;
+   LLVM_ABI uint32_t getSymbolFlags(Symbol S) const;
+ 
++  /// Whether the inline asm in the body of \p GV defines a global symbol. The
++  /// symbol exists only if the function is emitted, so the function has to be
++  /// kept.
++  bool definesAsmSymbols(const GlobalValue *GV) const {
++    return AsmDefiningFunctions.contains(GV);
++  }
++
++  /// Whether \p Asm, the string of an inline asm call, can define a global
++  /// symbol. This is a cheap textual test: parsing is only worth it when it
++  /// holds.
++  LLVM_ABI static bool inlineAsmMayDefineSymbols(StringRef Asm);
++
+   /// Parse inline ASM and collect the symbols that are defined or referenced in
+-  /// the current module.
++  /// the current module. This covers module level asm and the global symbols
++  /// that inline asm in function bodies defines or refers to.
+   ///
+   /// For each found symbol, call \p AsmSymbol with the name of the symbol found
+-  /// and the associated flags.
++  /// and the associated flags. For each function whose inline asm defines a
++  /// global symbol, call \p AsmDefiningFunction if it is given.
+   LLVM_ABI static void CollectAsmSymbols(
+       const Module &M,
+-      function_ref<void(StringRef, object::BasicSymbolRef::Flags)> AsmSymbol);
++      function_ref<void(StringRef, object::BasicSymbolRef::Flags)> AsmSymbol,
++      function_ref<void(const Function &)> AsmDefiningFunction = nullptr);
+ 
+   /// Parse inline ASM and collect the symvers directives that are defined in
+   /// the current module.
+diff --git a/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp b/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
+index bb5fd4eefb7f..f2ec969fae5e 100644
+--- a/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
++++ b/llvm/lib/Analysis/ModuleSummaryAnalysis.cpp
+@@ -38,6 +38,7 @@
+ #include "llvm/IR/Function.h"
+ #include "llvm/IR/GlobalAlias.h"
+ #include "llvm/IR/GlobalValue.h"
++#include "llvm/IR/InlineAsm.h"
+ #include "llvm/IR/GlobalVariable.h"
+ #include "llvm/IR/Instructions.h"
+ #include "llvm/IR/IntrinsicInst.h"
+@@ -382,6 +383,7 @@ static void computeFunctionSummary(
+ #endif
+ 
+   bool HasInlineAsmMaybeReferencingInternal = false;
++  bool HasInlineAsmDefiningSymbols = false;
+   bool HasIndirBranchToBlockAddress = false;
+   bool HasUnknownCall = false;
+   bool MayThrow = false;
+@@ -449,6 +451,12 @@ static void computeFunctionSummary(
+       if (HasLocalsInUsedOrAsm && CI && CI->isInlineAsm())
+         HasInlineAsmMaybeReferencingInternal = true;
+ 
++      // A copy of asm that defines a global symbol would define it twice.
++      if (CI && CI->isInlineAsm() &&
++          ModuleSymbolTable::inlineAsmMayDefineSymbols(
++              cast<InlineAsm>(CI->getCalledOperand())->getAsmString()))
++        HasInlineAsmDefiningSymbols = true;
++
+       // Compute this once per indirect call.
+       uint32_t NumCandidates = 0;
+       uint64_t TotalCount = 0;
+@@ -744,7 +752,8 @@ static void computeFunctionSummary(
+       F.hasFnAttribute(Attribute::NoRecurse), F.returnDoesNotAlias(),
+       // FIXME: refactor this to use the same code that inliner is using.
+       // Don't try to import functions with noinline attribute.
+-      F.getAttributes().hasFnAttr(Attribute::NoInline),
++      F.getAttributes().hasFnAttr(Attribute::NoInline) ||
++          HasInlineAsmDefiningSymbols,
+       F.hasFnAttribute(Attribute::AlwaysInline),
+       F.hasFnAttribute(Attribute::NoUnwind), MayThrow, HasUnknownCall,
+       mustBeUnreachableFunction(F)};
+diff --git a/llvm/lib/LTO/LTO.cpp b/llvm/lib/LTO/LTO.cpp
+index b591f9c6a831..dc19af9eb390 100644
+--- a/llvm/lib/LTO/LTO.cpp
++++ b/llvm/lib/LTO/LTO.cpp
+@@ -1006,8 +1006,24 @@ LTO::addRegularLTO(InputFile &Input, ArrayRef<SymbolResolution> InputRes,
+ 
+   UpgradeDebugInfo(M);
+ 
+-  ModuleSymbolTable SymTab;
+-  SymTab.addModule(&M);
++  auto SymTab = std::make_unique<ModuleSymbolTable>();
++  SymTab->addModule(&M);
++  // The symbols that inline asm in function bodies defines are only found when
++  // the bodies are read, as they were for the irsymtab. If the irsymtab has more
++  // symbols than the module appears to, read them.
++  auto CountLTOSymbols = [](const ModuleSymbolTable &ST) {
++    return llvm::count_if(ST.symbols(), [&](const ModuleSymbolTable::Symbol &S) {
++      uint32_t Flags = ST.getSymbolFlags(S);
++      return (Flags & object::BasicSymbolRef::SF_Global) &&
++             !(Flags & object::BasicSymbolRef::SF_FormatSpecific);
++    });
++  };
++  if (CountLTOSymbols(*SymTab) < Syms.size()) {
++    if (Error Err = M.materializeAll())
++      return std::move(Err);
++    SymTab = std::make_unique<ModuleSymbolTable>();
++    SymTab->addModule(&M);
++  }
+ 
+   for (GlobalVariable &GV : M.globals())
+     if (GV.hasAppendingLinkage())
+@@ -1025,10 +1041,10 @@ LTO::addRegularLTO(InputFile &Input, ArrayRef<SymbolResolution> InputRes,
+   // InputFile::create we omit some symbols that are irrelevant to LTO. The
+   // Skip() function skips the same symbols from the module as InputFile does
+   // from the symbol table.
+-  auto MsymI = SymTab.symbols().begin(), MsymE = SymTab.symbols().end();
++  auto MsymI = SymTab->symbols().begin(), MsymE = SymTab->symbols().end();
+   auto Skip = [&]() {
+     while (MsymI != MsymE) {
+-      auto Flags = SymTab.getSymbolFlags(*MsymI);
++      auto Flags = SymTab->getSymbolFlags(*MsymI);
+       if ((Flags & object::BasicSymbolRef::SF_Global) &&
+           !(Flags & object::BasicSymbolRef::SF_FormatSpecific))
+         return;
+diff --git a/llvm/lib/Object/IRSymtab.cpp b/llvm/lib/Object/IRSymtab.cpp
+index 20d39e4588ba..fe9537614e39 100644
+--- a/llvm/lib/Object/IRSymtab.cpp
++++ b/llvm/lib/Object/IRSymtab.cpp
+@@ -259,7 +259,9 @@ Error Builder::addSymbol(const ModuleSymbolTable &Msymtab,
+   StringRef GVName = GV->getName();
+   setStr(Sym.IRName, GVName);
+ 
+-  if (Used.count(GV))
++  // A global symbol that inline asm in the function defines exists only if the
++  // function is emitted.
++  if (Used.count(GV) || Msymtab.definesAsmSymbols(GV))
+     Sym.Flags |= 1 << storage::Symbol::FB_used;
+   if (GV->isThreadLocal())
+     Sym.Flags |= 1 << storage::Symbol::FB_tls;
+diff --git a/llvm/lib/Object/ModuleSymbolTable.cpp b/llvm/lib/Object/ModuleSymbolTable.cpp
+index 44f717ec1232..d95656909446 100644
+--- a/llvm/lib/Object/ModuleSymbolTable.cpp
++++ b/llvm/lib/Object/ModuleSymbolTable.cpp
+@@ -14,13 +14,21 @@
+ 
+ #include "llvm/Object/ModuleSymbolTable.h"
+ #include "RecordStreamer.h"
++#include "llvm/ADT/SmallPtrSet.h"
++#include "llvm/ADT/SmallString.h"
++#include "llvm/ADT/SmallVector.h"
++#include "llvm/ADT/StringExtras.h"
++#include "llvm/ADT/StringSet.h"
+ #include "llvm/ADT/StringRef.h"
++#include "llvm/IR/BasicBlock.h"
+ #include "llvm/IR/DiagnosticInfo.h"
+ #include "llvm/IR/Function.h"
+ #include "llvm/IR/GlobalAlias.h"
+ #include "llvm/IR/GlobalValue.h"
+ #include "llvm/IR/GlobalVariable.h"
+ #include "llvm/IR/InlineAsm.h"
++#include "llvm/IR/InstrTypes.h"
++#include "llvm/IR/Instructions.h"
+ #include "llvm/IR/Module.h"
+ #include "llvm/MC/MCAsmInfo.h"
+ #include "llvm/MC/MCContext.h"
+@@ -58,27 +66,147 @@ void ModuleSymbolTable::addModule(Module *M) {
+   for (GlobalValue &GV : M->global_values())
+     SymTab.push_back(&GV);
+ 
+-  CollectAsmSymbols(*M, [this](StringRef Name, BasicSymbolRef::Flags Flags) {
+-    SymTab.push_back(new (AsmSymbols.Allocate())
+-                         AsmSymbol(std::string(Name), Flags));
+-  });
++  CollectAsmSymbols(
++      *M,
++      [this](StringRef Name, BasicSymbolRef::Flags Flags) {
++        SymTab.push_back(new (AsmSymbols.Allocate())
++                             AsmSymbol(std::string(Name), Flags));
++      },
++      [this](const Function &F) { AsmDefiningFunctions.insert(&F); });
++}
++
++bool ModuleSymbolTable::inlineAsmMayDefineSymbols(StringRef Asm) {
++  return Asm.contains(".glob") || Asm.contains(".weak");
++}
++
++// Rewrite the asm string of an inline asm call into text the assembler can
++// parse. The operands are not known here, so each reference to one becomes 0,
++// which is enough to find the symbols the asm names. The syntax is that of
++// AsmPrinter::emitInlineAsm.
++static std::string expandInlineAsm(StringRef Asm, InlineAsm::AsmDialect Dialect) {
++  std::string Out;
++  // Position in a $( ... $| ... $) group of dialect alternatives, and whether
++  // the text being read belongs to the dialect in use.
++  bool InAlternatives = false;
++  unsigned Alternative = 0;
++  unsigned Wanted = Dialect == InlineAsm::AD_Intel ? 1 : 0;
++  auto Emit = [&](StringRef Text) {
++    if (!InAlternatives || Alternative == Wanted)
++      Out += Text;
++  };
++  for (size_t I = 0, E = Asm.size(); I != E; ++I) {
++    char C = Asm[I];
++    if (C != '$' || I + 1 == E) {
++      Emit(StringRef(&C, 1));
++      continue;
++    }
++    char N = Asm[++I];
++    switch (N) {
++    case '$':
++      Emit("$");
++      break;
++    case '(':
++      InAlternatives = true;
++      Alternative = 0;
++      break;
++    case '|':
++      ++Alternative;
++      break;
++    case ')':
++      InAlternatives = false;
++      break;
++    case '{': {
++      size_t Close = Asm.find('}', I);
++      if (Close == StringRef::npos)
++        Close = E - 1;
++      // ${N:modifier} is an operand, ${:name} a built in string such as a
++      // unique id. 0 serves for both.
++      Emit("0");
++      I = Close;
++      break;
++    }
++    default:
++      if (isDigit(N)) {
++        while (I + 1 != E && isDigit(Asm[I + 1]))
++          ++I;
++        Emit("0");
++      } else {
++        Emit(StringRef(&C, 1));
++        Emit(StringRef(&N, 1));
++      }
++    }
++  }
++  return Out;
+ }
+ 
+-static void
+-initializeRecordStreamer(const Module &M,
+-                         function_ref<void(RecordStreamer &)> Init) {
++namespace {
++// A piece of assembly to scan for symbols: the module level asm, or the asm
++// string of an inline asm call in the body of Origin.
++struct AsmFragment {
++  std::string Asm;
++  std::string CPU;
++  std::string Features;
++  InlineAsm::AsmDialect Dialect = InlineAsm::AD_ATT;
++  const Function *Origin = nullptr;
++};
++} // namespace
++
++static void initializeRecordStreamer(
++    const Module &M,
++    function_ref<void(RecordStreamer &, const Function *)> Init,
++    bool IncludeFunctions = true) {
+   // This function may be called twice, once for ModuleSummaryIndexAnalysis and
+   // the other when writing the IR symbol table. If parsing inline assembly has
+   // caused errors in the first run, suppress the second run.
+   if (M.getContext().getDiagHandlerPtr()->HasErrors)
+     return;
+-  if (!M.hasModuleInlineAsm())
++
++  SmallVector<AsmFragment, 1> Fragments;
++  for (const Module::GlobalAsmFragment &Frag : M.getModuleInlineAsm()) {
++    AsmFragment F;
++    F.Asm = Frag.Asm;
++    F.CPU = Frag.Props.TargetCPU;
++    F.Features = Frag.Props.TargetFeatures;
++    Fragments.push_back(std::move(F));
++  }
++  if (IncludeFunctions) {
++    // Inline asm in a function can define symbols too, which the linker has to
++    // know about before code generation. Most of it does not, and is skipped.
++    SmallPtrSet<const InlineAsm *, 4> Seen;
++    for (const Function &F : M) {
++      if (F.isDeclaration())
++        continue;
++      Seen.clear();
++      for (const BasicBlock &BB : F)
++        for (const Instruction &I : BB) {
++          const auto *CB = dyn_cast<CallBase>(&I);
++          if (!CB)
++            continue;
++          const auto *IA = dyn_cast<InlineAsm>(CB->getCalledOperand());
++          if (!IA || !ModuleSymbolTable::inlineAsmMayDefineSymbols(
++                         IA->getAsmString()) ||
++              !Seen.insert(IA).second)
++            continue;
++          AsmFragment Frag;
++          Frag.Asm = expandInlineAsm(IA->getAsmString(), IA->getDialect());
++          Frag.CPU = F.getFnAttribute("target-cpu").getValueAsString();
++          Frag.Features = F.getFnAttribute("target-features").getValueAsString();
++          Frag.Dialect = IA->getDialect();
++          Frag.Origin = &F;
++          Fragments.push_back(std::move(Frag));
++        }
++    }
++  }
++  if (Fragments.empty())
+     return;
+ 
+   std::string Err;
+   const Triple TT(M.getTargetTriple());
+   const Target *T = TargetRegistry::lookupTarget(TT, Err);
+-  assert(T && T->hasMCAsmParser());
++  if (!T || !T->hasMCAsmParser()) {
++    assert(!M.hasModuleInlineAsm() && "inline asm without an assembler parser");
++    return;
++  }
+ 
+   std::unique_ptr<MCRegisterInfo> MRI(T->createMCRegInfo(TT));
+   if (!MRI)
+@@ -93,9 +221,9 @@ initializeRecordStreamer(const Module &M,
+   if (!MCII)
+     return;
+ 
+-  for (const Module::GlobalAsmFragment &Frag : M.getModuleInlineAsm()) {
+-    std::unique_ptr<MCSubtargetInfo> STI(T->createMCSubtargetInfo(
+-        TT, Frag.Props.TargetCPU, Frag.Props.TargetFeatures));
++  for (const AsmFragment &Frag : Fragments) {
++    std::unique_ptr<MCSubtargetInfo> STI(
++        T->createMCSubtargetInfo(TT, Frag.CPU, Frag.Features));
+     if (!STI)
+       return;
+ 
+@@ -119,36 +247,81 @@ initializeRecordStreamer(const Module &M,
+     if (!TAP)
+       return;
+ 
+-    MCCtx.setDiagnosticHandler([&](const SMDiagnostic &SMD, bool IsInlineAsm,
+-                                   const SourceMgr &SrcMgr,
+-                                   std::vector<const MDNode *> &LocInfos) {
+-      M.getContext().diagnose(
+-          DiagnosticInfoSrcMgr(SMD, M.getName(), IsInlineAsm, /*LocCookie=*/0));
+-    });
++    // Errors in the asm of a function are reported when it is assembled. The
++    // operands were guessed here, so the asm may not parse; its symbols are
++    // then simply not found.
++    if (Frag.Origin)
++      MCCtx.setDiagnosticHandler([](const SMDiagnostic &, bool,
++                                    const SourceMgr &,
++                                    std::vector<const MDNode *> &) {});
++    else
++      MCCtx.setDiagnosticHandler([&](const SMDiagnostic &SMD, bool IsInlineAsm,
++                                     const SourceMgr &SrcMgr,
++                                     std::vector<const MDNode *> &LocInfos) {
++        M.getContext().diagnose(DiagnosticInfoSrcMgr(SMD, M.getName(),
++                                                     IsInlineAsm,
++                                                     /*LocCookie=*/0));
++      });
+ 
+     // Module-level inline asm is assumed to use At&t syntax (see
+-    // AsmPrinter::doInitialization()).
+-    Parser->setAssemblerDialect(InlineAsm::AD_ATT);
++    // AsmPrinter::doInitialization()), which is the default of AsmFragment.
++    Parser->setAssemblerDialect(Frag.Dialect);
+ 
+     Parser->setSymbolScanningMode(true);
+ 
+     Parser->setTargetParser(*TAP);
+-    if (Parser->Run(false))
++    if (Parser->Run(false)) {
++      if (Frag.Origin)
++        continue;
+       return;
++    }
+ 
+-    Init(Streamer);
++    Init(Streamer, Frag.Origin);
+   }
+ }
+ 
+ void ModuleSymbolTable::CollectAsmSymbols(
+     const Module &M,
+-    function_ref<void(StringRef, BasicSymbolRef::Flags)> AsmSymbol) {
+-  initializeRecordStreamer(M, [&](RecordStreamer &Streamer) {
++    function_ref<void(StringRef, BasicSymbolRef::Flags)> AsmSymbol,
++    function_ref<void(const Function &)> AsmDefiningFunction) {
++  // The mangled names of the values with local linkage, which asm in a function
++  // can name too. They are not symbols the linker could be asked for: once the
++  // module is emitted the reference is to a local symbol of the same object.
++  StringSet<> LocalNames;
++  bool LocalNamesBuilt = false;
++  auto IsLocalName = [&](StringRef Name) {
++    if (!LocalNamesBuilt) {
++      LocalNamesBuilt = true;
++      Mangler Mang;
++      SmallString<64> MangledName;
++      for (const GlobalValue &GV : M.global_values()) {
++        if (!GV.hasName() || !GV.hasLocalLinkage())
++          continue;
++        MangledName.clear();
++        Mang.getNameWithPrefix(MangledName, &GV, /*CannotUsePrivateLabel=*/false);
++        LocalNames.insert(MangledName);
++      }
++    }
++    return LocalNames.contains(Name);
++  };
++
++  initializeRecordStreamer(M, [&](RecordStreamer &Streamer,
++                                  const Function *Origin) {
+     Streamer.flushSymverDirectives();
+ 
+     for (auto &KV : Streamer) {
+       StringRef Key = KV.first();
+       RecordStreamer::State Value = KV.second;
++      // Of the asm in a function only what the linker can see matters: the
++      // labels it defines for itself stay inside the function.
++      if (Origin && Value == RecordStreamer::Defined)
++        continue;
++      if (Origin && Value == RecordStreamer::Used && IsLocalName(Key))
++        continue;
++      if (Origin && AsmDefiningFunction &&
++          (Value == RecordStreamer::DefinedGlobal ||
++           Value == RecordStreamer::DefinedWeak))
++        AsmDefiningFunction(*Origin);
+       // FIXME: For now we just assume that all asm symbols are executable.
+       uint32_t Res = BasicSymbolRef::SF_Executable;
+       switch (Value) {
+@@ -193,11 +366,14 @@ void ModuleSymbolTable::CollectAsmSymbols(
+ 
+ void ModuleSymbolTable::CollectAsmSymvers(
+     const Module &M, function_ref<void(StringRef, StringRef)> AsmSymver) {
+-  initializeRecordStreamer(M, [&](RecordStreamer &Streamer) {
+-    for (auto &KV : Streamer.symverAliases())
+-      for (auto &Alias : KV.second)
+-        AsmSymver(KV.first->getName(), Alias);
+-  });
++  initializeRecordStreamer(
++      M,
++      [&](RecordStreamer &Streamer, const Function *) {
++        for (auto &KV : Streamer.symverAliases())
++          for (auto &Alias : KV.second)
++            AsmSymver(KV.first->getName(), Alias);
++      },
++      /*IncludeFunctions=*/false);
+ }
+ 
+ void ModuleSymbolTable::printSymbolName(raw_ostream &OS, Symbol S) const {
+diff --git a/llvm/lib/Object/RecordStreamer.cpp b/llvm/lib/Object/RecordStreamer.cpp
+index 6e8d0c477803..c5e51812aaf5 100644
+--- a/llvm/lib/Object/RecordStreamer.cpp
++++ b/llvm/lib/Object/RecordStreamer.cpp
+@@ -81,6 +81,41 @@ RecordStreamer::const_iterator RecordStreamer::begin() {
+ 
+ RecordStreamer::const_iterator RecordStreamer::end() { return Symbols.end(); }
+ 
++void RecordStreamer::emitCOFFSymbolIndex(const MCSymbol *Symbol) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFSectionIndex(const MCSymbol *Symbol) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFSecRel32(const MCSymbol *Symbol, uint64_t) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFImgRel32(const MCSymbol *Symbol, int64_t) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFSecNumber(const MCSymbol *Symbol) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFSecOffset(const MCSymbol *Symbol) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitCOFFSafeSEH(const MCSymbol *Symbol) {
++  visitUsedSymbol(*Symbol);
++}
++
++void RecordStreamer::emitWinEHHandler(const MCSymbol *Sym, bool Unwind,
++                                      bool Except, SMLoc Loc) {
++  if (Sym)
++    visitUsedSymbol(*Sym);
++  MCStreamer::emitWinEHHandler(Sym, Unwind, Except, Loc);
++}
++
+ void RecordStreamer::emitLabel(MCSymbol *Symbol, SMLoc Loc) {
+   MCStreamer::emitLabel(Symbol);
+   markDefined(*Symbol);
+diff --git a/llvm/lib/Object/RecordStreamer.h b/llvm/lib/Object/RecordStreamer.h
+index edb6e3ae118b..2fb6177c18b8 100644
+--- a/llvm/lib/Object/RecordStreamer.h
++++ b/llvm/lib/Object/RecordStreamer.h
+@@ -63,6 +63,18 @@ public:
+   void emitCOFFSymbolType(int Type) override {}
+   void endCOFFSymbolDef() override {}
+ 
++  // The directives that refer to a symbol in a COFF specific way, such as
++  // .rva, use it as much as any other reference does.
++  void emitCOFFSymbolIndex(const MCSymbol *Symbol) override;
++  void emitCOFFSectionIndex(const MCSymbol *Symbol) override;
++  void emitCOFFSecRel32(const MCSymbol *Symbol, uint64_t Offset) override;
++  void emitCOFFImgRel32(const MCSymbol *Symbol, int64_t Offset) override;
++  void emitCOFFSecNumber(const MCSymbol *Symbol) override;
++  void emitCOFFSecOffset(const MCSymbol *Symbol) override;
++  void emitCOFFSafeSEH(const MCSymbol *Symbol) override;
++  void emitWinEHHandler(const MCSymbol *Sym, bool Unwind, bool Except,
++                        SMLoc Loc) override;
++
+   /// Record .symver aliases for later processing.
+   void emitELFSymverDirective(const MCSymbol *OriginalSym, StringRef Name,
+                               bool KeepOriginalSym) override;

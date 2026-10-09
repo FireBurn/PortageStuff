@@ -1,360 +1,15 @@
-The PE build links with -flto=thin. Two kinds of file cannot go through it.
-
-Sources that define or refer to symbols from inline asm inside a function: the
-LTO symbol table only reads module level asm, so the symbols are missing or
-dropped and the link reports them undefined. These are the RTTI and vtable
-definitions of the C++ runtime emulation, the unwind handlers of ntdll and
-wow64's asm callers.
+The PE build links with -flto=thin, with LLVM that finds the symbols inline asm
+defines. Two things still do not go through it.
 
 The static runtime libraries: LTO code generation emits calls to library
 functions such as fetestexcept and _dsign, and lld cannot take a bitcode
-archive member for them after code generation has run.
+archive member for them after code generation has run. Compile them without LTO.
 
-Compile all of these without LTO.
+wow64 calls two functions from module level asm. Asm can only name a symbol the
+linker knows, so they cannot be static.
 
---- a/dlls/concrt140/Makefile.in	2026-10-09 15:16:49.401736052 +0100
-+++ b/dlls/concrt140/Makefile.in	2026-10-09 15:16:49.401844353 +0100
-@@ -2,6 +2,10 @@
- MODULE = concrt140.dll
- PARENTSRC = ../msvcrt
- 
-+concrt140_EXTRADEFS = -fno-lto
-+concurrency_EXTRADEFS = -fno-lto
-+details_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	concrt140.c \
- 	concurrency.c \
---- a/dlls/crtdll/Makefile.in	2026-10-09 15:16:49.402066406 +0100
-+++ b/dlls/crtdll/Makefile.in	2026-10-09 15:16:49.402133441 +0100
-@@ -4,6 +4,8 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/msvcirt/Makefile.in	2026-10-09 15:16:49.407529857 +0100
-+++ b/dlls/msvcirt/Makefile.in	2026-10-09 15:16:49.407605547 +0100
-@@ -3,6 +3,9 @@
- PARENTSRC = ../msvcp90
- IMPORTS   = msvcrt
- 
-+exception_EXTRADEFS = -fno-lto
-+msvcirt_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	exception.c \
- 	msvcirt.c
---- a/dlls/msvcp100/Makefile.in	2026-10-09 15:16:49.407758973 +0100
-+++ b/dlls/msvcp100/Makefile.in	2026-10-09 15:16:49.407822301 +0100
-@@ -3,6 +3,12 @@
- EXTRADEFS = -D_MSVCP_VER=100
- PARENTSRC = ../msvcp90
- 
-+details_EXTRADEFS = -fno-lto
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	details.c \
- 	exception.c \
---- a/dlls/msvcp110/Makefile.in	2026-10-09 15:16:49.407924611 +0100
-+++ b/dlls/msvcp110/Makefile.in	2026-10-09 15:16:49.407990764 +0100
-@@ -3,6 +3,12 @@
- EXTRADEFS = -D_MSVCP_VER=110
- PARENTSRC = ../msvcp90
- 
-+details_EXTRADEFS = -fno-lto
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	details.c \
- 	exception.c \
---- a/dlls/msvcp120/Makefile.in	2026-10-09 15:16:49.408080932 +0100
-+++ b/dlls/msvcp120/Makefile.in	2026-10-09 15:16:49.408144360 +0100
-@@ -3,6 +3,12 @@
- EXTRADEFS = -D_MSVCP_VER=120
- PARENTSRC = ../msvcp90
- 
-+details_EXTRADEFS = -fno-lto
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	details.c \
- 	exception.c \
---- a/dlls/msvcp140/Makefile.in	2026-10-09 15:16:49.408238364 +0100
-+++ b/dlls/msvcp140/Makefile.in	2026-10-09 15:16:49.408300169 +0100
-@@ -7,6 +7,12 @@
- VER_FILEDESCRIPTION_STR = "Wine runtime library"
- VER_PRODUCTVERSION      = 14,50,35719,0
- 
-+details_EXTRADEFS = -fno-lto
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	details.c \
- 	exception.c \
---- a/dlls/msvcp140_1/Makefile.in	2026-10-09 15:16:49.408377864 +0100
-+++ b/dlls/msvcp140_1/Makefile.in	2026-10-09 15:16:49.408444658 +0100
-@@ -1,5 +1,7 @@
- MODULE       = msvcp140_1.dll
- PARENTSRC    = ../msvcp90
- 
-+msvcp140_1_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	msvcp140_1.c
---- a/dlls/msvcp60/Makefile.in	2026-10-09 15:16:49.408591221 +0100
-+++ b/dlls/msvcp60/Makefile.in	2026-10-09 15:16:49.408653286 +0100
-@@ -5,6 +5,11 @@
- 
- EXTRADLLFLAGS = -Wb,--prefer-native
- 
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	exception.c \
- 	ios.c \
---- a/dlls/msvcp70/Makefile.in	2026-10-09 15:16:49.408741851 +0100
-+++ b/dlls/msvcp70/Makefile.in	2026-10-09 15:16:49.408803305 +0100
-@@ -3,6 +3,11 @@
- EXTRADEFS = -D_MSVCP_VER=70
- PARENTSRC = ../msvcp90
- 
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	exception.c \
- 	ios.c \
---- a/dlls/msvcp71/Makefile.in	2026-10-09 15:16:49.408885789 +0100
-+++ b/dlls/msvcp71/Makefile.in	2026-10-09 15:16:49.408947463 +0100
-@@ -3,6 +3,11 @@
- EXTRADEFS = -D_MSVCP_VER=71
- PARENTSRC = ../msvcp90
- 
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	exception.c \
- 	ios.c \
---- a/dlls/msvcp80/Makefile.in	2026-10-09 15:16:49.409030267 +0100
-+++ b/dlls/msvcp80/Makefile.in	2026-10-09 15:16:49.409124903 +0100
-@@ -3,6 +3,11 @@
- EXTRADEFS = -D_MSVCP_VER=80
- PARENTSRC = ../msvcp90
- 
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	exception.c \
- 	ios.c \
---- a/dlls/msvcp90/Makefile.in	2026-10-09 15:16:49.409215562 +0100
-+++ b/dlls/msvcp90/Makefile.in	2026-10-09 15:16:49.409297955 +0100
-@@ -2,6 +2,12 @@
- IMPORTS   = msvcr90
- EXTRADEFS = -D_MSVCP_VER=90
- 
-+details_EXTRADEFS = -fno-lto
-+exception_EXTRADEFS = -fno-lto
-+ios_EXTRADEFS = -fno-lto
-+locale_EXTRADEFS = -fno-lto
-+misc_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	details.c \
- 	exception.c \
---- a/dlls/msvcr100/Makefile.in	2026-10-09 15:16:49.409492417 +0100
-+++ b/dlls/msvcr100/Makefile.in	2026-10-09 15:16:49.409566685 +0100
-@@ -8,6 +8,9 @@
- VER_FILEDESCRIPTION_STR = "Wine CRT library"
- VER_PRODUCTVERSION      = 10,0,30319,0
- 
-+concurrency_EXTRADEFS = -fno-lto
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	concurrency.c \
- 	console.c \
---- a/dlls/msvcr110/Makefile.in	2026-10-09 15:16:49.409742352 +0100
-+++ b/dlls/msvcr110/Makefile.in	2026-10-09 15:16:49.409817892 +0100
-@@ -5,6 +5,9 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+concurrency_EXTRADEFS = -fno-lto
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	concurrency.c \
- 	console.c \
---- a/dlls/msvcr120/Makefile.in	2026-10-09 15:16:49.409999400 +0100
-+++ b/dlls/msvcr120/Makefile.in	2026-10-09 15:16:49.410100799 +0100
-@@ -8,6 +8,9 @@
- VER_FILEDESCRIPTION_STR = "Wine CRT library"
- VER_PRODUCTVERSION      = 12,0,40664,0
- 
-+concurrency_EXTRADEFS = -fno-lto
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	concurrency.c \
- 	console.c \
---- a/dlls/msvcr70/Makefile.in	2026-10-09 15:16:49.410276305 +0100
-+++ b/dlls/msvcr70/Makefile.in	2026-10-09 15:16:49.410346786 +0100
-@@ -5,6 +5,8 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/msvcr71/Makefile.in	2026-10-09 15:16:49.410524577 +0100
-+++ b/dlls/msvcr71/Makefile.in	2026-10-09 15:16:49.410598204 +0100
-@@ -5,6 +5,8 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/msvcr80/Makefile.in	2026-10-09 15:16:49.410777557 +0100
-+++ b/dlls/msvcr80/Makefile.in	2026-10-09 15:16:49.410853118 +0100
-@@ -5,6 +5,8 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/msvcr90/Makefile.in	2026-10-09 15:16:49.411029375 +0100
-+++ b/dlls/msvcr90/Makefile.in	2026-10-09 15:16:49.411132607 +0100
-@@ -5,6 +5,8 @@
- DELAYIMPORTS = advapi32 user32
- PARENTSRC = ../msvcrt
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/msvcrt/Makefile.in	2026-10-09 15:16:49.411323622 +0100
-+++ b/dlls/msvcrt/Makefile.in	2026-10-09 15:16:49.411403671 +0100
-@@ -7,6 +7,9 @@
- VER_FILEDESCRIPTION_STR = "Wine CRT library"
- VER_PRODUCTVERSION      = 7,0,2600,2180
- 
-+concurrency_EXTRADEFS = -fno-lto
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	concurrency.c \
- 	console.c \
---- a/dlls/msvcrtd/Makefile.in	2026-10-09 15:16:49.411589016 +0100
-+++ b/dlls/msvcrtd/Makefile.in	2026-10-09 15:16:49.411664276 +0100
-@@ -5,6 +5,8 @@
- PARENTSRC = ../msvcrt
- DELAYIMPORTS = advapi32 user32
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	console.c \
- 	cpp.c \
---- a/dlls/ntdll/Makefile.in	2026-10-09 15:16:49.412407939 +0100
-+++ b/dlls/ntdll/Makefile.in	2026-10-09 15:16:49.412492737 +0100
-@@ -13,6 +13,12 @@
- 
- VER_PRODUCTVERSION = 6,1,7601,24059
- 
-+signal_arm_EXTRADEFS = -fno-lto
-+signal_arm64_EXTRADEFS = -fno-lto
-+signal_arm64ec_EXTRADEFS = -fno-lto
-+signal_i386_EXTRADEFS = -fno-lto
-+signal_x86_64_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	actctx.c \
- 	alpc.c \
---- a/dlls/ucrtbase/Makefile.in	2026-10-09 15:16:49.414941852 +0100
-+++ b/dlls/ucrtbase/Makefile.in	2026-10-09 15:16:49.415030056 +0100
-@@ -8,6 +8,8 @@
- VER_FILEDESCRIPTION_STR = "Wine runtime library"
- VER_PRODUCTVERSION      = 10,0,14393,2247
- 
-+cpp_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	atexit.c \
- 	console.c \
---- a/dlls/vccorlib140/Makefile.in	2026-10-09 15:16:49.415619973 +0100
-+++ b/dlls/vccorlib140/Makefile.in	2026-10-09 15:16:49.415689172 +0100
-@@ -1,6 +1,10 @@
- MODULE = vccorlib140.dll
- IMPORTS = combase oleaut32
- 
-+delegate_EXTRADEFS = -fno-lto
-+except_EXTRADEFS = -fno-lto
-+vccorlib_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	delegate.c \
- 	except.c \
---- a/dlls/vcruntime140/Makefile.in	2026-10-09 15:16:49.415897910 +0100
-+++ b/dlls/vcruntime140/Makefile.in	2026-10-09 15:16:49.415957340 +0100
-@@ -1,6 +1,8 @@
- MODULE    = vcruntime140.dll
- IMPORTLIB = vcruntime140
- 
-+typeinfo_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	init_thread.c \
- 	misc.c \
---- a/dlls/wow64/Makefile.in	2026-10-09 15:16:49.418633969 +0100
-+++ b/dlls/wow64/Makefile.in	2026-10-09 15:16:49.418723806 +0100
-@@ -4,6 +4,8 @@
- 
- EXTRADLLFLAGS = -nodefaultlibs
- 
-+syscall_EXTRADEFS = -fno-lto
-+
- SOURCES = \
- 	file.c \
- 	process.c \
---- a/libs/c++/Makefile.in	2026-10-09 15:16:49.420122437 +0100
-+++ b/libs/c++/Makefile.in	2026-10-09 15:16:49.420186847 +0100
+--- a/libs/c++/Makefile.in	2026-10-09 16:37:26.936106237 +0100
++++ b/libs/c++/Makefile.in	2026-10-09 16:37:26.936190223 +0100
 @@ -1,6 +1,6 @@
  STATICLIB = libc++.a
  EXTRAINCL = -I$(srcdir)/src $(CXXABI_PE_CFLAGS)
@@ -363,8 +18,8 @@ Compile all of these without LTO.
  
  SOURCES = \
  	src/algorithm.cpp \
---- a/libs/c++abi/Makefile.in	2026-10-09 15:16:49.420248261 +0100
-+++ b/libs/c++abi/Makefile.in	2026-10-09 15:16:49.420304386 +0100
+--- a/libs/c++abi/Makefile.in	2026-10-09 16:37:26.936251517 +0100
++++ b/libs/c++abi/Makefile.in	2026-10-09 16:37:26.936312871 +0100
 @@ -1,6 +1,6 @@
  STATICLIB = libc++abi.a
  EXTRAINCL = -I$(srcdir)/include $(UNWIND_PE_CFLAGS)
@@ -373,16 +28,16 @@ Compile all of these without LTO.
  
  SOURCES = \
  	src/abort_message.cpp \
---- a/libs/compiler-rt/Makefile.in	2026-10-09 15:16:49.419919099 +0100
-+++ b/libs/compiler-rt/Makefile.in	2026-10-09 15:16:49.419990662 +0100
+--- a/libs/compiler-rt/Makefile.in	2026-10-09 16:37:26.935841054 +0100
++++ b/libs/compiler-rt/Makefile.in	2026-10-09 16:37:26.935961668 +0100
 @@ -1,4 +1,5 @@
  STATICLIB = libcompiler-rt.a
 +EXTRADEFS = -fno-lto
  
  SOURCES = \
  	lib/builtins/aarch64/chkstk.S \
---- a/libs/musl/Makefile.in	2026-10-09 15:16:49.420365900 +0100
-+++ b/libs/musl/Makefile.in	2026-10-09 15:16:49.420438415 +0100
+--- a/libs/musl/Makefile.in	2026-10-09 16:37:26.936370388 +0100
++++ b/libs/musl/Makefile.in	2026-10-09 16:37:26.936416704 +0100
 @@ -1,6 +1,6 @@
  STATICLIB = libmusl.a
  EXTRAINCL = -I$(srcdir)/src/internal -I$(srcdir)/arch/generic
@@ -391,8 +46,8 @@ Compile all of these without LTO.
              -fno-builtin
  
  SOURCES = \
---- a/libs/unwind/Makefile.in	2026-10-09 15:16:49.420633908 +0100
-+++ b/libs/unwind/Makefile.in	2026-10-09 15:16:49.420706473 +0100
+--- a/libs/unwind/Makefile.in	2026-10-09 16:37:26.936583243 +0100
++++ b/libs/unwind/Makefile.in	2026-10-09 16:37:26.936630621 +0100
 @@ -1,6 +1,6 @@
  STATICLIB = libunwind.a
  EXTRAINCL = -I$(srcdir)/include
@@ -401,11 +56,31 @@ Compile all of these without LTO.
  
  SOURCES = \
  	src/Unwind-seh.cpp \
---- a/libs/winecrt0/Makefile.in	2026-10-09 15:16:49.420501652 +0100
-+++ b/libs/winecrt0/Makefile.in	2026-10-09 15:16:49.420554972 +0100
+--- a/libs/winecrt0/Makefile.in	2026-10-09 16:37:26.936478990 +0100
++++ b/libs/winecrt0/Makefile.in	2026-10-09 16:37:26.936529624 +0100
 @@ -1,4 +1,5 @@
  STATICLIB = libwinecrt0.a
 +EXTRADEFS = -fno-lto
  
  SOURCES = \
  	arm64ec.c \
+--- a/dlls/wow64/syscall.c
++++ b/dlls/wow64/syscall.c
+@@ -194,7 +194,7 @@
+ /**********************************************************************
+  *           call_user_exception_dispatcher
+  */
+-static void __attribute__((used)) call_user_exception_dispatcher( EXCEPTION_RECORD32 *rec, void *ctx32_ptr,
++void __attribute__((used)) call_user_exception_dispatcher( EXCEPTION_RECORD32 *rec, void *ctx32_ptr,
+                                                                   void *ctx64_ptr )
+ {
+     switch (current_machine)
+@@ -297,7 +297,7 @@
+ /**********************************************************************
+  *           call_raise_user_exception_dispatcher
+  */
+-static void __attribute__((used)) call_raise_user_exception_dispatcher( ULONG code )
++void __attribute__((used)) call_raise_user_exception_dispatcher( ULONG code )
+ {
+     NtCurrentTeb32()->ExceptionCode = code;
+ 
