@@ -1,0 +1,13 @@
+The ffx headers use bool in C without declaring it. clang defaults to a C standard
+before C23, where it is not a keyword. ffx_vk_portable.h is what they include.
+
+--- a/extern/ffx-vulkan/include/ffx_vk_portable.h
++++ b/extern/ffx-vulkan/include/ffx_vk_portable.h
+@@ -7,6 +7,7 @@
+ #define FFX_VK_PORTABLE_H
+ 
+ #include <stddef.h>
++#include <stdbool.h>
+ #include <stdint.h>
+ #include <vulkan/vulkan.h>
+ 
