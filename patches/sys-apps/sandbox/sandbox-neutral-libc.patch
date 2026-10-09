@@ -1,0 +1,108 @@
+Let one libsandbox serve processes with different libcs.
+
+LD_PRELOAD reaches every process the build starts, and some of them, such as a
+glibc JVM, have another libc than the one libsandbox was linked with. Linking
+no libc makes it take the libc of the process it is in, which
+SB_NEUTRAL_LDFLAGS and SB_NEUTRAL_LIBADD ask for. What differs between
+libcs is errno, which is read through __errno_location, pthread_mutex_t, whose
+layout differs and which the existing spinlock replaces, and the libc path
+built in, which gives way to RTLD_NEXT. All three change only when
+SB_LIBC_NEUTRAL is defined.
+
+--- a/headers.h
++++ b/headers.h
+@@ -23,6 +23,13 @@
+ #ifdef HAVE_ERRNO_H
+ # include <errno.h>
+ #endif
++/* Both glibc and LLVM libc export __errno_location, which lets one libsandbox
++ * serve a process with either libc. */
++#ifdef SB_LIBC_NEUTRAL
++# undef errno
++extern int *__errno_location(void);
++# define errno (*__errno_location())
++#endif
+ #ifdef HAVE_EXECINFO_H
+ # include <execinfo.h>
+ #endif
+--- a/libsandbox/local.mk
++++ b/libsandbox/local.mk
+@@ -9,11 +9,15 @@
+ 	-I$(top_srcdir)/libsbutil/include
+ 
+ %C%_libsandbox_la_CFLAGS = $(CFLAG_EXCEPTIONS)
+-%C%_libsandbox_la_LIBADD = libsbutil/libsbutil.a $(LIBDL)
++# SB_NEUTRAL_LDFLAGS and SB_NEUTRAL_LIBADD, both empty by default, are for
++# linking no libc so that the library takes the libc of the process it is in;
++# -z undefs has to come after LDFLAGS, which asks for --no-undefined.
++%C%_libsandbox_la_LIBADD = libsbutil/libsbutil.a $(LIBDL) $(SB_NEUTRAL_LIBADD)
+ # Do not add -nostdlib or -nostartfiles, as then our constructor
+ # and destructor will not be executed ...
+ %C%_libsandbox_la_LDFLAGS = \
+ 	-no-undefined \
++	$(SB_NEUTRAL_LDFLAGS) \
+ 	-avoid-version \
+ 	$(LDFLAG_VER),%D%/libsandbox.map
+ %C%_libsandbox_la_SOURCES = \
+--- a/libsandbox/lock.c
++++ b/libsandbox/lock.c
+@@ -7,7 +7,8 @@
+ #include "headers.h"
+ #include "libsandbox.h"
+ 
+-#if defined(HAVE_PTHREAD_H)
++/* SB_LIBC_NEUTRAL avoids pthread_mutex_t, whose layout differs between libcs. */
++#if defined(HAVE_PTHREAD_H) && !defined(SB_LIBC_NEUTRAL)
+ 
+ static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+ 
+@@ -21,7 +22,7 @@
+ 	pthread_mutex_unlock(&lock);
+ }
+ 
+-#elif defined(HAVE___SYNC_LOCK_TEST_AND_SET)
++#elif defined(HAVE___SYNC_LOCK_TEST_AND_SET) || defined(SB_LIBC_NEUTRAL)
+ 
+ static int lock = 0;
+ 
+--- a/libsandbox/wrappers.c
++++ b/libsandbox/wrappers.c
+@@ -67,6 +67,11 @@
+ 
+ void *sb_libc_symbol(const char *symbol)
+ {
++#if defined(USE_RTLD_NEXT) && defined(SB_LIBC_NEUTRAL)
++	/* The libc to use is the one of the process, not the one this was built
++	 * for. */
++	void *handle = RTLD_NEXT;
++#else
+ 	void *handle = libc_handle();
+ 	if (!handle)
+ #ifdef USE_RTLD_NEXT
+@@ -75,6 +80,7 @@
+ #else
+ 		exit(EXIT_FAILURE);
+ #endif
++#endif
+ 	return get_symbol(handle, symbol, NULL);
+ }
+ 
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -925,11 +925,15 @@
+ 	-I$(top_srcdir)/libsbutil/include
+ 
+ libsandbox_libsandbox_la_CFLAGS = $(CFLAG_EXCEPTIONS)
+-libsandbox_libsandbox_la_LIBADD = libsbutil/libsbutil.a $(LIBDL)
++# SB_NEUTRAL_LDFLAGS and SB_NEUTRAL_LIBADD, both empty by default, are for
++# linking no libc so that the library takes the libc of the process it is in;
++# -z undefs has to come after LDFLAGS, which asks for --no-undefined.
++libsandbox_libsandbox_la_LIBADD = libsbutil/libsbutil.a $(LIBDL) $(SB_NEUTRAL_LIBADD)
+ # Do not add -nostdlib or -nostartfiles, as then our constructor
+ # and destructor will not be executed ...
+ libsandbox_libsandbox_la_LDFLAGS = \
+ 	-no-undefined \
++	$(SB_NEUTRAL_LDFLAGS) \
+ 	-avoid-version \
+ 	$(LDFLAG_VER),libsandbox/libsandbox.map
+ 

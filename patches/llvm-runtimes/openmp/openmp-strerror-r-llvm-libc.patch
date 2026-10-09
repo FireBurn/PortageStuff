@@ -1,0 +1,13 @@
+LLVM libc has the GNU strerror_r under _GNU_SOURCE, as glibc does.
+
+--- a/openmp/runtime/src/kmp_i18n.cpp
++++ b/openmp/runtime/src/kmp_i18n.cpp
+@@ -708,7 +708,7 @@
+      int    strerror_r( int, char *, size_t );  // XSI version
+   */
+ 
+-#if (defined(__GLIBC__) && defined(_GNU_SOURCE)) ||                            \
++#if ((defined(__GLIBC__) || defined(__LLVM_LIBC__)) && defined(_GNU_SOURCE)) ||  \
+     (defined(__BIONIC__) && defined(_GNU_SOURCE) &&                            \
+      __ANDROID_API__ >= __ANDROID_API_M__)
+   // GNU version of strerror_r.

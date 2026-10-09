@@ -1,0 +1,12 @@
+boost's safe_numerics calls std::terminate without including <exception>, which libstdc++ pulls in elsewhere and libc++ does not.
+
+--- a/src/TypeUtils.h
++++ b/src/TypeUtils.h
+@@ -15,6 +15,7 @@
+ #include <type_traits>
+ #include <limits>
+ 
++#include <exception>
+ #include <boost/safe_numerics/automatic.hpp>
+ #include <boost/safe_numerics/safe_integer.hpp>
+ #include <boost/safe_numerics/safe_integer_range.hpp>
