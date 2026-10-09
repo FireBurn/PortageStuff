@@ -1,0 +1,14 @@
+Discard the result of std::exchange explicitly. libc++ marks it nodiscard and bun
+compiles with -Werror.
+
+--- a/src/jsc/bindings/webcore/AbortSignal.cpp
++++ b/src/jsc/bindings/webcore/AbortSignal.cpp
+@@ -282,7 +282,7 @@
+         return ctx == ref;
+     });
+ 
+-    std::exchange(m_native_callbacks, WTF::move(callbacks));
++    (void)std::exchange(m_native_callbacks, WTF::move(callbacks));
+     this->eventListenersDidChange();
+ }
+ 
