@@ -1,0 +1,32 @@
+--- a/printf.c
++++ b/printf.c
+@@ -925,9 +925,14 @@
+ 		// octal or hex or unsigned decimal
+ 		chbuf = (flags->format == 'X' ? Uchbuf : lchbuf);
+ 
++		// Converting a value outside the range of the integer type is
++		// undefined, and the compiler is free to fold away the check
++		// that follows, so look at the range first.
+ 		if (tmpval < 0) {
+-			uval = (uintmax_t) (intmax_t) tmpval;
+-			if ((AWKNUM)(intmax_t)uval != double_to_int(tmpval)) {
++			if (tmpval >= -9223372036854775808.0)
++				uval = (uintmax_t) (intmax_t) tmpval;
++			if (tmpval < -9223372036854775808.0 ||
++			    (AWKNUM)(intmax_t)uval != double_to_int(tmpval)) {
+ 				flags->format = 'g';
+ 				free((void *) buf);
+ 				*used_float = true;
+@@ -935,8 +940,10 @@
+ 				return format_float(arg, flags);
+ 			}
+ 		} else {
+-			uval = (uintmax_t) tmpval;
+-			if ((AWKNUM)uval != double_to_int(tmpval)) {
++			if (tmpval < 18446744073709551616.0)
++				uval = (uintmax_t) tmpval;
++			if (tmpval >= 18446744073709551616.0 ||
++			    (AWKNUM)uval != double_to_int(tmpval)) {
+ 				flags->format = 'g';
+ 				free((void *) buf);
+ 				*used_float = true;
