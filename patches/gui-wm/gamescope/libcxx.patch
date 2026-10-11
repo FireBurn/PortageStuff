@@ -1,0 +1,361 @@
+diff -urN a/layer/VkLayer_FROG_gamescope_wsi.cpp b/layer/VkLayer_FROG_gamescope_wsi.cpp
+--- a/layer/VkLayer_FROG_gamescope_wsi.cpp
++++ b/layer/VkLayer_FROG_gamescope_wsi.cpp
+@@ -1,6 +1,8 @@
+ #define VK_USE_PLATFORM_WAYLAND_KHR
+ #define VK_USE_PLATFORM_XCB_KHR
+ #define VK_USE_PLATFORM_XLIB_KHR
++#include <cstdlib>
++#include <string>
+ #include "vkroots.h"
+ #include "xcb_helpers.hpp"
+ #include "vulkan_operators.hpp"
+diff -urN a/layer/xcb_helpers.hpp b/layer/xcb_helpers.hpp
+--- a/layer/xcb_helpers.hpp
++++ b/layer/xcb_helpers.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <cstdlib>
+ #include <X11/Xlib-xcb.h>
+ #include <xcb/composite.h>
+ #include <cstdio>
+diff -urN a/src/Apps/gamescope_hotkey_example.cpp b/src/Apps/gamescope_hotkey_example.cpp
+--- a/src/Apps/gamescope_hotkey_example.cpp
++++ b/src/Apps/gamescope_hotkey_example.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <cstdio>
+ #include <cstring>
+ #include <string>
+diff -urN a/src/Apps/gamescopectl.cpp b/src/Apps/gamescopectl.cpp
+--- a/src/Apps/gamescopectl.cpp
++++ b/src/Apps/gamescopectl.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <cstdio>
+ #include <cstring>
+ #include <string>
+diff -urN a/src/Apps/gamescopestream.cpp b/src/Apps/gamescopestream.cpp
+--- a/src/Apps/gamescopestream.cpp
++++ b/src/Apps/gamescopestream.cpp
+@@ -3,6 +3,7 @@
+ // by Wim Taymans under MIT
+ ///////////////////////////////////////////////////////////////////////////////////////////////////////
+  
++#include <cstdlib>
+ #include <cstdio>
+ #include <cstdint>
+ #include <cassert>
+diff -urN a/src/Backends/OpenVRBackend.cpp b/src/Backends/OpenVRBackend.cpp
+--- a/src/Backends/OpenVRBackend.cpp
++++ b/src/Backends/OpenVRBackend.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <vector>
+ #include <memory>
+ #include <cmath>
+diff -urN a/src/Backends/SDLBackend.cpp b/src/Backends/SDLBackend.cpp
+--- a/src/Backends/SDLBackend.cpp
++++ b/src/Backends/SDLBackend.cpp
+@@ -1,5 +1,6 @@
+ // For the nested case, reads input from the SDL window and send to wayland
+ 
++#include "atomic_shared_ptr.h"
+ #include <X11/Xlib.h>
+ #include <thread>
+ #include <mutex>
+@@ -200,9 +201,9 @@
+ 
+ 		std::atomic<bool> m_bApplicationGrabbed = { false };
+ 		std::atomic<bool> m_bApplicationVisible = { false };
+-		std::atomic<std::shared_ptr<INestedHints::CursorInfo>> m_pApplicationCursor;
+-		std::atomic<std::shared_ptr<std::string>> m_pApplicationTitle;
+-		std::atomic<std::shared_ptr<std::vector<uint32_t>>> m_pApplicationIcon;
++		atomic_shared_ptr<INestedHints::CursorInfo> m_pApplicationCursor;
++		atomic_shared_ptr<std::string> m_pApplicationTitle;
++		atomic_shared_ptr<std::vector<uint32_t>> m_pApplicationIcon;
+ 		SDL_Surface *m_pIconSurface = nullptr;
+ 		SDL_Surface *m_pCursorSurface = nullptr;
+ 		SDL_Cursor *m_pCursor = nullptr;
+diff -urN a/src/Backends/WaylandBackend.cpp b/src/Backends/WaylandBackend.cpp
+--- a/src/Backends/WaylandBackend.cpp
++++ b/src/Backends/WaylandBackend.cpp
+@@ -1,3 +1,5 @@
++#include <cstdlib>
++#include "atomic_shared_ptr.h"
+ #include "backend.h"
+ #include "rendervulkan.hpp"
+ #include "wlserver.hpp"
+@@ -573,7 +575,7 @@
+         std::optional<wl_fixed_t> m_ofPendingCursorX;
+         std::optional<wl_fixed_t> m_ofPendingCursorY;
+ 
+-        std::atomic<std::shared_ptr<zwp_relative_pointer_v1>> m_pRelativePointer = nullptr;
++        atomic_shared_ptr<zwp_relative_pointer_v1> m_pRelativePointer = nullptr;
+         std::unordered_set<uint32_t> m_uScancodesHeld;
+ 
+         void Wayland_Registry_Global( wl_registry *pRegistry, uint32_t uName, const char *pInterface, uint32_t uVersion );
+diff -urN a/src/Script/Script.cpp b/src/Script/Script.cpp
+--- a/src/Script/Script.cpp
++++ b/src/Script/Script.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "Script.h"
+ #include "convar.h"
+ #include "color_helpers.h"
+diff -urN a/src/Utils/DirHelpers.cpp b/src/Utils/DirHelpers.cpp
+--- a/src/Utils/DirHelpers.cpp
++++ b/src/Utils/DirHelpers.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "DirHelpers.h"
+ 
+ #include <sys/types.h>
+diff -urN a/src/atomic_shared_ptr.h b/src/atomic_shared_ptr.h
+--- a/src/atomic_shared_ptr.h
++++ b/src/atomic_shared_ptr.h
+@@ -0,0 +1,46 @@
++#pragma once
++
++#include <atomic>
++#include <memory>
++
++// libc++ has no std::atomic<std::shared_ptr<T>>
++#if defined(__cpp_lib_atomic_shared_ptr)
++template <typename T>
++using atomic_shared_ptr = std::atomic<std::shared_ptr<T>>;
++#else
++template <typename T>
++class atomic_shared_ptr
++{
++public:
++	atomic_shared_ptr() = default;
++	atomic_shared_ptr( std::nullptr_t ) {}
++	atomic_shared_ptr( std::shared_ptr<T> p ) : m_p( std::move( p ) ) {}
++
++	void store( std::shared_ptr<T> p, std::memory_order = std::memory_order_seq_cst )
++	{
++		std::atomic_store( &m_p, std::move( p ) );
++	}
++
++	std::shared_ptr<T> load( std::memory_order = std::memory_order_seq_cst ) const
++	{
++		return std::atomic_load( &m_p );
++	}
++
++	operator std::shared_ptr<T>() const { return load(); }
++
++	atomic_shared_ptr &operator=( std::nullptr_t )
++	{
++		store( nullptr );
++		return *this;
++	}
++
++	atomic_shared_ptr &operator=( std::shared_ptr<T> p )
++	{
++		store( std::move( p ) );
++		return *this;
++	}
++
++private:
++	std::shared_ptr<T> m_p;
++};
++#endif
+diff -urN a/src/backend.cpp b/src/backend.cpp
+--- a/src/backend.cpp
++++ b/src/backend.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "backend.h"
+ #include "Backends/DeferredBackend.h"
+ #include "vblankmanager.hpp"
+diff -urN a/src/color_bench.cpp b/src/color_bench.cpp
+--- a/src/color_bench.cpp
++++ b/src/color_bench.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <array>
+ #include <benchmark/benchmark.h>
+ 
+diff -urN a/src/gpuvis_trace_utils.h b/src/gpuvis_trace_utils.h
+--- a/src/gpuvis_trace_utils.h
++++ b/src/gpuvis_trace_utils.h
+@@ -32,6 +32,7 @@
+ #ifndef _GPUVIS_TRACE_UTILS_H_
+ #define _GPUVIS_TRACE_UTILS_H_
+ 
++#include <cstdlib>
+ #include <stdarg.h>
+ 
+ #if !defined( __linux__ )
+diff -urN a/src/ime.cpp b/src/ime.cpp
+--- a/src/ime.cpp
++++ b/src/ime.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "ime.hpp"
+ #include "wlserver.hpp"
+ #include "log.hpp"
+diff -urN a/src/log.cpp b/src/log.cpp
+--- a/src/log.cpp
++++ b/src/log.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <cstdio>
+ #include <cerrno>
+ #include <cstring>
+diff -urN a/src/main.cpp b/src/main.cpp
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include "Script/Script.h"
+ 
+ #include <X11/Xlib.h>
+diff -urN a/src/rendervulkan.cpp b/src/rendervulkan.cpp
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -1,5 +1,6 @@
+ // Initialize Vulkan and composite stuff with a compute queue
+ 
++#include <cstdlib>
+ #include <cassert>
+ #include <fcntl.h>
+ #include <unistd.h>
+diff -urN a/src/reshade/source/effect_codegen_spirv.cpp b/src/reshade/source/effect_codegen_spirv.cpp
+--- a/src/reshade/source/effect_codegen_spirv.cpp
++++ b/src/reshade/source/effect_codegen_spirv.cpp
+@@ -3,6 +3,7 @@
+  * SPDX-License-Identifier: BSD-3-Clause
+  */
+ 
++#include <cstdlib>
+ #include "effect_parser.hpp"
+ #include "effect_codegen.hpp"
+ #include <cassert>
+diff -urN a/src/reshade/source/effect_symbol_table.cpp b/src/reshade/source/effect_symbol_table.cpp
+--- a/src/reshade/source/effect_symbol_table.cpp
++++ b/src/reshade/source/effect_symbol_table.cpp
+@@ -3,6 +3,7 @@
+  * SPDX-License-Identifier: BSD-3-Clause
+  */
+ 
++#include <alloca.h>
+ #include "effect_symbol_table.hpp"
+ #include <cassert>
+ #include <malloc.h> // alloca
+diff -urN a/src/reshade/tools/fxc.cpp b/src/reshade/tools/fxc.cpp
+--- a/src/reshade/tools/fxc.cpp
++++ b/src/reshade/tools/fxc.cpp
+@@ -3,6 +3,7 @@
+  * SPDX-License-Identifier: BSD-3-Clause
+  */
+ 
++#include <cstdlib>
+ #include "effect_parser.hpp"
+ #include "effect_codegen.hpp"
+ #include "effect_preprocessor.hpp"
+diff -urN a/src/reshade_effect_manager.cpp b/src/reshade_effect_manager.cpp
+--- a/src/reshade_effect_manager.cpp
++++ b/src/reshade_effect_manager.cpp
+@@ -1,3 +1,4 @@
++#include <cstdlib>
+ #include <cstring>
+ #include <variant>
+ #include <unordered_map>
+diff -urN a/src/steamcompmgr.cpp b/src/steamcompmgr.cpp
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -29,6 +29,7 @@
+  *   says above. Not that I can really do anything about it
+  */
+ 
++#include "atomic_shared_ptr.h"
+ #include "backend.h"
+ #include "gamescope_shared.h"
+ #include "xwayland_ctx.hpp"
+@@ -147,7 +148,7 @@
+ gamescope_color_mgmt_tracker_t g_ColorMgmt{};
+ 
+ static gamescope_color_mgmt_luts g_ColorMgmtLutsOverride[ EOTF_Count ];
+-std::atomic<std::shared_ptr<lut3d_t>> g_ColorMgmtLooks[EOTF_Count];
++atomic_shared_ptr<lut3d_t> g_ColorMgmtLooks[EOTF_Count];
+ 
+ 
+ gamescope_color_mgmt_luts g_ColorMgmtLuts[ EOTF_Count ];
+@@ -1311,7 +1312,7 @@
+ unsigned int g_BlurFadeStartTime = 0;
+ 
+ pid_t focusWindow_pid, sdFocusWindow_pid;
+-std::atomic<std::shared_ptr<std::string>> focusWindow_engine = nullptr;
++atomic_shared_ptr<std::string> focusWindow_engine = nullptr;
+ 
+ focus_t g_steamcompmgr_xdg_focus;
+ std::vector<std::shared_ptr<steamcompmgr_win_t>> g_steamcompmgr_xdg_wins;
+diff -urN a/src/steamcompmgr.hpp b/src/steamcompmgr.hpp
+--- a/src/steamcompmgr.hpp
++++ b/src/steamcompmgr.hpp
+@@ -1,3 +1,4 @@
++#include "atomic_shared_ptr.h"
+ #include <stdint.h>
+ 
+ #include "wlr_begin.hpp"
+@@ -188,7 +189,7 @@
+ 
+ extern gamescope::VBlankTime g_SteamCompMgrVBlankTime;
+ extern pid_t focusWindow_pid;
+-extern std::atomic<std::shared_ptr<std::string>> focusWindow_engine;
++extern atomic_shared_ptr<std::string> focusWindow_engine;
+ 
+ void init_xwayland_ctx(uint32_t serverId, gamescope_xwayland_server_t *xwayland_server);
+ void gamescope_set_selection(std::string contents, GamescopeSelection eSelection);
+diff -urN a/src/vblankmanager.cpp b/src/vblankmanager.cpp
+--- a/src/vblankmanager.cpp
++++ b/src/vblankmanager.cpp
+@@ -1,5 +1,6 @@
+ // Try to figure out when vblank is and notify steamcompmgr to render some time before it
+ 
++#include <cstdlib>
+ #include <cstdint>
+ #include <mutex>
+ #include <thread>
+diff -urN a/src/waitable.h b/src/waitable.h
+--- a/src/waitable.h
++++ b/src/waitable.h
+@@ -1,5 +1,8 @@
+ #pragma once
+ 
++#include <vector>
++#include <algorithm>
++#include <cstdlib>
+ #include <thread>
+ #include <stdint.h>
+ #include <fcntl.h>
+diff -urN a/src/wlserver.cpp b/src/wlserver.cpp
+--- a/src/wlserver.cpp
++++ b/src/wlserver.cpp
+@@ -1,3 +1,4 @@
++#include "atomic_shared_ptr.h"
+ #include <xkbcommon/xkbcommon-keysyms.h>
+ #define _GNU_SOURCE 1
+ 
+@@ -1236,7 +1237,7 @@
+ }
+ 
+ extern gamescope::ConVar<bool> cv_overlay_unmultiplied_alpha;
+-extern std::atomic<std::shared_ptr<lut3d_t>> g_ColorMgmtLooks[EOTF_Count];
++extern atomic_shared_ptr<lut3d_t> g_ColorMgmtLooks[EOTF_Count];
+ 
+ static gamescope::ConCommand cc_set_look("set_look", "Set a look for a specific EOTF. Eg. set_look mylook.cube (g22 only), set_look pq mylook.cube, set_look mylook_g22.cube mylook_pq.cube",
+ []( std::span<std::string_view> args )
+diff -urN a/src/xwayland_ctx.hpp b/src/xwayland_ctx.hpp
+--- a/src/xwayland_ctx.hpp
++++ b/src/xwayland_ctx.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include <cstdlib>
+ #include "backend.h"
+ #include "waitable.h"
+ 
