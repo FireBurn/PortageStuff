@@ -1,0 +1,838 @@
+diff -urN a/bpf-internal.h b/bpf-internal.h
+--- a/bpf-internal.h
++++ b/bpf-internal.h
+@@ -224,6 +224,22 @@
+   FN(text_str),                   \
+   FN(string_quoted),
+  
++// Case labels need constants, and clang rejects casting these to bpf_func_id
++enum stap_bpf_func_id : int
++{
++  STAP_BPF_FUNC_map_get_next_key = -1,
++  STAP_BPF_FUNC_sprintf = -2,
++  STAP_BPF_FUNC_stapbpf_stat_get = -3,
++  STAP_BPF_FUNC_gettimeofday_ns = -4,
++  STAP_BPF_FUNC_get_target = -5,
++  STAP_BPF_FUNC_set_procfs_value = -6,
++  STAP_BPF_FUNC_append_procfs_value = -7,
++  STAP_BPF_FUNC_get_procfs_value = -8,
++  STAP_BPF_FUNC_str_concat = -9,
++  STAP_BPF_FUNC_text_str = -10,
++  STAP_BPF_FUNC_string_quoted = -11,
++};
++
+ const bpf_func_id BPF_FUNC_map_get_next_key    = (bpf_func_id) -1;
+ const bpf_func_id BPF_FUNC_sprintf             = (bpf_func_id) -2;
+ const bpf_func_id BPF_FUNC_stapbpf_stat_get    = (bpf_func_id) -3;
+diff -urN a/buildrun.cxx b/buildrun.cxx
+--- a/buildrun.cxx
++++ b/buildrun.cxx
+@@ -27,6 +27,15 @@
+ #include <sys/stat.h>
+ #include <unistd.h>
+ #include <string.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
++#include <libgen.h>
+ #include <errno.h>
+ #include <sys/resource.h>
+ }
+@@ -989,7 +998,7 @@
+           if (remotedir.empty())
+             opt_u.append(s.uprobes_path);
+           else
+-            opt_u.append(remotedir + "/" + basename(s.uprobes_path.c_str()));
++            opt_u.append(remotedir + "/" + basename(&string(s.uprobes_path)[0]));
+         }
+       cmd.push_back(opt_u);
+     }
+diff -urN a/client-nss.cxx b/client-nss.cxx
+--- a/client-nss.cxx
++++ b/client-nss.cxx
+@@ -577,7 +577,7 @@
+ 
+   // Canonicalize the given path and remove the leading /.
+   string rpath;
+-  char *cpath = canonicalize_file_name (path.c_str ());
++  char *cpath = realpath (path.c_str (), NULL);
+   if (! cpath)
+     {
+       // It can not be canonicalized. Use the name relative to
+diff -urN a/dwflpp.cxx b/dwflpp.cxx
+--- a/dwflpp.cxx
++++ b/dwflpp.cxx
+@@ -66,7 +66,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static string TOK_KERNEL("kernel");
+diff -urN a/interactive.cxx b/interactive.cxx
+--- a/interactive.cxx
++++ b/interactive.cxx
+@@ -17,14 +17,33 @@
+ 
+ #include "stap-probe.h"
+ 
++#include <fstream>
+ #include <cstdlib>
+ #include <stack>
+ #include <sstream>
+ #include <iterator>
+-#include <ext/stdio_filebuf.h>
++#include "stap-filebuf.h"
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ extern "C" {
+ #include <unistd.h>
+diff -urN a/nss-server-info.cxx b/nss-server-info.cxx
+--- a/nss-server-info.cxx
++++ b/nss-server-info.cxx
+@@ -37,6 +37,9 @@
+ #include <sys/stat.h>
+ #include <net/if.h>
+ #include <netdb.h>
++#ifndef NI_IDN
++#define NI_IDN 0
++#endif
+ #include <arpa/inet.h>
+ #include <pwd.h>
+ }
+diff -urN a/nsscommon.cxx b/nsscommon.cxx
+--- a/nsscommon.cxx
++++ b/nsscommon.cxx
+@@ -523,7 +523,7 @@
+ 
+   if (password_ret)
+     /* stomp on the newline */
+-    *strchrnul (password, '\n') = '\0';
++    { char *nl = strchr (password, '\n'); if (nl) *nl = '\0'; }
+   else
+     PORT_Free (password);
+ 
+diff -urN a/remote.cxx b/remote.cxx
+--- a/remote.cxx
++++ b/remote.cxx
+@@ -6,6 +6,7 @@
+ // Public License (GPL); either version 2, or (at your option) any
+ // later version.
+ 
++#include <libgen.h>
+ #include "config.h"
+ 
+ extern "C" {
+@@ -538,7 +539,7 @@
+ 
+         if (!s->uprobes_path.empty())
+           {
+-            string remoteuprobes = basename(s->uprobes_path.c_str());
++            string remoteuprobes = basename(&string(s->uprobes_path)[0]);
+             if ((rc = send_file(s->uprobes_path, remoteuprobes)))
+               return rc;
+ 
+diff -urN a/sdt_types.h b/sdt_types.h
+--- a/sdt_types.h
++++ b/sdt_types.h
+@@ -20,22 +20,22 @@
+ 
+ typedef struct
+ {
+-  __uint32_t type_a;
+-  __uint32_t type_b;
+-  __uint64_t name;
+-  __uint64_t arg;
++  uint32_t type_a;
++  uint32_t type_b;
++  uint64_t name;
++  uint64_t arg;
+ }  stap_sdt_probe_entry_v1;
+ 
+ typedef struct
+ {
+-  __uint32_t type_a;
+-  __uint32_t type_b;
+-  __uint64_t name;
+-  __uint64_t provider;
+-  __uint64_t arg_count;
+-  __uint64_t arg_string;
+-  __uint64_t pc;
+-  __uint64_t semaphore;
++  uint32_t type_a;
++  uint32_t type_b;
++  uint64_t name;
++  uint64_t provider;
++  uint64_t arg_count;
++  uint64_t arg_string;
++  uint64_t pc;
++  uint64_t semaphore;
+ }   stap_sdt_probe_entry_v2;
+ 
+ #endif /* _SDT_TYPES_H */
+diff -urN a/session.cxx b/session.cxx
+--- a/session.cxx
++++ b/session.cxx
+@@ -1560,7 +1560,7 @@
+ 	  } else {
+ 	      char *spath;
+ 	      assert(optarg);
+-	      spath = canonicalize_file_name (optarg);
++	      spath = realpath (optarg, NULL);
+ 	      if (spath == NULL) {
+ 		  cerr << _F("ERROR: %s is an invalid directory for --sysroot", optarg) << endl;
+ 		  return 1;
+diff -urN a/stap-filebuf.h b/stap-filebuf.h
+--- a/stap-filebuf.h
++++ b/stap-filebuf.h
+@@ -0,0 +1,84 @@
++#ifndef STAP_FILEBUF_H
++#define STAP_FILEBUF_H
++
++#include <ios>
++#include <streambuf>
++#include <unistd.h>
++
++#ifdef __GLIBCXX__
++#include <ext/stdio_filebuf.h>
++#else
++// libc++ has no stdio_filebuf: a minimal fd-owning streambuf with the same use
++namespace __gnu_cxx {
++template <typename C>
++class stdio_filebuf : public std::basic_streambuf<C>
++{
++  int fd;
++  C ibuf[4096];
++  C obuf[4096];
++
++public:
++  stdio_filebuf(int f, std::ios_base::openmode m) : fd(f)
++  {
++    if (m & std::ios_base::out)
++      this->setp(obuf, obuf + sizeof obuf / sizeof(C));
++  }
++
++  ~stdio_filebuf()
++  {
++    close();
++  }
++
++  stdio_filebuf *close()
++  {
++    if (fd < 0)
++      return nullptr;
++    sync();
++    ::close(fd);
++    fd = -1;
++    return this;
++  }
++
++protected:
++  typename std::basic_streambuf<C>::int_type underflow()
++  {
++    ssize_t n = read(fd, ibuf, sizeof ibuf);
++    if (n <= 0)
++      return std::basic_streambuf<C>::traits_type::eof();
++    this->setg(ibuf, ibuf, ibuf + n / sizeof(C));
++    return std::basic_streambuf<C>::traits_type::to_int_type(*ibuf);
++  }
++
++  typename std::basic_streambuf<C>::int_type overflow(typename std::basic_streambuf<C>::int_type c)
++  {
++    if (sync() != 0)
++      return std::basic_streambuf<C>::traits_type::eof();
++    if (!std::basic_streambuf<C>::traits_type::eq_int_type(c, std::basic_streambuf<C>::traits_type::eof()))
++      {
++        *this->pptr() = std::basic_streambuf<C>::traits_type::to_char_type(c);
++        this->pbump(1);
++      }
++    return std::basic_streambuf<C>::traits_type::not_eof(c);
++  }
++
++  int sync()
++  {
++    const char *p = reinterpret_cast<const char *>(this->pbase());
++    size_t left = (this->pptr() - this->pbase()) * sizeof(C);
++    while (left > 0)
++      {
++        ssize_t n = write(fd, p, left);
++        if (n < 0)
++          return -1;
++        p += n;
++        left -= n;
++      }
++    this->setp(obuf, obuf + sizeof obuf / sizeof(C));
++    return 0;
++  }
++};
++}
++using namespace __gnu_cxx;
++#endif
++
++#endif
+diff -urN a/stapbpf/bpfinterp.cxx b/stapbpf/bpfinterp.cxx
+--- a/stapbpf/bpfinterp.cxx
++++ b/stapbpf/bpfinterp.cxx
+@@ -1039,7 +1039,7 @@
+ 	  continue;
+ 
+ 	case BPF_JMP | BPF_CALL:
+-	  switch (si)
++	  switch ((int) si)
+ 	    {
+ 	    case BPF_FUNC_map_lookup_elem:
+ 	      {
+@@ -1088,43 +1088,43 @@
+               fflush(output_f);
+ #pragma GCC diagnostic pop
+ 	      break;
+-            case bpf::BPF_FUNC_sprintf:
++            case bpf::STAP_BPF_FUNC_sprintf:
+               dr = bpf_sprintf(strings, as_str(regs[1]),
+                                regs[3], regs[4], regs[5]);
+               break;
+-            case bpf::BPF_FUNC_text_str:
++            case bpf::STAP_BPF_FUNC_text_str:
+               dr = bpf_text_str(strings, as_str(regs[1]), false);
+               break;
+-            case bpf::BPF_FUNC_string_quoted:
++            case bpf::STAP_BPF_FUNC_string_quoted:
+               dr = bpf_text_str(strings, as_str(regs[1]), true);
+               break;
+-            case bpf::BPF_FUNC_str_concat:
++            case bpf::STAP_BPF_FUNC_str_concat:
+               dr = bpf_str_concat(strings, as_str(regs[1]), 
+                                   as_str(regs[2]));
+               break;
+-            case bpf::BPF_FUNC_map_get_next_key:
++            case bpf::STAP_BPF_FUNC_map_get_next_key:
+               dr = map_get_next_key(regs[1], regs[2], regs[3],
+                                     regs[4], regs[5],
+                                     ctx, foreach_ctxs[regs[1]],
+                                     strings, map_values);
+               break;
+-            case bpf::BPF_FUNC_stapbpf_stat_get:
++            case bpf::STAP_BPF_FUNC_stapbpf_stat_get:
+               dr = stapbpf_stat_get((bpf::globals::agg_idx)regs[1], regs[2],
+                                      bpf::globals::deintern_sc_type(regs[3]), ctx);
+               break;
+-            case bpf::BPF_FUNC_gettimeofday_ns:
++            case bpf::STAP_BPF_FUNC_gettimeofday_ns:
+               dr = bpf_gettimeofday_ns();
+               break;
+-            case bpf::BPF_FUNC_get_target:
++            case bpf::STAP_BPF_FUNC_get_target:
+               dr = bpf_get_target();
+               break;
+-            case bpf::BPF_FUNC_set_procfs_value:
++            case bpf::STAP_BPF_FUNC_set_procfs_value:
+               dr = bpf_set_procfs_value(as_str(regs[1]), ctx);
+               break;
+-            case bpf::BPF_FUNC_append_procfs_value:
++            case bpf::STAP_BPF_FUNC_append_procfs_value:
+               dr = bpf_append_procfs_value(as_str(regs[1]), ctx);
+               break;
+-            case bpf::BPF_FUNC_get_procfs_value:
++            case bpf::STAP_BPF_FUNC_get_procfs_value:
+               dr = bpf_get_procfs_value(ctx);
+               break;
+ 	    default:
+diff -urN a/staptree.cxx b/staptree.cxx
+--- a/staptree.cxx
++++ b/staptree.cxx
+@@ -22,6 +22,7 @@
+ #include <algorithm>
+ #include <cstring>
+ #include <atomic>
++#include <iterator>
+ 
+ using namespace std;
+ 
+diff -urN a/staputil.cxx b/staputil.cxx
+--- a/staputil.cxx
++++ b/staputil.cxx
+@@ -23,7 +23,7 @@
+ #include <string>
+ #include <fstream>
+ #include <cassert>
+-#include <ext/stdio_filebuf.h>
++#include "stap-filebuf.h"
+ #include <algorithm>
+ #include <mutex>
+ #include <functional> 
+@@ -56,7 +56,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ // Return current users home directory or die.
+diff -urN a/tapset-been.cxx b/tapset-been.cxx
+--- a/tapset-been.cxx
++++ b/tapset-been.cxx
+@@ -18,7 +18,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_BEGIN("begin");
+diff -urN a/tapset-debuginfod.cxx b/tapset-debuginfod.cxx
+--- a/tapset-debuginfod.cxx
++++ b/tapset-debuginfod.cxx
+@@ -19,7 +19,25 @@
+ #include <unistd.h>
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ static const string TOK_DEBUGINFOD("debuginfod");
+ static const string TOK_ARCHIVE("archive");
+diff -urN a/tapset-dynprobe.cxx b/tapset-dynprobe.cxx
+--- a/tapset-dynprobe.cxx
++++ b/tapset-dynprobe.cxx
+@@ -18,7 +18,25 @@
+ #include <string>
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ // ------------------------------------------------------------------------
+ // dynprobe derived 'probes': These don't really exist. The purpose of
+diff -urN a/tapset-mark.cxx b/tapset-mark.cxx
+--- a/tapset-mark.cxx
++++ b/tapset-mark.cxx
+@@ -23,7 +23,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_KERNEL("kernel");
+diff -urN a/tapset-method.cxx b/tapset-method.cxx
+--- a/tapset-method.cxx
++++ b/tapset-method.cxx
+@@ -28,7 +28,25 @@
+ }
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ static const string TOK_CLASS ("class");
+ static const string TOK_METHOD ("method");
+diff -urN a/tapset-netfilter.cxx b/tapset-netfilter.cxx
+--- a/tapset-netfilter.cxx
++++ b/tapset-netfilter.cxx
+@@ -16,7 +16,25 @@
+ #include <limits.h>
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ static const string TOK_NETFILTER("netfilter");
+ static const string TOK_HOOK("hook");
+diff -urN a/tapset-perfmon.cxx b/tapset-perfmon.cxx
+--- a/tapset-perfmon.cxx
++++ b/tapset-perfmon.cxx
+@@ -21,7 +21,25 @@
+ }
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_PERF("perf");
+diff -urN a/tapset-procfs.cxx b/tapset-procfs.cxx
+--- a/tapset-procfs.cxx
++++ b/tapset-procfs.cxx
+@@ -18,7 +18,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_PROCFS("procfs");
+diff -urN a/tapset-python.cxx b/tapset-python.cxx
+--- a/tapset-python.cxx
++++ b/tapset-python.cxx
+@@ -13,10 +13,28 @@
+ 
+ #include <cstring>
+ #include <string>
+-#include <ext/stdio_filebuf.h>
++#include "stap-filebuf.h"
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ static const string TOK_PYTHON2("python2");
+ static const string TOK_PYTHON3("python3");
+diff -urN a/tapset-timers.cxx b/tapset-timers.cxx
+--- a/tapset-timers.cxx
++++ b/tapset-timers.cxx
+@@ -18,7 +18,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_TIMER("timer");
+diff -urN a/tapset-utrace.cxx b/tapset-utrace.cxx
+--- a/tapset-utrace.cxx
++++ b/tapset-utrace.cxx
+@@ -20,7 +20,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ static const string TOK_PROCESS("process");
+diff -urN a/tapsets.cxx b/tapsets.cxx
+--- a/tapsets.cxx
++++ b/tapsets.cxx
+@@ -66,7 +66,25 @@
+ }
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ // for elf.h where PPC64_LOCAL_ENTRY_OFFSET isn't defined
+ #ifndef PPC64_LOCAL_ENTRY_OFFSET
+@@ -8221,12 +8239,12 @@
+ 	  // the sentinel.
+ 	  if (sess.verbose > 5)
+             clog << _F("got unknown probe_type : 0x%x", probe_type) << endl;
+-	  probe_scn_offset += sizeof(__uint32_t);
++	  probe_scn_offset += sizeof(uint32_t);
+ 	  continue;
+ 	}
+-      if ((long)pbe_v1 % sizeof(__uint64_t)) // we have stap_sdt_probe_entry_v1.type_b
++      if ((long)pbe_v1 % sizeof(uint64_t)) // we have stap_sdt_probe_entry_v1.type_b
+ 	{
+-	  pbe_v1 = (stap_sdt_probe_entry_v1*)((char*)pbe_v1 - sizeof(__uint32_t));
++	  pbe_v1 = (stap_sdt_probe_entry_v1*)((char*)pbe_v1 - sizeof(uint32_t));
+ 	  if (pbe_v1->type_b != uprobe1_type)
+ 	    continue;
+ 	}
+@@ -8255,7 +8273,7 @@
+ 	    arg_string = (char*)((char*)pdata->d_buf + pbe_v2->arg_string - (char*)probe_scn_addr);
+ 	  // skip over pbe_v2, probe_name text and provider text
+ 	  probe_scn_offset = ((long)(pbe_v2->name) - (long)(probe_scn_addr)) + probe_name.length();
+-	  probe_scn_offset += sizeof (__uint32_t) - probe_scn_offset % sizeof (__uint32_t);
++	  probe_scn_offset += sizeof (uint32_t) - probe_scn_offset % sizeof (uint32_t);
+ 	}
+       if (sess.verbose > 4)
+ 	clog << _("saw .probes ") << probe_name << (provider_name != "" ? _(" (provider ")+provider_name+") " : "")
+diff -urN a/task_finder.cxx b/task_finder.cxx
+--- a/task_finder.cxx
++++ b/task_finder.cxx
+@@ -19,7 +19,25 @@
+ 
+ 
+ using namespace std;
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
++#ifdef __GLIBCXX__
+ using namespace __gnu_cxx;
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
++#endif
+ 
+ 
+ // ------------------------------------------------------------------------
