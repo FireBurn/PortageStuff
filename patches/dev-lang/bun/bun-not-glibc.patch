@@ -52,6 +52,6 @@ has none of the symbols, and does not use libstdc++.
      extraFlags: ["-fno-lto", "-fno-whole-program-vtables"],
 -    when: c => c.linux && c.lto && c.abi === "gnu",
 +    when: c => c.linux && c.lto && c.abi === "gnu" && !process.env.BUN_NOT_GLIBC,
-     desc: "Disable LTO: LLD 21 emits glibc versioned symbols (exp@GLIBC_2.17) into .lto_discard which fails to parse '@'",
+     desc: "Disable LTO: LLD (first seen with 21; not re-checked on 23) emits glibc versioned symbols (exp@GLIBC_2.17) into .lto_discard which fails to parse '@'",
    },
    {
