@@ -1,0 +1,15 @@
+Write the indirect jump as AT&T syntax has it.
+
+GNU as takes "jmp %rcx" for "jmp *%rcx"; clang refuses it.
+
+--- a/dlls/ntdll/unix/signal_x86_64.c
++++ b/dlls/ntdll/unix/signal_x86_64.c
+@@ -2106,7 +2106,7 @@
+                    "movq %rdi,%rsp\n\t"
+                    "movq %rsi,%rax\n\t"
+                    "movq %rdx,%r13\n\t"
+-                   "jmp %rcx")
++                   "jmp *%rcx")
+ 
+ 
+ static void dump_syscall_fault( CONTEXT *context, DWORD exc_code )
