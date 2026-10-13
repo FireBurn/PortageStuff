@@ -1,0 +1,5 @@
+# The no-multilib profile masks abi_x86_32 but lets the PE packages out of
+# it, since what they build is a Windows DLL rather than a library for this
+# machine. app-emulation/d7vk is not in ::gentoo so it is not on that list,
+# and the games it exists for are thirty two bit.
+app-emulation/d7vk -abi_x86_32

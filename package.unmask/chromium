@@ -1,0 +1,2 @@
+# ::gentoo masked chromium on 2026-09-24 for removal; the overlay keeps it.
+www-client/chromium::FireBurn

@@ -1,0 +1,10 @@
+virtual/jdk:27
+virtual/jre:27
+=dev-lang/python-3.10*
+=dev-lang/python-3.11*
+=dev-lang/python-3.12*
+=dev-lang/python-3.13*
+=dev-lang/python-3.15*
+=dev-lang/rust-1.90.0-r1
+>dev-python/flit-core-4
+>www-client/firefox-157.0

@@ -1,0 +1,23 @@
+llvm-libc is taken for musl, not being glibc, but declares sendmmsg and
+recvmmsg with the int flags glibc gives them.
+
+--- a/compiler-rt/lib/rtsan/rtsan_interceptors_posix.cpp
++++ b/compiler-rt/lib/rtsan/rtsan_interceptors_posix.cpp
+@@ -1174,7 +1174,7 @@
+ }
+ 
+ #if SANITIZER_INTERCEPT_SENDMMSG
+-#if SANITIZER_MUSL
++#if SANITIZER_MUSL && !defined(__LLVM_LIBC__)
+ INTERCEPTOR(int, sendmmsg, int socket, struct mmsghdr *message,
+             unsigned int len, unsigned int flags) {
+ #else
+@@ -1212,7 +1212,7 @@
+ }
+ 
+ #if SANITIZER_INTERCEPT_RECVMMSG
+-#if SANITIZER_MUSL
++#if SANITIZER_MUSL && !defined(__LLVM_LIBC__)
+ INTERCEPTOR(int, recvmmsg, int socket, struct mmsghdr *message,
+             unsigned int len, unsigned int flags, struct timespec *timeout) {
+ #elif defined(__GLIBC_MINOR__) && __GLIBC_MINOR__ < 21

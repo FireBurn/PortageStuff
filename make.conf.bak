@@ -1,0 +1,74 @@
+# The compiler here is clang, and the C library is llvm-libc. There is no gcc
+# and no glibc in this image, so the toolchain variables name what there is
+# rather than what a Gentoo profile assumes.
+CC="clang"
+CXX="clang++"
+AR="llvm-ar"
+NM="llvm-nm"
+RANLIB="llvm-ranlib"
+STRIP="llvm-strip"
+OBJCOPY="llvm-objcopy"
+OBJDUMP="llvm-objdump"
+READELF="llvm-readelf"
+
+COMMON_FLAGS="-O2 -pipe"
+
+# clang refuses two things that older C compilers only warned about, and a
+# good deal of what is in the tree was written before that changed. They are
+# turned back into warnings so the code builds as it was meant to.
+#
+# Note that an implicit function declaration is deliberately left an error:
+# that is how a function this libc does not have makes itself known, and
+# silencing it would produce a binary that calls into nothing.
+COMMON_FLAGS="${COMMON_FLAGS} -Wno-incompatible-function-pointer-types"
+COMMON_FLAGS="${COMMON_FLAGS} -Wno-int-conversion"
+CFLAGS="${COMMON_FLAGS}"
+CXXFLAGS="${COMMON_FLAGS}"
+FCFLAGS="${COMMON_FLAGS}"
+FFLAGS="${COMMON_FLAGS}"
+LDFLAGS="-fuse-ld=lld"
+
+CHOST="x86_64-pc-linux-gnu"
+MAKEOPTS="-j8"
+
+PORTDIR="/var/db/repos/gentoo"
+DISTDIR="/var/cache/distfiles"
+PKGDIR="/var/cache/binpkgs"
+
+# The toolchain here tracks LLVM rather than a stable release, and the rest
+# of the image is close enough behind it that the testing branch is the
+# honest place to be.
+ACCEPT_KEYWORDS="~amd64"
+ACCEPT_LICENSE="*"
+
+# The sandbox stands between a build and the C library by way of LD_PRELOAD,
+# which the loader here ignored until it was taught to honour it. It works
+# for dynamically linked programs, which is everything in this image. It
+# cannot see a statically linked one, since nothing is preloaded into those;
+# catching them needs the ptrace tracer, which is built only where the
+# compiler can also target x86 and x32.
+FEATURES="sandbox usersandbox -ipc-sandbox -network-sandbox -pid-sandbox"
+
+# Everything in this image was built without national language support and it
+# carries no message catalogues, so packages are asked for the same. It also
+# keeps gettext out of the dependencies of packages that only want it to
+# translate their messages.
+USE="-nls"
+
+# There is no OpenMP runtime here: the image carries clang but libomp was
+# never built for it, so packages are asked not to use it.
+USE="${USE} -openmp"
+
+# There is no GNU toolchain here and none is wanted. Without this, llvm pulls
+# binutils-libs and binutils-config in for the gold plugin.
+USE="${USE} -binutils-plugin"
+
+# The live libc ebuild fetches llvm-project from github. This image is built
+# from the tree on this machine, series and all, so git-r3 is pointed at that
+# branch instead.
+EGIT_OVERRIDE_REPO_LLVM_LLVM_PROJECT="/home/fireburn/libc-shared/llvm-project"
+EGIT_OVERRIDE_BRANCH_LLVM_LLVM_PROJECT="libc-shared-lib-support"
+
+# The image runs systemd, so the OpenRC service scripts and their settings
+# are left out rather than removed after each install.
+INSTALL_MASK="/etc/init.d /etc/conf.d"

@@ -1,0 +1,4 @@
+# Not a build setting: the prebuilt binary is compiled for avx2 and the ebuild
+# makes you say so. Nothing is built from source here, so this leaves the rest
+# of the image generic.
+dev-util/claude-code cpu_flags_x86_avx cpu_flags_x86_avx2

@@ -1,0 +1,13 @@
+node-driver.c calls socket() with AF_INET and SOCK_DGRAM but includes no
+<sys/socket.h>, relying on glibc's <net/if.h> to bring it along.
+
+--- a/spa/plugins/support/node-driver.c
++++ b/spa/plugins/support/node-driver.c
+@@ -8,6 +8,7 @@
+ #include <string.h>
+ #include <stdio.h>
+ #include <fcntl.h>
++#include <sys/socket.h>
+ #ifdef __linux__
+ #include <linux/ethtool.h>
+ #include <linux/sockios.h>

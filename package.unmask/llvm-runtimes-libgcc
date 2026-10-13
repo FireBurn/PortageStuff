@@ -1,0 +1,3 @@
+# libgcc_s and libgcc_eh for a system without GCC. The profile masks it except
+# for musl with LLVM, and this image is LLVM with neither GCC nor glibc.
+=llvm-runtimes/libgcc-23*

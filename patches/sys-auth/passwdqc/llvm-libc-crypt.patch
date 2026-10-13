@@ -1,0 +1,17 @@
+Include <crypt.h> for crypt().
+
+crypt() is reached through <unistd.h>, which declares it only as a leftover
+from when it was part of the C library. glibc's own header says so and tells
+callers to include <crypt.h> instead; llvm-libc does not declare it at all,
+since libxcrypt is what provides it.
+
+--- a/pam_passwdqc.c
++++ b/pam_passwdqc.c
+@@ -14,6 +14,7 @@
+ #include <limits.h>
+ #include <unistd.h>
+ #include <pwd.h>
++#include <crypt.h>
+ #ifdef HAVE_SHADOW
+ #include <shadow.h>
+ #endif

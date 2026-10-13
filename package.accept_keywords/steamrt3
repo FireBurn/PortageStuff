@@ -1,0 +1,3 @@
+# No keywords: it needs the glibc island in /opt/steamrt3-glibc, which only
+# this image has.
+games-util/steamrt3 **

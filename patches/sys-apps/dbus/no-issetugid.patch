@@ -1,0 +1,17 @@
+libdbus treats a process as setuid when issetugid() says so, and ignores
+DBUS_SESSION_BUS_ADDRESS and XDG_RUNTIME_DIR in it. llvm-libc's issetugid()
+reports AT_SECURE, which Linux also sets for binaries with file
+capabilities, so kwin_wayland (cap_sys_nice) could not find the session
+bus. glibc has no issetugid, and there libdbus compares the real and
+effective IDs instead; this makes it do the same here.
+
+--- a/meson.build
++++ b/meson.build
+@@ -675,7 +675,6 @@ check_functions = [
+     'getresuid',
+     'getrlimit',
+     'inotify_init1',
+-    'issetugid',
+     'localeconv',
+     'nanosleep',
+     'pipe2',

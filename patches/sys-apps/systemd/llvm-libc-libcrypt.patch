@@ -1,0 +1,32 @@
+Take the crypt_ra family from libcrypt, the way glibc does.
+
+The branch not taken here is written for musl, whose own crypt is minimal,
+so systemd substitutes implementations of its own from src/libc/musl. Those
+are only compiled when meson is told the C library is musl, so on any other
+one the names are undeclared and the file does not build.
+
+This image links against libxcrypt, which exports crypt_ra,
+crypt_gensalt_ra and crypt_preferred_method, so there is nothing to
+substitute: the symbols are there for dlsym to find at run time, which is
+what the first branch expects.
+
+--- a/src/shared/libcrypt-util.c
++++ b/src/shared/libcrypt-util.c
+@@ -15,7 +15,7 @@
+ #include "strv.h"
+ 
+ #if HAVE_LIBCRYPT
+-#ifdef __GLIBC__
++#if defined(__GLIBC__) || defined(__LLVM_LIBC__)
+ static DLSYM_PROTOTYPE(crypt_gensalt_ra) = NULL;
+ static DLSYM_PROTOTYPE(crypt_preferred_method) = NULL;
+ static DLSYM_PROTOTYPE(crypt_ra) = NULL;
+@@ -130,7 +130,7 @@
+ 
+ int dlopen_libcrypt(int log_level) {
+ #if HAVE_LIBCRYPT
+-#ifdef __GLIBC__
++#if defined(__GLIBC__) || defined(__LLVM_LIBC__)
+         static void *libcrypt_dl = NULL;
+         static int cached = 0;
+         int r = -ENOENT;

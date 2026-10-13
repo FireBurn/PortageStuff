@@ -1,0 +1,4 @@
+# Both Windows targets wine needs: it builds 32 bit PE modules as well so
+# that wow64 can run 32 bit Windows programs. The arm ones would each build
+# their own runtime for no use on this machine.
+dev-util/llvm-mingw64 x86-64-pe i686-pe -arm64-pe -arm64ec-pe

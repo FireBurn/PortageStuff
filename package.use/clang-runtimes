@@ -1,0 +1,23 @@
+# clang's defaults are the runtimes this image already has: compiler-rt,
+# libunwind, libc++ and lld. With these off, clang-common pulls in gcc for
+# libgcc and libstdc++, and binutils for ld, neither of which belongs here.
+llvm-core/clang-common default-compiler-rt default-libcxx default-lld llvm-libunwind
+llvm-runtimes/clang-runtime default-compiler-rt default-libcxx default-lld llvm-libunwind libcxx
+
+# The packages that carry clang's defaults, set the same way.
+llvm-runtimes/clang-rtlib-config default-compiler-rt
+llvm-runtimes/clang-unwindlib-config default-compiler-rt llvm-libunwind
+llvm-runtimes/clang-stdlib-config default-libcxx
+llvm-core/clang-linker-config default-lld
+
+# clang-common wants the runtimes it defaults to available statically too.
+llvm-runtimes/libunwind static-libs
+llvm-runtimes/libcxx static-libs
+llvm-runtimes/libcxxabi static-libs
+
+# The sanitizers are not built for llvm-libc. compiler-rt checks some two
+# hundred glibc and musl structure sizes against tables of its own and stops
+# on the first two: <sys/timeb.h> does not exist here, and struct stat is 120
+# bytes where it expects the kernel's 144. The image had no sanitizer
+# runtimes before portage built its toolchain either, so nothing is lost.
+llvm-runtimes/clang-runtime -sanitize

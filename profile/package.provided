@@ -1,0 +1,11 @@
+# The C library here is LLVM's. Portage has no way to say that yet:
+# virtual/libc is satisfied only by glibc or musl, so this line stands in for
+# what is actually installed and lets the packages that depend on it resolve.
+# Nothing reads its version except the dependency solver.
+sys-libs/glibc-2.43-r2
+
+# iconv and its utility are part of llvm-libc.
+dev-libs/libiconv-1.18
+
+# /lib/firmware is a clone of upstream linux-firmware, updated by git-update.
+sys-kernel/linux-firmware-20260916

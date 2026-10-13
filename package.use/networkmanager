@@ -1,0 +1,3 @@
+# newt reaches for tempnam only in the gpm client it bundles, and llvm-libc
+# has no tempnam. Nothing here wants a mouse on the console.
+dev-libs/newt -gpm

@@ -1,0 +1,2 @@
+# Everything built against an LLVM slot uses the one portage built.
+*/* LLVM_SLOT: -* 23

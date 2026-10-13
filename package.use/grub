@@ -1,0 +1,3 @@
+# The stick boots through UEFI and nothing else, and its menu needs no fonts,
+# themes or device-mapper.
+sys-boot/grub -fonts -themes -branding -device-mapper -nls GRUB_PLATFORMS: -* efi-64

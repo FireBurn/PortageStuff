@@ -1,0 +1,3 @@
+# libedit needs fwprintf, and llvm-libc's wide printf is a stub that returns
+# ENOSYS. Only lldb's own line editing is lost.
+llvm-core/lldb -libedit

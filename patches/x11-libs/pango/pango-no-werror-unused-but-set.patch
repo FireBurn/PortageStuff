@@ -1,0 +1,15 @@
+G_DEFINE_ABSTRACT_TYPE leaves a parent_class behind that nothing reads
+when the type never chains up, and this clang has only lately started
+warning about it. pango turns that warning into an error after CFLAGS
+have had their say, so it cannot be waved off from make.conf.
+
+--- a/meson.build
++++ b/meson.build
+@@ -147,7 +147,6 @@
+     '-Werror=int-to-pointer-cast',
+     '-Werror=empty-body',
+     '-Werror=write-strings',
+-    '-Werror=unused-but-set-variable',
+     '-Wundef', # FIXME: https://bugzilla.gnome.org/show_bug.cgi?id=792481
+   ]
+ 

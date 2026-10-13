@@ -1,0 +1,10 @@
+//! What LLVM's libc defines differently from glibc on x86_64.
+//!
+//! The x86_64-unknown-linux-llvmlibc target builds the way the gnu target
+//! does and sets target_abi = "llvmlibc". Each item here stands in for a
+//! glibc definition that cfg(not(target_abi = "llvmlibc")) keeps away from
+//! that target. Paths start from the crate root, so that the file reads the
+//! same in every version of the crate it is added to.
+//!
+//! LLVM's libc now gives its types and constants glibc's layouts and values,
+//! so nothing needs to stand in for them.

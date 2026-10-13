@@ -1,1 +1,1 @@
-../../usr/portage/profiles/default/linux/amd64/23.0/desktop/plasma/systemd
+../../var/db/repos/FireBurn/profiles/default/linux/amd64/23.0/llvm-libc/desktop/plasma

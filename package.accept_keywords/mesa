@@ -1,0 +1,3 @@
+# gentoo's mesa only knows LLVM slots 18-22; this system is on 23, which the
+# FireBurn ebuild covers.
+media-libs/mesa **

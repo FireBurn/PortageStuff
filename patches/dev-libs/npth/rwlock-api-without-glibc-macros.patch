@@ -1,0 +1,21 @@
+The rwlock API is exposed on a GNU host only when __USE_UNIX98 or
+__USE_XOPEN2K is defined. Those are glibc's own internal macros, set by its
+features.h; a C library that is not glibc defines neither, so the whole
+rwlock block is dropped from npth.h while npth.c still defines the
+functions, and the build stops on an unknown npth_rwlock_t.
+
+Keying the guard on __GLIBC__ as well leaves glibc exactly as it was and
+exposes the API on every other library, which is what the musl case already
+does.
+
+--- a/configure.ac
++++ b/configure.ac
+@@ -399,7 +399,7 @@
+         INSERT_EXPOSE_RWLOCK_API="1"
+         ;;
+     *-*-linux-gnu*|*-*-gnu*)
+-        INSERT_EXPOSE_RWLOCK_API="defined(__USE_UNIX98) || defined(__USE_XOPEN2K)"
++        INSERT_EXPOSE_RWLOCK_API="!defined(__GLIBC__) || defined(__USE_UNIX98) || defined(__USE_XOPEN2K)"
+         ;;
+     *)
+         INSERT_EXPOSE_RWLOCK_API="1"

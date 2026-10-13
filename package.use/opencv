@@ -1,0 +1,9 @@
+# The eigen interop brings in Eigen, which calls erfcf. llvm-libc has erfc
+# and erff but not erfcf, and writing one to the standard of the others
+# needs the Sollya-generated polynomials they are built from. Nothing in
+# plasma converts between cv::Mat and Eigen matrices.
+media-libs/opencv -eigen
+# The quality module's BRISQUE metric calls tgamma, which llvm-libc has for
+# the GPU targets only. Spectacle wants opencv for screenshots and asks for
+# no contrib module.
+media-libs/opencv -contrib -contribdnn

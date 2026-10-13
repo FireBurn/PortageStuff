@@ -1,0 +1,6 @@
+# Use the clang toolchain from dev-util/llvm-mingw64 rather than pulling in
+# dev-util/mingw64-toolchain, which builds a GCC of its own. Its ${CHOST}-g++
+# is found by name and reports posix threads, so these need nothing else.
+app-emulation/dxvk crossdev-mingw
+app-emulation/vkd3d-proton crossdev-mingw
+app-emulation/d7vk crossdev-mingw

@@ -1,0 +1,4 @@
+# Build the Windows side with clang from dev-util/llvm-mingw64 instead of
+# pulling in dev-util/mingw64-toolchain, which builds a GCC of its own.
+app-emulation/wine-staging crossdev-mingw mingw
+app-emulation/proton-ge-custom crossdev-mingw mingw

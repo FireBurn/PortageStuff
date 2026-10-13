@@ -1,0 +1,2 @@
+# xf86-video-ati, which xorg-drivers pulls in for radeonsi, needs this
+>=x11-libs/libdrm-2.4.134 video_cards_radeon

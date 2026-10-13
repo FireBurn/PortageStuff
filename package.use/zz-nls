@@ -1,0 +1,4 @@
+dev-libs/boost nls
+app-crypt/gnupg nls
+app-alternatives/gpg nls reference
+sys-apps/systemd seccomp

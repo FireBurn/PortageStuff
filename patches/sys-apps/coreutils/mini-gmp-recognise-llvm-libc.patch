@@ -1,0 +1,20 @@
+Recognise LLVM's libc when deciding whether <stdio.h> has been included.
+
+mini-gmp works out whether FILE is available by testing the include guard
+each C library happens to use, and declares mpz_out_str only if one of them
+matches. LLVM's libc is not in the list, so the declaration was left out and
+src/expr.c called mpz_out_str without one.
+
+This is the same list dev-libs/gmp carries, and needs the same entry.
+
+--- a/lib/mini-gmp.h
++++ b/lib/mini-gmp.h
+@@ -299,7 +299,8 @@
+   || defined (_ISO_STDIO_ISO_H)       /* Sun C++ */		\
+   || defined (__STDIO_LOADED)         /* VMS */			\
+   || defined (_STDIO)                 /* HPE NonStop */         \
+-  || defined (__DEFINED_FILE)         /* musl */
++  || defined (__DEFINED_FILE)         /* musl */                \
++  || defined (_LLVM_LIBC_STDIO_H)     /* LLVM libc */
+ size_t mpz_out_str (FILE *, int, const mpz_t);
+ #endif

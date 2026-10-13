@@ -1,0 +1,2 @@
+# wall, mesg and write, and the uuid daemon, which a rescue system is expected to have.
+sys-apps/util-linux tty-helpers uuidd

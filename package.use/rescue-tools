@@ -1,0 +1,26 @@
+# The man pages for these are built with sphinx, which pulls a python
+# documentation toolchain and, through it, a package whose USE constraints
+# cannot be satisfied here. A rescue image wants the tools, not the manuals.
+sys-fs/btrfs-progs -man
+sys-fs/xfsprogs -libedit
+sys-apps/nvme-cli -json
+
+# Without this lvm2 builds only device-mapper, so a stick meant for repairing
+# machines would have no way to bring up a volume group.
+sys-fs/lvm2 lvm
+
+# The manuals are built from docbook, which drags in a documentation
+# toolchain for a rescue image that has no use for it.
+sys-apps/dbus -doc
+sys-apps/dbus systemd
+
+# Portage's systemd rather than the hand built one. sysv-utils makes systemd
+# provide halt, reboot, shutdown and poweroff itself; without it the ebuild
+# pulls sysvinit back in to supply them. The rest is kept close to what the
+# hand built configuration had, so this is the same systemd under new
+# management rather than a larger one.
+sys-apps/systemd sysv-utils kmod -acl -dns-over-tls -gcrypt -kernel-install
+# pam is already how the rest of the image authenticates: util-linux was
+# built with it and pambase is installed, so systemd uses it too rather
+# than being the one thing that does not.
+sys-apps/systemd pam -libarchive -lz4 -openssl -pcre -resolvconf -seccomp -zstd

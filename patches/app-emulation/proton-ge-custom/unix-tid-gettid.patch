@@ -1,0 +1,23 @@
+Ask the kernel for the thread ID on Linux.
+
+The server signals threads with tgkill, so it needs the kernel's ID.
+pthread_getthreadid_np returns that on FreeBSD, but llvm-libc also has the
+function and returns the ID libc++ uses for std::thread, which is not the
+kernel's.
+
+--- a/dlls/ntdll/unix/server.c
++++ b/dlls/ntdll/unix/server.c
+@@ -1529,10 +1529,10 @@
+ static int get_unix_tid(void)
+ {
+     int ret = -1;
+-#ifdef HAVE_PTHREAD_GETTHREADID_NP
+-    ret = pthread_getthreadid_np();
+-#elif defined(linux)
++#if defined(linux)
+     ret = syscall( __NR_gettid );
++#elif defined(HAVE_PTHREAD_GETTHREADID_NP)
++    ret = pthread_getthreadid_np();
+ #elif defined(__sun)
+     ret = pthread_self();
+ #elif defined(__APPLE__)

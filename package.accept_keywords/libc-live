@@ -1,0 +1,3 @@
+# The live ebuild carries no keywords at all, so it needs ** rather than
+# ~amd64. The libc is this image's own tree, not a release.
+llvm-runtimes/libc **

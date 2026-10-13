@@ -1,0 +1,13 @@
+llvm-libc names the ipc_perm members as glibc does.
+
+--- a/sys-utils/ipcutils.h
++++ b/sys-utils/ipcutils.h
+@@ -92,7 +92,7 @@
+  *	glibc-1.09 has no support for sysv ipc.
+  *	glibc 2 uses __key, __seq
+  */
+-#if defined (__GLIBC__) && __GLIBC__ >= 2
++#if (defined (__GLIBC__) && __GLIBC__ >= 2) || defined (__LLVM_LIBC__)
+ # define KEY __key
+ #else
+ # define KEY key

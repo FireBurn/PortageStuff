@@ -1,0 +1,22 @@
+cuserid was marked obsolescent in POSIX.1-2001 and removed in POSIX.1-2008.
+glibc kept it, musl never had it and neither does this libc, so the name is
+taken from the password database instead. pwd.h is already included here.
+
+--- a/interface/scan_devices.c
++++ b/interface/scan_devices.c
+@@ -92,9 +92,12 @@
+     }
+     i++;
+   }
+-  idmessage(messagedest,messages,
+-	    "\n\nNo cdrom drives accessible to %s found.\n",
+-	    cuserid(NULL));
++  {
++    struct passwd *pw = getpwuid(geteuid());
++    idmessage(messagedest,messages,
++	      "\n\nNo cdrom drives accessible to %s found.\n",
++	      pw && pw->pw_name ? pw->pw_name : "this user");
++  }
+   return(NULL);
+ }
+ 

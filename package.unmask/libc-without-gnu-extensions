@@ -1,0 +1,8 @@
+# Extensions the C library here does not have, the same as on a musl system.
+# The standalone copies are masked for anything that is not musl, since a
+# glibc system already has them; this image is neither.
+sys-libs/argp-standalone
+sys-libs/fts-standalone
+sys-libs/obstack-standalone
+sys-libs/error-standalone
+sys-libs/queue-standalone

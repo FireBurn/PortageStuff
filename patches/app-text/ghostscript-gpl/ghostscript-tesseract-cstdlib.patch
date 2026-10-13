@@ -1,0 +1,13 @@
+The bundled tesseract calls getenv without including <cstdlib>, which
+libc++ does not supply through the headers above it.
+
+--- a/tesseract/src/arch/simddetect.cpp
++++ b/tesseract/src/arch/simddetect.cpp
+@@ -19,6 +19,7 @@
+ #  include "config_auto.h" // for HAVE_AVX, ...
+ #endif
+ #include <numeric> // for std::inner_product
++#include <cstdlib>  // for getenv
+ #include "dotproduct.h"
+ #include "intsimdmatrix.h" // for IntSimdMatrix
+ #include "params.h"        // for STRING_VAR

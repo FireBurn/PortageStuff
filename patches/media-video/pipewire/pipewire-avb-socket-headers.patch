@@ -1,0 +1,15 @@
+avb-pcm.h uses struct iovec, struct msghdr and CMSG_SPACE but includes
+neither of the headers which define them, relying on glibc's <net/if.h>
+to bring them along.
+
+--- a/spa/plugins/avb/avb-pcm.h
++++ b/spa/plugins/avb/avb-pcm.h
+@@ -11,6 +11,8 @@
+ #include <linux/if_packet.h>
+ #include <linux/net_tstamp.h>
+ #include <limits.h>
++#include <sys/socket.h>
++#include <sys/uio.h>
+ #include <net/if.h>
+ 
+ #include <avbtp/packets.h>

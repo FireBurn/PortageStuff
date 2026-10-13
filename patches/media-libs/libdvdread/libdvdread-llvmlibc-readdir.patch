@@ -1,0 +1,15 @@
+llvm-libc has no readdir_r; its readdir is safe to use per directory
+stream, as glibc 2.24 and later is.
+
+--- a/src/file/file_posix.c
++++ b/src/file/file_posix.c
+@@ -37,6 +37,9 @@
+ #    define USE_READDIR
+ #  endif
+ #endif
++#if defined(__LLVM_LIBC__)
++#  define USE_READDIR
++#endif
+ 
+ #include <dvdread/dvd_filesystem.h>
+ 

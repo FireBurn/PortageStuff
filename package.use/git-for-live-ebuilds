@@ -1,0 +1,3 @@
+# git is here only so that live ebuilds can fetch from a local tree. Its perl
+# and rust parts, WebDAV and signing are not needed for that.
+dev-vcs/git -perl -rust -webdav -gpg

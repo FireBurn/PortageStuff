@@ -1,0 +1,3 @@
+# The kernel's Rust support builds core and alloc from the standard library's
+# sources, which dev-lang/rust installs only with rust-src.
+dev-lang/rust rust-src
