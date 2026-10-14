@@ -1,1 +1,1 @@
-../../var/db/repos/FireBurn/profiles/default/linux/amd64/23.0/llvm-libc/desktop/plasma
+../../home/fireburn/Overlay/profiles/default/linux/amd64/23.0/llvm-libc/desktop/plasma
