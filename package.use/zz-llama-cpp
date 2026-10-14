@@ -1,2 +1,0 @@
-sci-misc/llama-cpp curl vulkan -hip -opencl -openmp -xdna -webui
-dev-python/numpy -lapack

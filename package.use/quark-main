@@ -157,3 +157,4 @@ gui-apps/sddm-gentoo-config weston
 # required by @selected
 # required by @world (argument)
 >=dev-libs/weston-15.0.92 kiosk
+net-im/discord -wayland
