@@ -9,3 +9,4 @@ app-emulation/vkd3d-proton		**
 media-libs/libsdl2			**
 media-libs/zxing-cpp			**
 =dev-debug/rr-9999			**
+sci-misc/llama-cpp			**
