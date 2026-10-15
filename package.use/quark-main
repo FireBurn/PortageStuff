@@ -157,3 +157,6 @@ gui-apps/sddm-gentoo-config weston
 # required by @selected
 # required by @world (argument)
 >=dev-libs/weston-15.0.92 kiosk
+gui-apps/sddm-gentoo-config kwin -weston -custom-compositor
+dev-python/numpy -lapack
+dev-qt/qttools qdoc
