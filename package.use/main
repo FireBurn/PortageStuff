@@ -133,3 +133,10 @@ gui-apps/sddm-gentoo-config		weston
 # required by @selected
 # required by @world (argument)
 >=dev-cpp/simdutf-9.2.1 atomic-base64
+# required by kde-plasma/union-6.8.0::kde
+# required by kde-plasma/plasma-workspace-6.8.0::kde
+# required by kde-plasma/powerdevil-6.8.0::kde
+# required by kde-plasma/plasma-meta-6.8.0::kde
+# required by @selected
+# required by @world (argument)
+>=dev-qt/qttools-6.12.0 qdoc
