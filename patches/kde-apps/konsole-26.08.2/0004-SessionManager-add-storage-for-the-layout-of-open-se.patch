@@ -1,0 +1,244 @@
+From 4f89d5b85dd1d0b03ca60d656f9bf59e58304fa2 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 15 Oct 2026 01:50:05 +0100
+Subject: [PATCH 4/5] SessionManager: add storage for the layout of open
+ sessions
+
+---
+ src/plugins/SessionManager/CMakeLists.txt     |  1 +
+ .../SessionManager/autotests/CMakeLists.txt   |  1 +
+ .../autotests/MuxLayoutTest.cpp               | 58 +++++++++++++
+ src/plugins/SessionManager/muxlayout.cpp      | 87 +++++++++++++++++++
+ src/plugins/SessionManager/muxlayout.h        | 41 +++++++++
+ 5 files changed, 188 insertions(+)
+ create mode 100644 src/plugins/SessionManager/autotests/MuxLayoutTest.cpp
+ create mode 100644 src/plugins/SessionManager/muxlayout.cpp
+ create mode 100644 src/plugins/SessionManager/muxlayout.h
+
+diff --git a/src/plugins/SessionManager/CMakeLists.txt b/src/plugins/SessionManager/CMakeLists.txt
+index e7e067257..da66a81ac 100644
+--- a/src/plugins/SessionManager/CMakeLists.txt
++++ b/src/plugins/SessionManager/CMakeLists.txt
+@@ -1,6 +1,7 @@
+ add_library(konsole_multiplexer STATIC
+     multiplexer.cpp
+     muxhost.cpp
++    muxlayout.cpp
+     muxprobe.cpp
+ )
+ set_target_properties(konsole_multiplexer PROPERTIES POSITION_INDEPENDENT_CODE ON)
+diff --git a/src/plugins/SessionManager/autotests/CMakeLists.txt b/src/plugins/SessionManager/autotests/CMakeLists.txt
+index d53b0e715..760fbca0b 100644
+--- a/src/plugins/SessionManager/autotests/CMakeLists.txt
++++ b/src/plugins/SessionManager/autotests/CMakeLists.txt
+@@ -3,5 +3,6 @@ include(ECMAddTests)
+ ecm_add_tests(
+     MultiplexerTest.cpp
+     MuxHostTest.cpp
++    MuxLayoutTest.cpp
+     LINK_LIBRARIES konsole_multiplexer Qt::Test
+ )
+diff --git a/src/plugins/SessionManager/autotests/MuxLayoutTest.cpp b/src/plugins/SessionManager/autotests/MuxLayoutTest.cpp
+new file mode 100644
+index 000000000..9b8c93842
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/MuxLayoutTest.cpp
+@@ -0,0 +1,58 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QStandardPaths>
++#include <QTest>
++
++#include "../muxlayout.h"
++
++using namespace Multiplexer;
++
++class MuxLayoutTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void initTestCase()
++    {
++        QStandardPaths::setTestModeEnabled(true);
++    }
++    void encodeDecode();
++    void decodeRejectsBad();
++    void saveAndLoad();
++};
++
++void MuxLayoutTest::encodeDecode()
++{
++    const MuxLayout::Entry entry{Tool::Screen, QStringLiteral("a:b c")};
++    MuxLayout::Entry back;
++    QVERIFY(MuxLayout::decode(MuxLayout::encode(entry), &back));
++    QCOMPARE(back, entry);
++}
++
++void MuxLayoutTest::decodeRejectsBad()
++{
++    MuxLayout::Entry entry;
++    QVERIFY(!MuxLayout::decode(QString(), &entry));
++    QVERIFY(!MuxLayout::decode(QStringLiteral("tmux"), &entry));
++    QVERIFY(!MuxLayout::decode(QStringLiteral("tmux:"), &entry));
++    QVERIFY(!MuxLayout::decode(QStringLiteral("zellij:x"), &entry));
++}
++
++void MuxLayoutTest::saveAndLoad()
++{
++    MuxLayout layout;
++    layout.hosts[QStringLiteral("local")] = {{Tool::Tmux, QStringLiteral("work")}, {Tool::Screen, QStringLiteral("job")}};
++    layout.hosts[QStringLiteral("ssh:quark")] = {{Tool::Tmux, QStringLiteral("build, test")}};
++    layout.save();
++    QCOMPARE(MuxLayout::load(), layout);
++    QCOMPARE(layout.count(), 3);
++
++    MuxLayout().save();
++    QVERIFY(MuxLayout::load().isEmpty());
++}
++
++QTEST_GUILESS_MAIN(MuxLayoutTest)
++#include "MuxLayoutTest.moc"
+diff --git a/src/plugins/SessionManager/muxlayout.cpp b/src/plugins/SessionManager/muxlayout.cpp
+new file mode 100644
+index 000000000..c986d6f45
+--- /dev/null
++++ b/src/plugins/SessionManager/muxlayout.cpp
+@@ -0,0 +1,87 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxlayout.h"
++
++#include <KConfigGroup>
++#include <KSharedConfig>
++
++static KConfigGroup layoutGroup()
++{
++    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManagerLayout"));
++}
++
++bool MuxLayout::isEmpty() const
++{
++    return count() == 0;
++}
++
++int MuxLayout::count() const
++{
++    int total = 0;
++    for (const auto &entries : hosts) {
++        total += entries.size();
++    }
++    return total;
++}
++
++QString MuxLayout::encode(const Entry &entry)
++{
++    return Multiplexer::toolName(entry.tool) + QLatin1Char(':') + entry.name;
++}
++
++bool MuxLayout::decode(const QString &text, Entry *entry)
++{
++    const qsizetype colon = text.indexOf(QLatin1Char(':'));
++    if (colon <= 0 || colon == text.size() - 1) {
++        return false;
++    }
++    const QString tool = text.left(colon);
++    if (tool == QLatin1String("tmux")) {
++        entry->tool = Multiplexer::Tool::Tmux;
++    } else if (tool == QLatin1String("screen")) {
++        entry->tool = Multiplexer::Tool::Screen;
++    } else {
++        return false;
++    }
++    entry->name = text.mid(colon + 1);
++    return true;
++}
++
++MuxLayout MuxLayout::load()
++{
++    MuxLayout layout;
++    const KConfigGroup group = layoutGroup();
++    const QStringList keys = group.keyList();
++    for (const QString &hostId : keys) {
++        QList<Entry> entries;
++        const QStringList lines = group.readEntry(hostId, QStringList());
++        for (const QString &line : lines) {
++            Entry entry;
++            if (decode(line, &entry)) {
++                entries.append(entry);
++            }
++        }
++        if (!entries.isEmpty()) {
++            layout.hosts.insert(hostId, entries);
++        }
++    }
++    return layout;
++}
++
++void MuxLayout::save() const
++{
++    KConfigGroup group = layoutGroup();
++    group.deleteGroup();
++    for (auto it = hosts.cbegin(); it != hosts.cend(); ++it) {
++        QStringList lines;
++        for (const Entry &entry : it.value()) {
++            lines.append(encode(entry));
++        }
++        group.writeEntry(it.key(), lines);
++    }
++    group.sync();
++}
+diff --git a/src/plugins/SessionManager/muxlayout.h b/src/plugins/SessionManager/muxlayout.h
+new file mode 100644
+index 000000000..03260f380
+--- /dev/null
++++ b/src/plugins/SessionManager/muxlayout.h
+@@ -0,0 +1,41 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXLAYOUT_H
++#define MUXLAYOUT_H
++
++#include <QMap>
++#include <QString>
++#include <QStringList>
++
++#include "multiplexer.h"
++
++/**
++ * Which sessions were open in tabs, per host, in tab order. Sessions are
++ * remembered by name because tmux and screen ids change when their server
++ * restarts.
++ */
++struct MuxLayout {
++    struct Entry {
++        Multiplexer::Tool tool = Multiplexer::Tool::Tmux;
++        QString name;
++        bool operator==(const Entry &other) const = default;
++    };
++
++    QMap<QString, QList<Entry>> hosts; // host id to entries
++
++    bool isEmpty() const;
++    int count() const;
++    bool operator==(const MuxLayout &other) const = default;
++
++    static QString encode(const Entry &entry);
++    static bool decode(const QString &text, Entry *entry);
++
++    static MuxLayout load();
++    void save() const;
++};
++
++#endif

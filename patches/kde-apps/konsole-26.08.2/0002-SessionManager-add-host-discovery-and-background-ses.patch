@@ -1,0 +1,513 @@
+From af952c883d15b934e0806bcfcbd8362ba8f5805e Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 15 Oct 2026 01:44:39 +0100
+Subject: [PATCH 2/5] SessionManager: add host discovery and background session
+ probing
+
+Hosts come from the local machine, ~/.ssh/config and the SSH Manager
+profiles. Sessions are listed with one non-interactive ssh run per host,
+reusing the connection.
+---
+ src/plugins/SessionManager/CMakeLists.txt     |   8 +-
+ .../SessionManager/autotests/CMakeLists.txt   |   4 +-
+ .../SessionManager/autotests/MuxHostTest.cpp  |  83 ++++++++++
+ src/plugins/SessionManager/muxhost.cpp        | 142 ++++++++++++++++++
+ src/plugins/SessionManager/muxhost.h          |  53 +++++++
+ src/plugins/SessionManager/muxprobe.cpp       |  99 ++++++++++++
+ src/plugins/SessionManager/muxprobe.h         |  51 +++++++
+ 7 files changed, 436 insertions(+), 4 deletions(-)
+ create mode 100644 src/plugins/SessionManager/autotests/MuxHostTest.cpp
+ create mode 100644 src/plugins/SessionManager/muxhost.cpp
+ create mode 100644 src/plugins/SessionManager/muxhost.h
+ create mode 100644 src/plugins/SessionManager/muxprobe.cpp
+ create mode 100644 src/plugins/SessionManager/muxprobe.h
+
+diff --git a/src/plugins/SessionManager/CMakeLists.txt b/src/plugins/SessionManager/CMakeLists.txt
+index 6d251e9a1..934e9562a 100644
+--- a/src/plugins/SessionManager/CMakeLists.txt
++++ b/src/plugins/SessionManager/CMakeLists.txt
+@@ -1,6 +1,10 @@
+-add_library(konsole_multiplexer STATIC multiplexer.cpp)
++add_library(konsole_multiplexer STATIC
++    multiplexer.cpp
++    muxhost.cpp
++    muxprobe.cpp
++)
+ set_target_properties(konsole_multiplexer PROPERTIES POSITION_INDEPENDENT_CODE ON)
+-target_link_libraries(konsole_multiplexer PUBLIC Qt::Core)
++target_link_libraries(konsole_multiplexer PUBLIC Qt::Core KF6::ConfigCore KF6::I18n)
+ 
+ if(BUILD_TESTING)
+     add_subdirectory(autotests)
+diff --git a/src/plugins/SessionManager/autotests/CMakeLists.txt b/src/plugins/SessionManager/autotests/CMakeLists.txt
+index 6c31afdd7..d53b0e715 100644
+--- a/src/plugins/SessionManager/autotests/CMakeLists.txt
++++ b/src/plugins/SessionManager/autotests/CMakeLists.txt
+@@ -1,7 +1,7 @@
+ include(ECMAddTests)
+ 
+-ecm_add_test(
++ecm_add_tests(
+     MultiplexerTest.cpp
+-    TEST_NAME MultiplexerTest
++    MuxHostTest.cpp
+     LINK_LIBRARIES konsole_multiplexer Qt::Test
+ )
+diff --git a/src/plugins/SessionManager/autotests/MuxHostTest.cpp b/src/plugins/SessionManager/autotests/MuxHostTest.cpp
+new file mode 100644
+index 000000000..c0779bc69
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/MuxHostTest.cpp
+@@ -0,0 +1,83 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QSignalSpy>
++#include <QTest>
++
++#include "../muxhost.h"
++#include "../muxprobe.h"
++
++class MuxHostTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void sshConfigAliases();
++    void destinations();
++    void mergeSkipsKnown();
++    void probeLocal();
++    void probeUnreachableSsh();
++};
++
++void MuxHostTest::sshConfigAliases()
++{
++    const QString config = QStringLiteral(
++        "# comment\n"
++        "Host quark\n"
++        "    HostName 10.0.0.2\n"
++        "Host *\n"
++        "    ServerAliveInterval 30\n"
++        "host a b !c d*  # trailing\n"
++        "Host=eq\n"
++        "Hostname notahost\n");
++    QCOMPARE(MuxHosts::parseSshConfigAliases(config), (QStringList{QStringLiteral("quark"), QStringLiteral("a"), QStringLiteral("b"), QStringLiteral("eq")}));
++}
++
++void MuxHostTest::destinations()
++{
++    const MuxHost plain = MuxHosts::fromDestination(QStringLiteral("me@quark"), MuxHost::Source::Manual);
++    QCOMPARE(plain.sshArgs, QStringList{QStringLiteral("me@quark")});
++    QVERIFY(!plain.isLocal());
++
++    const MuxHost port = MuxHosts::fromDestination(QStringLiteral("quark:2222"), MuxHost::Source::Manual);
++    QCOMPARE(port.sshArgs, (QStringList{QStringLiteral("-p"), QStringLiteral("2222"), QStringLiteral("quark")}));
++
++    const MuxHost v6 = MuxHosts::fromDestination(QStringLiteral("fe80::1"), MuxHost::Source::Manual);
++    QCOMPARE(v6.sshArgs, QStringList{QStringLiteral("fe80::1")});
++
++    QVERIFY(MuxHosts::local().isLocal());
++}
++
++void MuxHostTest::mergeSkipsKnown()
++{
++    QList<MuxHost> hosts{MuxHosts::local(), MuxHosts::fromDestination(QStringLiteral("a"), MuxHost::Source::SshConfig)};
++    MuxHosts::merge(
++        hosts,
++        {MuxHosts::fromDestination(QStringLiteral("a"), MuxHost::Source::Manual), MuxHosts::fromDestination(QStringLiteral("b"), MuxHost::Source::Manual)});
++    QCOMPARE(hosts.size(), 3);
++    QCOMPARE(hosts[1].source, MuxHost::Source::SshConfig);
++}
++
++void MuxHostTest::probeLocal()
++{
++    MuxProbe probe;
++    QSignalSpy spy(&probe, &MuxProbe::probed);
++    probe.probe(MuxHosts::local());
++    QVERIFY(spy.wait(15000));
++    QCOMPARE(spy.at(0).at(1).value<MuxProbe::Status>(), MuxProbe::Status::Ok);
++}
++
++void MuxHostTest::probeUnreachableSsh()
++{
++    MuxProbe probe;
++    QSignalSpy spy(&probe, &MuxProbe::probed);
++    // The .invalid TLD never resolves.
++    probe.probe(MuxHosts::fromDestination(QStringLiteral("nobody@nowhere.invalid"), MuxHost::Source::Manual));
++    QVERIFY(spy.wait(15000));
++    QVERIFY(spy.at(0).at(1).value<MuxProbe::Status>() != MuxProbe::Status::Ok);
++}
++
++QTEST_GUILESS_MAIN(MuxHostTest)
++#include "MuxHostTest.moc"
+diff --git a/src/plugins/SessionManager/muxhost.cpp b/src/plugins/SessionManager/muxhost.cpp
+new file mode 100644
+index 000000000..1c5acc4bd
+--- /dev/null
++++ b/src/plugins/SessionManager/muxhost.cpp
+@@ -0,0 +1,142 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxhost.h"
++
++#include <KConfig>
++#include <KConfigGroup>
++#include <KLocalizedString>
++
++#include <QDir>
++#include <QFile>
++#include <QRegularExpression>
++#include <QSysInfo>
++
++namespace MuxHosts
++{
++MuxHost local()
++{
++    MuxHost host;
++    host.id = QStringLiteral("local");
++    host.label = i18nc("@item:inlistbox the computer Konsole is running on", "This computer (%1)", QSysInfo::machineHostName());
++    host.source = MuxHost::Source::Local;
++    return host;
++}
++
++static MuxHost remote(const QStringList &args, const QString &label, MuxHost::Source source)
++{
++    MuxHost host;
++    host.id = QStringLiteral("ssh:") + args.join(QLatin1Char(' '));
++    host.label = label;
++    host.sshArgs = args;
++    host.source = source;
++    return host;
++}
++
++MuxHost fromDestination(const QString &destination, MuxHost::Source source)
++{
++    const QString trimmed = destination.trimmed();
++    static const QRegularExpression withPort(QStringLiteral("^(.+):([0-9]{1,5})$"));
++    const QRegularExpressionMatch match = withPort.match(trimmed);
++    // A second colon means an IPv6 address, not a port.
++    if (match.hasMatch() && !match.captured(1).contains(QLatin1Char(':'))) {
++        return remote({QStringLiteral("-p"), match.captured(2), match.captured(1)}, match.captured(1), source);
++    }
++    return remote({trimmed}, trimmed, source);
++}
++
++QStringList parseSshConfigAliases(const QString &text)
++{
++    QStringList aliases;
++    const auto lines = text.split(QLatin1Char('\n'));
++    for (const QString &rawLine : lines) {
++        const QString line = rawLine.trimmed();
++        if (line.startsWith(QLatin1Char('#'))) {
++            continue;
++        }
++        static const QRegularExpression hostLine(QStringLiteral("^Host(?:\\s+|\\s*=\\s*)(.+)$"), QRegularExpression::CaseInsensitiveOption);
++        const QRegularExpressionMatch match = hostLine.match(line);
++        if (!match.hasMatch()) {
++            continue;
++        }
++        const QStringList names = match.captured(1).split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
++        for (const QString &name : names) {
++            if (name.startsWith(QLatin1Char('#'))) {
++                break;
++            }
++            if (name.contains(QLatin1Char('*')) || name.contains(QLatin1Char('?')) || name.startsWith(QLatin1Char('!')) || aliases.contains(name)) {
++                continue;
++            }
++            aliases.append(name);
++        }
++    }
++    return aliases;
++}
++
++QList<MuxHost> fromSshConfig()
++{
++    QList<MuxHost> hosts;
++    QFile file(QDir::homePath() + QStringLiteral("/.ssh/config"));
++    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
++        return hosts;
++    }
++    const QStringList aliases = parseSshConfigAliases(QString::fromUtf8(file.readAll()));
++    for (const QString &alias : aliases) {
++        hosts.append(remote({alias}, alias, MuxHost::Source::SshConfig));
++    }
++    return hosts;
++}
++
++QList<MuxHost> fromSshManager()
++{
++    QList<MuxHost> hosts;
++    // Same file the SSH Manager plugin writes. Read only.
++    KConfig config(QStringLiteral("konsolesshconfig"), KConfig::SimpleConfig);
++    const auto folders = config.groupList();
++    for (const QString &folderName : folders) {
++        if (folderName == QLatin1String("Global plugin config")) {
++            continue;
++        }
++        KConfigGroup folder = config.group(folderName);
++        const auto entries = folder.groupList();
++        for (const QString &entryName : entries) {
++            KConfigGroup entry = folder.group(entryName);
++            const QString identifier = entry.readEntry("identifier");
++            const QString hostName = entry.readEntry("hostname");
++            QStringList args;
++            if (entry.readEntry("useSshConfig", false)) {
++                args << identifier;
++            } else {
++                if (!entry.readEntry("sshkey").isEmpty()) {
++                    args << QStringLiteral("-i") << entry.readEntry("sshkey");
++                }
++                if (!entry.readEntry("port").isEmpty()) {
++                    args << QStringLiteral("-p") << entry.readEntry("port");
++                }
++                const QString user = entry.readEntry("username");
++                args << (user.isEmpty() ? hostName : user + QLatin1Char('@') + hostName);
++            }
++            if (args.isEmpty() || args.last().isEmpty()) {
++                continue;
++            }
++            hosts.append(remote(args, identifier.isEmpty() ? hostName : identifier, MuxHost::Source::SshManager));
++        }
++    }
++    return hosts;
++}
++
++void merge(QList<MuxHost> &hosts, const QList<MuxHost> &extra)
++{
++    for (const MuxHost &host : extra) {
++        const bool known = std::any_of(hosts.cbegin(), hosts.cend(), [&host](const MuxHost &h) {
++            return h.id == host.id;
++        });
++        if (!known) {
++            hosts.append(host);
++        }
++    }
++}
++}
+diff --git a/src/plugins/SessionManager/muxhost.h b/src/plugins/SessionManager/muxhost.h
+new file mode 100644
+index 000000000..c07aa0ad0
+--- /dev/null
++++ b/src/plugins/SessionManager/muxhost.h
+@@ -0,0 +1,53 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXHOST_H
++#define MUXHOST_H
++
++#include <QList>
++#include <QString>
++#include <QStringList>
++
++/** A machine whose tmux and screen sessions can be listed: this one, or one reached over ssh. */
++struct MuxHost {
++    enum class Source {
++        Local,
++        SshConfig,
++        SshManager,
++        OpenTab,
++        Manual,
++    };
++
++    QString id; // stable key, "local" or "ssh:<arguments>"
++    QString label;
++    QStringList sshArgs; // empty for the local machine
++    Source source = Source::Local;
++
++    bool isLocal() const
++    {
++        return sshArgs.isEmpty();
++    }
++    bool operator==(const MuxHost &other) const = default;
++};
++
++namespace MuxHosts
++{
++MuxHost local();
++
++/** Host for a destination such as "user@host", "host" or "user@host:2222". */
++MuxHost fromDestination(const QString &destination, MuxHost::Source source);
++
++/** Entries of an OpenSSH client configuration that name a single host (no wildcards). */
++QStringList parseSshConfigAliases(const QString &text);
++
++QList<MuxHost> fromSshConfig();
++QList<MuxHost> fromSshManager();
++
++/** Adds @p extra to @p hosts, skipping hosts whose id is already there. */
++void merge(QList<MuxHost> &hosts, const QList<MuxHost> &extra);
++}
++
++#endif
+diff --git a/src/plugins/SessionManager/muxprobe.cpp b/src/plugins/SessionManager/muxprobe.cpp
+new file mode 100644
+index 000000000..82fee5418
+--- /dev/null
++++ b/src/plugins/SessionManager/muxprobe.cpp
+@@ -0,0 +1,99 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxprobe.h"
++
++#include <QDir>
++#include <QProcess>
++#include <QStandardPaths>
++#include <QTimer>
++
++MuxProbe::MuxProbe(QObject *parent)
++    : QObject(parent)
++{
++    qRegisterMetaType<MuxProbe::Status>();
++    qRegisterMetaType<Multiplexer::ProbeResult>();
++}
++
++QString MuxProbe::controlPath() const
++{
++    // Sockets must stay under the sun_path limit, so keep the name short.
++    const QString dir = QStandardPaths::writableLocation(QStandardPaths::RuntimeLocation);
++    return (dir.isEmpty() ? QDir::tempPath() : dir) + QStringLiteral("/konsole-mux-%C");
++}
++
++QProcess *MuxProbe::start(const MuxHost &host, const QString &command)
++{
++    auto *process = new QProcess(this);
++    process->setProcessChannelMode(QProcess::SeparateChannels);
++    if (host.isLocal()) {
++        process->start(QStringLiteral("sh"), {QStringLiteral("-c"), command});
++    } else {
++        process->start(QStringLiteral("ssh"), Multiplexer::remoteQueryArguments(host.sshArgs, command, controlPath()));
++    }
++    // A host that accepts the connection but never answers must not stall the panel.
++    QTimer::singleShot(20000, process, [process] {
++        if (process->state() != QProcess::NotRunning) {
++            process->kill();
++        }
++    });
++    return process;
++}
++
++bool MuxProbe::isProbing(const MuxHost &host) const
++{
++    return m_running.value(host.id) != nullptr;
++}
++
++void MuxProbe::probe(const MuxHost &host)
++{
++    if (isProbing(host)) {
++        return;
++    }
++    QProcess *process = start(host, Multiplexer::probeCommand());
++    m_running.insert(host.id, process);
++    const QString hostId = host.id;
++    const bool local = host.isLocal();
++    connect(process, &QProcess::finished, this, [this, process, hostId, local](int exitCode, QProcess::ExitStatus exitStatus) {
++        m_running.remove(hostId);
++        Multiplexer::ProbeResult result;
++        Status status = Status::Ok;
++        if (exitStatus != QProcess::NormalExit || exitCode != 0) {
++            const QString errorText = QString::fromUtf8(process->readAllStandardError());
++            const bool login = errorText.contains(QLatin1String("Permission denied")) || errorText.contains(QLatin1String("Host key verification failed"));
++            status = (!local && login) ? Status::NeedsLogin : Status::Unreachable;
++        } else {
++            result = Multiplexer::parseProbeOutput(QString::fromUtf8(process->readAllStandardOutput()));
++        }
++        process->deleteLater();
++        Q_EMIT probed(hostId, status, result);
++    });
++    connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError error) {
++        // finished() is not emitted when the program cannot be started.
++        if (error == QProcess::FailedToStart) {
++            Q_EMIT process->finished(127, QProcess::NormalExit);
++        }
++    });
++}
++
++void MuxProbe::run(const MuxHost &host, const QString &command)
++{
++    QProcess *process = start(host, command);
++    const QString hostId = host.id;
++    connect(process, &QProcess::finished, this, [this, process, hostId](int exitCode, QProcess::ExitStatus exitStatus) {
++        const bool success = exitStatus == QProcess::NormalExit && exitCode == 0;
++        const QString errorText = QString::fromUtf8(process->readAllStandardError()).trimmed();
++        process->deleteLater();
++        Q_EMIT commandFinished(hostId, success, errorText);
++    });
++    connect(process, &QProcess::errorOccurred, this, [process](QProcess::ProcessError error) {
++        if (error == QProcess::FailedToStart) {
++            Q_EMIT process->finished(127, QProcess::NormalExit);
++        }
++    });
++}
++
++#include "moc_muxprobe.cpp"
+diff --git a/src/plugins/SessionManager/muxprobe.h b/src/plugins/SessionManager/muxprobe.h
+new file mode 100644
+index 000000000..e5e9faf49
+--- /dev/null
++++ b/src/plugins/SessionManager/muxprobe.h
+@@ -0,0 +1,51 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXPROBE_H
++#define MUXPROBE_H
++
++#include <QHash>
++#include <QObject>
++#include <QPointer>
++
++#include "multiplexer.h"
++#include "muxhost.h"
++
++class QProcess;
++
++/** Lists the tmux and screen sessions of hosts in the background, and runs actions on them. */
++class MuxProbe : public QObject
++{
++    Q_OBJECT
++public:
++    enum class Status {
++        Ok,
++        NeedsLogin, // ssh could not log in without asking a question
++        Unreachable,
++    };
++
++    explicit MuxProbe(QObject *parent = nullptr);
++
++    void probe(const MuxHost &host);
++    bool isProbing(const MuxHost &host) const;
++    /** Runs @p command on the host and reports whether it succeeded. */
++    void run(const MuxHost &host, const QString &command);
++
++Q_SIGNALS:
++    void probed(const QString &hostId, MuxProbe::Status status, const Multiplexer::ProbeResult &result);
++    void commandFinished(const QString &hostId, bool success, const QString &errorText);
++
++private:
++    QProcess *start(const MuxHost &host, const QString &command);
++    QString controlPath() const;
++
++    QHash<QString, QPointer<QProcess>> m_running;
++};
++
++Q_DECLARE_METATYPE(MuxProbe::Status)
++Q_DECLARE_METATYPE(Multiplexer::ProbeResult)
++
++#endif

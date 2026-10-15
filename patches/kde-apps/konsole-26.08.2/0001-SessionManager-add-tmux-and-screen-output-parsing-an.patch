@@ -1,0 +1,517 @@
+From 77781c9fc0e955d9cde5fedcdd8607d85afb63aa Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 15 Oct 2026 01:43:33 +0100
+Subject: [PATCH 1/5] SessionManager: add tmux and screen output parsing and
+ command building
+
+Pure functions with unit tests, shared by the local and ssh code paths of
+the upcoming Session Manager plugin.
+---
+ CMakeLists.txt                                |   1 +
+ src/plugins/CMakeLists.txt                    |   3 +
+ src/plugins/SessionManager/CMakeLists.txt     |   7 +
+ .../SessionManager/autotests/CMakeLists.txt   |   7 +
+ .../autotests/MultiplexerTest.cpp             | 138 ++++++++++++
+ src/plugins/SessionManager/multiplexer.cpp    | 211 ++++++++++++++++++
+ src/plugins/SessionManager/multiplexer.h      |  78 +++++++
+ 7 files changed, 445 insertions(+)
+ create mode 100644 src/plugins/SessionManager/CMakeLists.txt
+ create mode 100644 src/plugins/SessionManager/autotests/CMakeLists.txt
+ create mode 100644 src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+ create mode 100644 src/plugins/SessionManager/multiplexer.cpp
+ create mode 100644 src/plugins/SessionManager/multiplexer.h
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 0c82847eb..596cf3c90 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -128,6 +128,7 @@ file(GLOB ICONS_SRCS "data/icons/*.png")
+ 
+ option(ENABLE_PLUGIN_SSHMANAGER "Build the SSHManager plugin" ON)
+ option(ENABLE_PLUGIN_QUICKCOMMANDS "Build the Quick Commands plugin" ON)
++option(ENABLE_PLUGIN_SESSIONMANAGER "Build the Session Manager (tmux and screen) plugin" ON)
+ 
+ add_subdirectory( src )
+ add_subdirectory( desktop )
+diff --git a/src/plugins/CMakeLists.txt b/src/plugins/CMakeLists.txt
+index dc64608cd..2a51866de 100644
+--- a/src/plugins/CMakeLists.txt
++++ b/src/plugins/CMakeLists.txt
+@@ -4,3 +4,6 @@ endif()
+ if(ENABLE_PLUGIN_QUICKCOMMANDS)
+     add_subdirectory(QuickCommands)
+ endif()
++if(ENABLE_PLUGIN_SESSIONMANAGER)
++    add_subdirectory(SessionManager)
++endif()
+diff --git a/src/plugins/SessionManager/CMakeLists.txt b/src/plugins/SessionManager/CMakeLists.txt
+new file mode 100644
+index 000000000..6d251e9a1
+--- /dev/null
++++ b/src/plugins/SessionManager/CMakeLists.txt
+@@ -0,0 +1,7 @@
++add_library(konsole_multiplexer STATIC multiplexer.cpp)
++set_target_properties(konsole_multiplexer PROPERTIES POSITION_INDEPENDENT_CODE ON)
++target_link_libraries(konsole_multiplexer PUBLIC Qt::Core)
++
++if(BUILD_TESTING)
++    add_subdirectory(autotests)
++endif()
+diff --git a/src/plugins/SessionManager/autotests/CMakeLists.txt b/src/plugins/SessionManager/autotests/CMakeLists.txt
+new file mode 100644
+index 000000000..6c31afdd7
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/CMakeLists.txt
+@@ -0,0 +1,7 @@
++include(ECMAddTests)
++
++ecm_add_test(
++    MultiplexerTest.cpp
++    TEST_NAME MultiplexerTest
++    LINK_LIBRARIES konsole_multiplexer Qt::Test
++)
+diff --git a/src/plugins/SessionManager/autotests/MultiplexerTest.cpp b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+new file mode 100644
+index 000000000..5783907c6
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+@@ -0,0 +1,138 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QTest>
++
++#include "../multiplexer.h"
++
++using namespace Multiplexer;
++
++class MultiplexerTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void parseTmux();
++    void parseTmuxNameWithSeparator();
++    void parseTmuxIgnoresNoise();
++    void parseScreen();
++    void parseScreenIgnoresDeadAndNoise();
++    void parseProbe();
++    void parseProbeNothingInstalled();
++    void commands();
++    void remoteCommands();
++};
++
++void MultiplexerTest::parseTmux()
++{
++    const auto sessions = Multiplexer::parseTmux(QStringLiteral("$0|3|1|1760000000|vim|work\n$4|1|0|1760000100|bash|logs\n"));
++    QCOMPARE(sessions.size(), 2);
++    QCOMPARE(sessions[0].tool, Tool::Tmux);
++    QCOMPARE(sessions[0].id, QStringLiteral("work"));
++    QCOMPARE(sessions[0].windows, 3);
++    QCOMPARE(sessions[0].command, QStringLiteral("vim"));
++    QVERIFY(sessions[0].attached());
++    QCOMPARE(sessions[0].created.toSecsSinceEpoch(), 1760000000);
++    QVERIFY(!sessions[1].attached());
++}
++
++void MultiplexerTest::parseTmuxNameWithSeparator()
++{
++    const auto sessions = Multiplexer::parseTmux(QStringLiteral("$1|2|0|1760000000|sh|a|b\n"));
++    QCOMPARE(sessions.size(), 1);
++    QCOMPARE(sessions[0].name, QStringLiteral("a|b"));
++}
++
++void MultiplexerTest::parseTmuxIgnoresNoise()
++{
++    QVERIFY(Multiplexer::parseTmux(QStringLiteral("no server running on /tmp/tmux-1000/default\n\nfoo|bar\n$x|1|0|0|sh|name\n")).isEmpty());
++}
++
++void MultiplexerTest::parseScreen()
++{
++    const QString output = QStringLiteral(
++        "There are screens on:\n"
++        "\t1234.build\t(10/15/2026 01:02:03 AM)\t(Detached)\n"
++        "\t5678.my shell\t(10/15/2026 02:00:00 PM)\t(Attached)\n"
++        "2 Sockets in /run/screen/S-user.\n");
++    const auto sessions = Multiplexer::parseScreen(output);
++    QCOMPARE(sessions.size(), 2);
++    QCOMPARE(sessions[0].id, QStringLiteral("1234.build"));
++    QCOMPARE(sessions[0].name, QStringLiteral("build"));
++    QVERIFY(!sessions[0].attached());
++    QVERIFY(sessions[0].created.isValid());
++    QCOMPARE(sessions[1].name, QStringLiteral("my shell"));
++    QVERIFY(sessions[1].attached());
++    QCOMPARE(sessions[1].created.time().hour(), 14);
++}
++
++void MultiplexerTest::parseScreenIgnoresDeadAndNoise()
++{
++    const QString output = QStringLiteral(
++        "There is a screen on:\n"
++        "\t99.gone\t(10/15/2026 01:02:03 AM)\t(Dead ?\?\?)\n"
++        "No Sockets found in /run/screen/S-user.\n");
++    QVERIFY(Multiplexer::parseScreen(output).isEmpty());
++}
++
++void MultiplexerTest::parseProbe()
++{
++    const QString output = QStringLiteral(
++        "@tmux\n$0|1|0|1760000000|sh|work\n"
++        "@screen\nThere is a screen on:\n\t42.old\t(10/15/2026 01:02:03 AM)\t(Multi, attached)\n1 Socket in /run/screen/S-u.\n");
++    const ProbeResult result = parseProbeOutput(output);
++    QVERIFY(result.tmuxAvailable);
++    QVERIFY(result.screenAvailable);
++    QCOMPARE(result.sessions.size(), 2);
++    QCOMPARE(result.sessions[0].tool, Tool::Tmux);
++    QCOMPARE(result.sessions[1].tool, Tool::Screen);
++    QVERIFY(result.sessions[1].attached());
++}
++
++void MultiplexerTest::parseProbeNothingInstalled()
++{
++    const ProbeResult result = parseProbeOutput(QString());
++    QVERIFY(!result.tmuxAvailable);
++    QVERIFY(!result.screenAvailable);
++    QVERIFY(result.sessions.isEmpty());
++}
++
++void MultiplexerTest::commands()
++{
++    Session tmux;
++    tmux.tool = Tool::Tmux;
++    tmux.id = tmux.name = QStringLiteral("it's");
++    QCOMPARE(attachCommand(tmux), QStringLiteral("tmux attach-session -t '=it'\\''s'"));
++    QCOMPARE(attachCommand(tmux, true), QStringLiteral("tmux attach-session -d -t '=it'\\''s'"));
++    QCOMPARE(killCommand(tmux), QStringLiteral("tmux kill-session -t '=it'\\''s'"));
++    QCOMPARE(renameCommand(tmux, QStringLiteral("new")), QStringLiteral("tmux rename-session -t '=it'\\''s' 'new'"));
++
++    Session screen;
++    screen.tool = Tool::Screen;
++    screen.id = QStringLiteral("12.job");
++    QCOMPARE(attachCommand(screen), QStringLiteral("screen -r '12.job'"));
++    screen.clients = 1;
++    QCOMPARE(attachCommand(screen), QStringLiteral("screen -x '12.job'"));
++    QCOMPARE(attachCommand(screen, true), QStringLiteral("screen -d -r '12.job'"));
++    QCOMPARE(killCommand(screen), QStringLiteral("screen -S '12.job' -X quit"));
++
++    QCOMPARE(newSessionCommand(Tool::Tmux, QString()), QStringLiteral("tmux new-session"));
++    QCOMPARE(newSessionCommand(Tool::Screen, QStringLiteral("a b")), QStringLiteral("screen -S 'a b'"));
++}
++
++void MultiplexerTest::remoteCommands()
++{
++    QCOMPARE(remoteTerminalCommand({QStringLiteral("-p"), QStringLiteral("2222"), QStringLiteral("me@quark")}, QStringLiteral("tmux attach-session -t '=a b'")),
++             QStringLiteral("ssh -t '-p' '2222' 'me@quark' 'tmux attach-session -t '\\''=a b'\\'''"));
++
++    const QStringList args = remoteQueryArguments({QStringLiteral("quark")}, QStringLiteral("true"), QStringLiteral("/tmp/cp-%C"));
++    QVERIFY(args.contains(QStringLiteral("BatchMode=yes")));
++    QVERIFY(args.contains(QStringLiteral("ControlPath=/tmp/cp-%C")));
++    QCOMPARE(args.last(), QStringLiteral("true"));
++    QCOMPARE(args.at(args.size() - 2), QStringLiteral("quark"));
++}
++
++QTEST_GUILESS_MAIN(MultiplexerTest)
++#include "MultiplexerTest.moc"
+diff --git a/src/plugins/SessionManager/multiplexer.cpp b/src/plugins/SessionManager/multiplexer.cpp
+new file mode 100644
+index 000000000..34a87dbef
+--- /dev/null
++++ b/src/plugins/SessionManager/multiplexer.cpp
+@@ -0,0 +1,211 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "multiplexer.h"
++
++#include <QRegularExpression>
++
++namespace Multiplexer
++{
++QString toolName(Tool tool)
++{
++    return tool == Tool::Tmux ? QStringLiteral("tmux") : QStringLiteral("screen");
++}
++
++QString shellQuote(const QString &text)
++{
++    QString quoted = text;
++    quoted.replace(QLatin1Char('\''), QStringLiteral("'\\''"));
++    return QLatin1Char('\'') + quoted + QLatin1Char('\'');
++}
++
++static QString stripControl(const QString &text)
++{
++    QString out;
++    for (const QChar c : text) {
++        if (c.unicode() >= 32 && c.unicode() != 127) {
++            out.append(c);
++        }
++    }
++    return out.trimmed();
++}
++
++QString probeCommand()
++{
++    // Only double quotes and no variables, so that it survives any login shell
++    // (fish, csh and so on) once wrapped in sh -c '...'.
++    const QString script = QStringLiteral(
++        "if command -v tmux >/dev/null 2>&1; then echo @tmux;"
++        " tmux list-sessions -F \"#{session_id}|#{session_windows}|#{session_attached}|#{session_created}|#{pane_current_command}|#{session_name}\" "
++        "2>/dev/null; fi;"
++        " if command -v screen >/dev/null 2>&1; then echo @screen; screen -ls 2>/dev/null; fi; true");
++    return QStringLiteral("sh -c ") + shellQuote(script);
++}
++
++QList<Session> parseTmux(const QString &output)
++{
++    QList<Session> sessions;
++    const auto lines = output.split(QLatin1Char('\n'));
++    for (const QString &line : lines) {
++        // The name comes last because it may itself contain the separator.
++        const QStringList fields = line.split(QLatin1Char('|'));
++        static const QRegularExpression tmuxId(QStringLiteral("^\\$[0-9]+$"));
++        if (fields.size() < 6 || !tmuxId.match(fields.at(0)).hasMatch()) {
++            continue;
++        }
++        bool windowsOk = false;
++        bool attachedOk = false;
++        const int windows = fields.at(1).toInt(&windowsOk);
++        const int attached = fields.at(2).toInt(&attachedOk);
++        if (!windowsOk || !attachedOk) {
++            continue;
++        }
++        Session session;
++        session.tool = Tool::Tmux;
++        session.name = stripControl(fields.mid(5).join(QLatin1Char('|')));
++        if (session.name.isEmpty()) {
++            continue;
++        }
++        session.id = session.name;
++        session.windows = windows;
++        session.command = stripControl(fields.at(4));
++        session.clients = attached;
++        const qint64 created = fields.at(3).toLongLong();
++        if (created > 0) {
++            session.created = QDateTime::fromSecsSinceEpoch(created);
++        }
++        sessions.append(session);
++    }
++    return sessions;
++}
++
++QList<Session> parseScreen(const QString &output)
++{
++    static const QRegularExpression entry(
++        QStringLiteral("^\\s*(\\d+)\\.(\\S.*?)\\s+(?:\\(([^()]*)\\)\\s+)?\\((Attached|Detached|Multi, attached|Multi, detached)\\)\\s*$"));
++
++    QList<Session> sessions;
++    const auto lines = output.split(QLatin1Char('\n'));
++    for (const QString &line : lines) {
++        const QRegularExpressionMatch match = entry.match(line);
++        if (!match.hasMatch()) {
++            continue;
++        }
++        Session session;
++        session.tool = Tool::Screen;
++        session.name = stripControl(match.captured(2));
++        session.id = match.captured(1) + QLatin1Char('.') + session.name;
++        const QString status = match.captured(4);
++        session.clients = (status == QLatin1String("Attached") || status == QLatin1String("Multi, attached")) ? 1 : 0;
++        const QString date = match.captured(3);
++        if (!date.isEmpty()) {
++            for (const QString &format : {QStringLiteral("MM/dd/yyyy hh:mm:ss AP"),
++                                          QStringLiteral("MM/dd/yy hh:mm:ss AP"),
++                                          QStringLiteral("MM/dd/yyyy HH:mm:ss"),
++                                          QStringLiteral("dd/MM/yyyy HH:mm:ss")}) {
++                session.created = QDateTime::fromString(date, format);
++                if (session.created.isValid()) {
++                    break;
++                }
++            }
++        }
++        sessions.append(session);
++    }
++    return sessions;
++}
++
++ProbeResult parseProbeOutput(const QString &output)
++{
++    ProbeResult result;
++    QString tmuxPart;
++    QString screenPart;
++    QString *current = nullptr;
++    const auto lines = output.split(QLatin1Char('\n'));
++    for (const QString &line : lines) {
++        if (line == QLatin1String("@tmux")) {
++            result.tmuxAvailable = true;
++            current = &tmuxPart;
++        } else if (line == QLatin1String("@screen")) {
++            result.screenAvailable = true;
++            current = &screenPart;
++        } else if (current) {
++            current->append(line + QLatin1Char('\n'));
++        }
++    }
++    result.sessions = parseTmux(tmuxPart) + parseScreen(screenPart);
++    return result;
++}
++
++QString attachCommand(const Session &session, bool takeOver)
++{
++    if (session.tool == Tool::Tmux) {
++        return QStringLiteral("tmux attach-session %1-t %2").arg(takeOver ? QStringLiteral("-d ") : QString(), shellQuote(QLatin1Char('=') + session.id));
++    }
++    // -x shares a session that is attached elsewhere, -d -r moves it here.
++    const QString mode = takeOver ? QStringLiteral("-d -r") : (session.attached() ? QStringLiteral("-x") : QStringLiteral("-r"));
++    return QStringLiteral("screen %1 %2").arg(mode, shellQuote(session.id));
++}
++
++QString newSessionCommand(Tool tool, const QString &name)
++{
++    if (tool == Tool::Tmux) {
++        return name.isEmpty() ? QStringLiteral("tmux new-session") : QStringLiteral("tmux new-session -s %1").arg(shellQuote(name));
++    }
++    return name.isEmpty() ? QStringLiteral("screen") : QStringLiteral("screen -S %1").arg(shellQuote(name));
++}
++
++QString killCommand(const Session &session)
++{
++    if (session.tool == Tool::Tmux) {
++        return QStringLiteral("tmux kill-session -t %1").arg(shellQuote(QLatin1Char('=') + session.id));
++    }
++    return QStringLiteral("screen -S %1 -X quit").arg(shellQuote(session.id));
++}
++
++QString detachCommand(const Session &session)
++{
++    if (session.tool == Tool::Tmux) {
++        return QStringLiteral("tmux detach-client -s %1").arg(shellQuote(QLatin1Char('=') + session.id));
++    }
++    return QStringLiteral("screen -S %1 -X detach").arg(shellQuote(session.id));
++}
++
++QString renameCommand(const Session &session, const QString &newName)
++{
++    if (session.tool == Tool::Tmux) {
++        return QStringLiteral("tmux rename-session -t %1 %2").arg(shellQuote(QLatin1Char('=') + session.id), shellQuote(newName));
++    }
++    return QStringLiteral("screen -S %1 -X sessionname %2").arg(shellQuote(session.id), shellQuote(newName));
++}
++
++QString remoteTerminalCommand(const QStringList &sshArgs, const QString &command)
++{
++    QStringList parts{QStringLiteral("ssh"), QStringLiteral("-t")};
++    for (const QString &arg : sshArgs) {
++        parts.append(shellQuote(arg));
++    }
++    parts.append(shellQuote(command));
++    return parts.join(QLatin1Char(' '));
++}
++
++QStringList remoteQueryArguments(const QStringList &sshArgs, const QString &command, const QString &controlPath)
++{
++    QStringList args{QStringLiteral("-o"),
++                     QStringLiteral("BatchMode=yes"),
++                     QStringLiteral("-o"),
++                     QStringLiteral("ConnectTimeout=8"),
++                     QStringLiteral("-o"),
++                     QStringLiteral("ControlMaster=auto"),
++                     QStringLiteral("-o"),
++                     QStringLiteral("ControlPersist=120"),
++                     QStringLiteral("-o"),
++                     QStringLiteral("ControlPath=") + controlPath,
++                     QStringLiteral("-T")};
++    args += sshArgs;
++    args.append(command);
++    return args;
++}
++}
+diff --git a/src/plugins/SessionManager/multiplexer.h b/src/plugins/SessionManager/multiplexer.h
+new file mode 100644
+index 000000000..6ee03b26f
+--- /dev/null
++++ b/src/plugins/SessionManager/multiplexer.h
+@@ -0,0 +1,78 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MULTIPLEXER_H
++#define MULTIPLEXER_H
++
++#include <QDateTime>
++#include <QList>
++#include <QString>
++#include <QStringList>
++
++/**
++ * Parsing of tmux and GNU screen output and construction of the shell
++ * commands that act on their sessions. Nothing here starts a process, so the
++ * same text works for local and remote (ssh) hosts and can be unit tested.
++ */
++namespace Multiplexer
++{
++enum class Tool {
++    Tmux,
++    Screen,
++};
++
++struct Session {
++    Tool tool = Tool::Tmux;
++    // Name for tmux, "pid.name" for screen. Identifies the session on its host.
++    QString id;
++    QString name;
++    int windows = 0; // 0 when the tool does not report it
++    int clients = 0; // number of attached clients, 0 for tmux when detached
++    QDateTime created;
++    QString command; // program running in the active window, when the tool reports it
++
++    bool attached() const
++    {
++        return clients > 0;
++    }
++    bool operator==(const Session &other) const = default;
++};
++
++struct ProbeResult {
++    bool tmuxAvailable = false;
++    bool screenAvailable = false;
++    QList<Session> sessions;
++};
++
++QString toolName(Tool tool);
++QString shellQuote(const QString &text);
++
++/** Shell command that prints the output understood by parseProbeOutput(). */
++QString probeCommand();
++
++ProbeResult parseProbeOutput(const QString &output);
++QList<Session> parseTmux(const QString &output);
++QList<Session> parseScreen(const QString &output);
++
++/** Commands for a session. They are plain shell text, to be run on the host that owns the session. */
++QString attachCommand(const Session &session, bool takeOver = false);
++QString newSessionCommand(Tool tool, const QString &name);
++QString killCommand(const Session &session);
++QString detachCommand(const Session &session);
++// Empty when the tool cannot rename a session without being attached to it.
++QString renameCommand(const Session &session, const QString &newName);
++
++/**
++ * Wraps a command so that it runs on the host reached with @p sshArgs. The
++ * result is a single shell command line that starts ssh with a terminal.
++ */
++QString remoteTerminalCommand(const QStringList &sshArgs, const QString &command);
++
++/** Arguments for a non-interactive ssh run of @p command, for background queries. */
++QStringList remoteQueryArguments(const QStringList &sshArgs, const QString &command, const QString &controlPath);
++}
++
++#endif

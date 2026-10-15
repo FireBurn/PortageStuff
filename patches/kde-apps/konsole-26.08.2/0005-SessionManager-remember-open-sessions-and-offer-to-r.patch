@@ -1,0 +1,302 @@
+From 93cf78ac3f02016ae5ca17132a9283198bce5165 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 15 Oct 2026 01:52:00 +0100
+Subject: [PATCH 5/5] SessionManager: remember open sessions and offer to
+ restore them
+
+Open sessions are saved per host in tab order. After a restart the panel
+offers to reopen the ones that still exist, and Open All brings back every
+session of a host.
+---
+ src/plugins/SessionManager/muxmodel.cpp       |  1 +
+ src/plugins/SessionManager/muxmodel.h         |  3 +
+ src/plugins/SessionManager/muxwidget.cpp      | 24 +++++
+ src/plugins/SessionManager/muxwidget.h        |  8 ++
+ .../SessionManager/sessionmanagerplugin.cpp   | 93 ++++++++++++++++++-
+ .../SessionManager/sessionmanagerplugin.h     |  6 ++
+ 6 files changed, 133 insertions(+), 2 deletions(-)
+
+diff --git a/src/plugins/SessionManager/muxmodel.cpp b/src/plugins/SessionManager/muxmodel.cpp
+index 49eec6e88..7b1f7764a 100644
+--- a/src/plugins/SessionManager/muxmodel.cpp
++++ b/src/plugins/SessionManager/muxmodel.cpp
+@@ -160,6 +160,7 @@ void MuxModel::onProbed(const QString &hostId, MuxProbe::Status status, const Pr
+         m_results.insert(hostId, probeResult);
+     }
+     updateHost(hostId);
++    Q_EMIT hostUpdated(hostId);
+ }
+ 
+ void MuxModel::setOpenKeys(const QSet<QString> &keys)
+diff --git a/src/plugins/SessionManager/muxmodel.h b/src/plugins/SessionManager/muxmodel.h
+index 3389f8bd9..6326cf64c 100644
+--- a/src/plugins/SessionManager/muxmodel.h
++++ b/src/plugins/SessionManager/muxmodel.h
+@@ -53,6 +53,9 @@ public:
+ 
+     static QString sessionKey(const QString &hostId, const Multiplexer::Session &session);
+ 
++Q_SIGNALS:
++    void hostUpdated(const QString &hostId);
++
+ private:
+     void rebuild();
+     void updateHost(const QString &hostId);
+diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
+index 745eb757e..1a840f9e5 100644
+--- a/src/plugins/SessionManager/muxwidget.cpp
++++ b/src/plugins/SessionManager/muxwidget.cpp
+@@ -115,6 +115,8 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+     , m_model(model)
+     , m_view(new QTreeView(this))
+     , m_empty(new QLabel(this))
++    , m_restoreBar(new QFrame(this))
++    , m_restoreLabel(new QLabel(m_restoreBar))
+     , m_openButton(new QPushButton(QIcon::fromTheme(QStringLiteral("media-playback-start")), i18nc("@action:button", "Open"), this))
+     , m_openAllButton(new QPushButton(QIcon::fromTheme(QStringLiteral("view-restore")), i18nc("@action:button", "Open All"), this))
+     , m_newButton(new QToolButton(this))
+@@ -159,6 +161,21 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+     top->addWidget(addHostButton);
+     top->addWidget(refresh);
+ 
++    m_restoreBar->setFrameShape(QFrame::StyledPanel);
++    m_restoreBar->hide();
++    m_restoreLabel->setWordWrap(true);
++    auto *restoreButton = new QPushButton(QIcon::fromTheme(QStringLiteral("view-restore")), i18nc("@action:button", "Restore"), m_restoreBar);
++    auto *dismissButton = new QPushButton(i18nc("@action:button", "Not Now"), m_restoreBar);
++    auto *restoreButtons = new QHBoxLayout;
++    restoreButtons->addStretch();
++    restoreButtons->addWidget(dismissButton);
++    restoreButtons->addWidget(restoreButton);
++    auto *restoreLayout = new QVBoxLayout(m_restoreBar);
++    restoreLayout->addWidget(m_restoreLabel);
++    restoreLayout->addLayout(restoreButtons);
++    connect(restoreButton, &QPushButton::clicked, this, &MuxWidget::restoreRequested);
++    connect(dismissButton, &QPushButton::clicked, this, &MuxWidget::restoreDismissed);
++
+     auto *bottom = new QHBoxLayout;
+     bottom->addWidget(m_openButton);
+     bottom->addWidget(m_openAllButton);
+@@ -167,6 +184,7 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+     auto *layout = new QVBoxLayout(this);
+     layout->setContentsMargins(6, 6, 6, 6);
+     layout->addLayout(top);
++    layout->addWidget(m_restoreBar);
+     layout->addWidget(m_view, 1);
+     layout->addWidget(m_empty);
+     layout->addLayout(bottom);
+@@ -209,6 +227,12 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+     updateButtons();
+ }
+ 
++void MuxWidget::setRestoreOffer(int count)
++{
++    m_restoreBar->setVisible(count > 0);
++    m_restoreLabel->setText(i18np("Last time you had %1 terminal open. Bring it back?", "Last time you had %1 terminals open. Bring them back?", count));
++}
++
+ void MuxWidget::showEvent(QShowEvent *event)
+ {
+     QWidget::showEvent(event);
+diff --git a/src/plugins/SessionManager/muxwidget.h b/src/plugins/SessionManager/muxwidget.h
+index 25258280c..c703b0f84 100644
+--- a/src/plugins/SessionManager/muxwidget.h
++++ b/src/plugins/SessionManager/muxwidget.h
+@@ -12,6 +12,7 @@
+ #include "multiplexer.h"
+ 
+ class MuxModel;
++class QFrame;
+ class QLabel;
+ class QPushButton;
+ class QToolButton;
+@@ -23,9 +24,14 @@ class MuxWidget : public QWidget
+ public:
+     explicit MuxWidget(MuxModel *model, QWidget *parent = nullptr);
+ 
++    /** Offers to bring back @p count terminals that were open last time. Zero hides the offer. */
++    void setRestoreOffer(int count);
++
+ Q_SIGNALS:
+     void openRequested(const QString &hostId, const Multiplexer::Session &session, bool takeOver);
+     void openAllRequested(const QString &hostId);
++    void restoreRequested();
++    void restoreDismissed();
+     void newRequested(const QString &hostId, Multiplexer::Tool tool, const QString &name);
+ 
+ protected:
+@@ -51,6 +57,8 @@ private:
+     MuxModel *m_model;
+     QTreeView *m_view;
+     QLabel *m_empty;
++    QFrame *m_restoreBar;
++    QLabel *m_restoreLabel;
+     QPushButton *m_openButton;
+     QPushButton *m_openAllButton;
+     QToolButton *m_newButton;
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.cpp b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+index ec3a0c8ce..b115c867d 100644
+--- a/src/plugins/SessionManager/sessionmanagerplugin.cpp
++++ b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+@@ -23,6 +23,7 @@
+ #include <KPluginFactory>
+ 
+ #include <QAction>
++#include <QApplication>
+ #include <QDockWidget>
+ #include <QTimer>
+ 
+@@ -36,6 +37,8 @@ SessionManagerPlugin::SessionManagerPlugin(QObject *object, const QVariantList &
+     : Konsole::IKonsolePlugin(object, args)
+     , m_model(std::make_unique<MuxModel>())
+     , m_timer(new QTimer(this))
++    , m_savedLayout(MuxLayout::load())
++    , m_offerPending(!m_savedLayout.isEmpty())
+ {
+     setName(QStringLiteral("SessionManager"));
+ 
+@@ -60,6 +63,18 @@ void SessionManagerPlugin::createWidgetsForMainWindow(Konsole::MainWindow *mainW
+     mainWindow->addDockWidget(Qt::RightDockWidgetArea, dock);
+     m_docks[mainWindow] = dock;
+ 
++    // Only the first window offers; later windows would ask again for the same terminals.
++    if (m_offerPending) {
++        m_offerPending = false;
++        widget->setRestoreOffer(m_savedLayout.count());
++    }
++    connect(widget, &MuxWidget::restoreRequested, this, [this, mainWindow] {
++        restoreLayout(mainWindow);
++    });
++    connect(widget, &MuxWidget::restoreDismissed, this, [this] {
++        setRestoreOffer(0);
++    });
++
+     connect(widget, &MuxWidget::openRequested, this, [this, mainWindow](const QString &hostId, const Session &session, bool takeOver) {
+         openSession(mainWindow, hostId, session, takeOver);
+     });
+@@ -123,9 +138,21 @@ SessionManagerPlugin::openCommand(Konsole::MainWindow *mainWindow, const QString
+     viewManager->activeContainer()->addView(viewManager->createView(session));
+ 
+     connect(session, &QObject::destroyed, this, [this] {
+-        QTimer::singleShot(0, this, &SessionManagerPlugin::updateOpenState);
++        QTimer::singleShot(0, this, [this] {
++            updateOpenState();
++            // Closing the last window also ends its sessions. That is not the user
++            // dropping them, so keep what was saved.
++            const auto widgets = QApplication::topLevelWidgets();
++            const bool windowOpen = std::any_of(widgets.cbegin(), widgets.cend(), [](QWidget *w) {
++                return qobject_cast<Konsole::MainWindow *>(w) && w->isVisible();
++            });
++            if (windowOpen) {
++                saveLayout();
++            }
++        });
+     });
+     updateOpenState();
++    saveLayout();
+     return session;
+ }
+ 
+@@ -154,12 +181,74 @@ void SessionManagerPlugin::createSession(Konsole::MainWindow *mainWindow, const
+     // The name is only known to the tool once it exists, so the tab is not marked as open
+     // until the next refresh finds it.
+     const QString title = name.isEmpty() ? i18n("New terminal") : name;
+-    openCommand(mainWindow, hostId, newSessionCommand(tool, name), title, QString());
++    Session created;
++    created.tool = tool;
++    created.name = name;
++    const QString key = name.isEmpty() ? QString() : MuxModel::sessionKey(hostId, created);
++    openCommand(mainWindow, hostId, newSessionCommand(tool, name), title, key);
+     QTimer::singleShot(2000, m_model.get(), [this, hostId] {
+         m_model->refresh(hostId);
+     });
+ }
+ 
++void SessionManagerPlugin::saveLayout()
++{
++    MuxLayout layout;
++    const auto sessions = Konsole::SessionManager::instance()->sessions();
++    for (const Konsole::Session *session : sessions) {
++        const QStringList parts = session->property(keyProperty).toString().split(QLatin1Char('\n'));
++        MuxLayout::Entry entry;
++        if (parts.size() >= 3 && MuxLayout::decode(parts.at(1) + QLatin1Char(':') + parts.mid(2).join(QLatin1Char('\n')), &entry)) {
++            layout.hosts[parts.at(0)].append(entry);
++        }
++    }
++    m_savedLayout = layout;
++    layout.save();
++}
++
++void SessionManagerPlugin::setRestoreOffer(int count)
++{
++    for (QDockWidget *dock : std::as_const(m_docks)) {
++        static_cast<MuxWidget *>(dock->widget())->setRestoreOffer(count);
++    }
++}
++
++void SessionManagerPlugin::restoreLayout(Konsole::MainWindow *mainWindow)
++{
++    const MuxLayout layout = m_savedLayout;
++    setRestoreOffer(0);
++    for (auto it = layout.hosts.cbegin(); it != layout.hosts.cend(); ++it) {
++        const QString hostId = it.key();
++        const QList<MuxLayout::Entry> wanted = it.value();
++        if (m_model->host(hostId).id.isEmpty()) {
++            continue;
++        }
++        // The tmux or screen server may have restarted since, so look at the host again first.
++        auto *connection = new QMetaObject::Connection;
++        *connection = connect(m_model.get(), &MuxModel::hostUpdated, this, [this, connection, mainWindow, hostId, wanted](const QString &updated) {
++            if (updated != hostId) {
++                return;
++            }
++            disconnect(*connection);
++            delete connection;
++            const QList<Session> running = m_model->result(hostId).sessions;
++            QSet<QString> open;
++            const auto sessions = Konsole::SessionManager::instance()->sessions();
++            for (const Konsole::Session *s : sessions) {
++                open.insert(s->property(keyProperty).toString());
++            }
++            for (const MuxLayout::Entry &entry : wanted) {
++                for (const Session &session : running) {
++                    if (session.tool == entry.tool && session.name == entry.name && !open.contains(MuxModel::sessionKey(hostId, session))) {
++                        openSession(mainWindow, hostId, session, false);
++                    }
++                }
++            }
++        });
++        m_model->refresh(hostId);
++    }
++}
++
+ void SessionManagerPlugin::updateOpenState()
+ {
+     QSet<QString> keys;
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.h b/src/plugins/SessionManager/sessionmanagerplugin.h
+index 24eca8cf7..457c7e983 100644
+--- a/src/plugins/SessionManager/sessionmanagerplugin.h
++++ b/src/plugins/SessionManager/sessionmanagerplugin.h
+@@ -13,6 +13,7 @@
+ #include <memory>
+ 
+ #include "multiplexer.h"
++#include "muxlayout.h"
+ 
+ class MuxModel;
+ class QDockWidget;
+@@ -41,9 +42,14 @@ private:
+     void createSession(Konsole::MainWindow *mainWindow, const QString &hostId, Multiplexer::Tool tool, const QString &name);
+     Konsole::Session *openCommand(Konsole::MainWindow *mainWindow, const QString &hostId, const QString &command, const QString &title, const QString &key);
+     void updateOpenState();
++    void saveLayout();
++    void restoreLayout(Konsole::MainWindow *mainWindow);
++    void setRestoreOffer(int count);
+ 
+     std::unique_ptr<MuxModel> m_model;
+     QTimer *m_timer;
++    MuxLayout m_savedLayout;
++    bool m_offerPending;
+     QHash<Konsole::MainWindow *, QDockWidget *> m_docks;
+ };
+ 
