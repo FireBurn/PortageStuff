@@ -1,4 +1,4 @@
-From 4f89d5b85dd1d0b03ca60d656f9bf59e58304fa2 Mon Sep 17 00:00:00 2001
+From 5822e5cc68ebc4cc5036b78adb07702b7e69412a Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Thu, 15 Oct 2026 01:50:05 +0100
 Subject: [PATCH 4/5] SessionManager: add storage for the layout of open

@@ -1,4 +1,4 @@
-From 93cf78ac3f02016ae5ca17132a9283198bce5165 Mon Sep 17 00:00:00 2001
+From 93f3e92568eb2c4420743b9823190b14ea358eeb Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Thu, 15 Oct 2026 01:52:00 +0100
 Subject: [PATCH 5/5] SessionManager: remember open sessions and offer to
@@ -17,10 +17,10 @@ session of a host.
  6 files changed, 133 insertions(+), 2 deletions(-)
 
 diff --git a/src/plugins/SessionManager/muxmodel.cpp b/src/plugins/SessionManager/muxmodel.cpp
-index 49eec6e88..7b1f7764a 100644
+index 603682fdb..8de71ffc6 100644
 --- a/src/plugins/SessionManager/muxmodel.cpp
 +++ b/src/plugins/SessionManager/muxmodel.cpp
-@@ -160,6 +160,7 @@ void MuxModel::onProbed(const QString &hostId, MuxProbe::Status status, const Pr
+@@ -182,6 +182,7 @@ void MuxModel::onProbed(const QString &hostId, MuxProbe::Status status, const Pr
          m_results.insert(hostId, probeResult);
      }
      updateHost(hostId);
@@ -29,10 +29,10 @@ index 49eec6e88..7b1f7764a 100644
  
  void MuxModel::setOpenKeys(const QSet<QString> &keys)
 diff --git a/src/plugins/SessionManager/muxmodel.h b/src/plugins/SessionManager/muxmodel.h
-index 3389f8bd9..6326cf64c 100644
+index 6580a9a6b..acfc4ec0f 100644
 --- a/src/plugins/SessionManager/muxmodel.h
 +++ b/src/plugins/SessionManager/muxmodel.h
-@@ -53,6 +53,9 @@ public:
+@@ -54,6 +54,9 @@ public:
  
      static QString sessionKey(const QString &hostId, const Multiplexer::Session &session);
  
@@ -43,7 +43,7 @@ index 3389f8bd9..6326cf64c 100644
      void rebuild();
      void updateHost(const QString &hostId);
 diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
-index 745eb757e..1a840f9e5 100644
+index a74b6a5f6..18174b1bf 100644
 --- a/src/plugins/SessionManager/muxwidget.cpp
 +++ b/src/plugins/SessionManager/muxwidget.cpp
 @@ -115,6 +115,8 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)

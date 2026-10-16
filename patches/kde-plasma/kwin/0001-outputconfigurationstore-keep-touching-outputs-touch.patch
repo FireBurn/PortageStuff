@@ -703,14 +703,14 @@ diff --git a/src/workspace.cpp b/src/workspace.cpp
 index 126ae379cb..575fb8ee49 100644
 --- a/src/workspace.cpp
 +++ b/src/workspace.cpp
-@@ -534,6 +534,7 @@ OutputConfigurationError Workspace::applyOutputConfiguration(OutputConfiguration
+@@ -551,6 +551,7 @@ std::expected<void, OutputError> Workspace::applyOutputConfiguration(OutputConfiguration &config)
              config.changeSet(output)->dpmsMode = BackendOutput::DpmsMode::On;
          }
      }
 +    m_outputConfigStore->resolveAnchoredPositions(config, backendOutputs, m_lidSwitchTracker->isLidClosed());
-     auto error = kwinApp()->outputBackend()->applyOutputChanges(config);
-     if (error != OutputConfigurationError::None) {
-         return error;
+     auto result = kwinApp()->outputBackend()->applyOutputChanges(config);
+     if (!result) {
+         return result;
 -- 
 2.55.0
 

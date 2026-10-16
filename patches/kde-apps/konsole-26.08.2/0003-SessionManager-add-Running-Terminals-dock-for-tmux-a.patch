@@ -1,4 +1,4 @@
-From ec6fd694748f41fbea6aee252040003216f4d8ef Mon Sep 17 00:00:00 2001
+From f0c649073a8e975615e684e448ce1b77c4ca2b9a Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Thu, 15 Oct 2026 01:49:05 +0100
 Subject: [PATCH 3/5] SessionManager: add Running Terminals dock for tmux and
@@ -10,14 +10,14 @@ tools found installed on a host are offered.
 ---
  src/plugins/SessionManager/CMakeLists.txt     |  19 +
  .../konsole_sessionmanager.in.json            |   7 +
- src/plugins/SessionManager/muxmodel.cpp       | 235 +++++++++++
- src/plugins/SessionManager/muxmodel.h         |  72 ++++
+ src/plugins/SessionManager/muxmodel.cpp       | 257 ++++++++++++
+ src/plugins/SessionManager/muxmodel.h         |  74 ++++
  src/plugins/SessionManager/muxprobe.h         |   1 +
  src/plugins/SessionManager/muxwidget.cpp      | 384 ++++++++++++++++++
  src/plugins/SessionManager/muxwidget.h        |  59 +++
  .../SessionManager/sessionmanagerplugin.cpp   | 191 +++++++++
  .../SessionManager/sessionmanagerplugin.h     |  50 +++
- 9 files changed, 1018 insertions(+)
+ 9 files changed, 1042 insertions(+)
  create mode 100644 src/plugins/SessionManager/konsole_sessionmanager.in.json
  create mode 100644 src/plugins/SessionManager/muxmodel.cpp
  create mode 100644 src/plugins/SessionManager/muxmodel.h
@@ -68,10 +68,10 @@ index 000000000..e9b168cc7
 +}
 diff --git a/src/plugins/SessionManager/muxmodel.cpp b/src/plugins/SessionManager/muxmodel.cpp
 new file mode 100644
-index 000000000..49eec6e88
+index 000000000..603682fdb
 --- /dev/null
 +++ b/src/plugins/SessionManager/muxmodel.cpp
-@@ -0,0 +1,235 @@
+@@ -0,0 +1,257 @@
 +/*
 +    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
 +
@@ -131,6 +131,11 @@ index 000000000..49eec6e88
 +    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).readEntry("ManualHosts", QStringList());
 +}
 +
++QStringList MuxModel::hiddenHosts() const
++{
++    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).readEntry("HiddenHosts", QStringList());
++}
++
 +void MuxModel::reloadHosts()
 +{
 +    m_hosts = {MuxHosts::local()};
@@ -142,6 +147,10 @@ index 000000000..49eec6e88
 +    }
 +    MuxHosts::merge(m_hosts, manual);
 +    MuxHosts::merge(m_hosts, m_openTabHosts);
++    const QStringList hidden = hiddenHosts();
++    m_hosts.removeIf([&hidden](const MuxHost &h) {
++        return !h.isLocal() && hidden.contains(h.id);
++    });
 +    rebuild();
 +}
 +
@@ -149,27 +158,40 @@ index 000000000..49eec6e88
 +{
 +    QStringList list = manualDestinations();
 +    const QString trimmed = destination.trimmed();
-+    if (trimmed.isEmpty() || list.contains(trimmed)) {
++    if (trimmed.isEmpty()) {
 +        return;
 +    }
-+    list.append(trimmed);
++    const QString hostId = MuxHosts::fromDestination(trimmed, MuxHost::Source::Manual).id;
 +    KConfigGroup group = KSharedConfig::openConfig()->group(QStringLiteral("SessionManager"));
-+    group.writeEntry("ManualHosts", list);
++    if (!list.contains(trimmed)) {
++        list.append(trimmed);
++        group.writeEntry("ManualHosts", list);
++    }
++    QStringList hidden = hiddenHosts();
++    if (hidden.removeAll(hostId) > 0) {
++        group.writeEntry("HiddenHosts", hidden);
++    }
 +    group.sync();
 +    reloadHosts();
-+    refresh(MuxHosts::fromDestination(trimmed, MuxHost::Source::Manual).id);
++    refresh(hostId);
 +}
 +
-+void MuxModel::removeManualHost(const QString &hostId)
++void MuxModel::hideHost(const QString &hostId)
 +{
-+    QStringList list = manualDestinations();
-+    for (const QString &destination : std::as_const(list)) {
-+        if (MuxHosts::fromDestination(destination, MuxHost::Source::Manual).id == hostId) {
-+            list.removeAll(destination);
-+        }
++    if (hostId == MuxHosts::local().id) {
++        return;
 +    }
 +    KConfigGroup group = KSharedConfig::openConfig()->group(QStringLiteral("SessionManager"));
-+    group.writeEntry("ManualHosts", list);
++    QStringList manual = manualDestinations();
++    manual.removeIf([&hostId](const QString &destination) {
++        return MuxHosts::fromDestination(destination, MuxHost::Source::Manual).id == hostId;
++    });
++    group.writeEntry("ManualHosts", manual);
++    QStringList hidden = hiddenHosts();
++    if (!hidden.contains(hostId)) {
++        hidden.append(hostId);
++    }
++    group.writeEntry("HiddenHosts", hidden);
 +    group.sync();
 +    reloadHosts();
 +}
@@ -309,10 +331,10 @@ index 000000000..49eec6e88
 +#include "moc_muxmodel.cpp"
 diff --git a/src/plugins/SessionManager/muxmodel.h b/src/plugins/SessionManager/muxmodel.h
 new file mode 100644
-index 000000000..3389f8bd9
+index 000000000..6580a9a6b
 --- /dev/null
 +++ b/src/plugins/SessionManager/muxmodel.h
-@@ -0,0 +1,72 @@
+@@ -0,0 +1,74 @@
 +/*
 +    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
 +
@@ -352,7 +374,8 @@ index 000000000..3389f8bd9
 +
 +    void reloadHosts();
 +    void addManualHost(const QString &destination);
-+    void removeManualHost(const QString &hostId);
++    /** Stops listing a host. Hosts typed in by hand are forgotten, others are only hidden. */
++    void hideHost(const QString &hostId);
 +    void addOpenTabHosts(const QList<MuxHost> &hosts);
 +
 +    void refreshAll();
@@ -375,6 +398,7 @@ index 000000000..3389f8bd9
 +    void applyOpenState(QStandardItem *hostItem);
 +    void onProbed(const QString &hostId, MuxProbe::Status status, const Multiplexer::ProbeResult &result);
 +    QStringList manualDestinations() const;
++    QStringList hiddenHosts() const;
 +
 +    MuxProbe m_probe;
 +    QList<MuxHost> m_hosts;
@@ -398,7 +422,7 @@ index e5e9faf49..0498a1a67 100644
  #endif
 diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
 new file mode 100644
-index 000000000..745eb757e
+index 000000000..a74b6a5f6
 --- /dev/null
 +++ b/src/plugins/SessionManager/muxwidget.cpp
 @@ -0,0 +1,384 @@
@@ -720,10 +744,10 @@ index 000000000..745eb757e
 +        menu.addAction(QIcon::fromTheme(QStringLiteral("view-refresh")), i18n("Refresh"), this, [this, s] {
 +            m_model->refresh(s.hostId);
 +        });
-+        if (m_model->host(s.hostId).source == MuxHost::Source::Manual) {
++        if (!m_model->host(s.hostId).isLocal()) {
 +            menu.addSeparator();
-+            menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), i18n("Remove This Computer"), this, [this, s] {
-+                m_model->removeManualHost(s.hostId);
++            menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), i18n("Hide This Computer"), this, [this, s] {
++                m_model->hideHost(s.hostId);
 +            });
 +        }
 +    }
