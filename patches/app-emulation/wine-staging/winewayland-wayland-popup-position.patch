@@ -7,6 +7,8 @@ appeared wherever the compositor liked. Place those windows with
 org_kde_plasma_surface where the compositor offers it. Positions reported by
 the desktop for tray icon clicks are logical, convert them to pixels.
 
+Ask for no compositor frame on them, as they have none in Windows.
+
 Do not advertise a Menu for tray icons. Plasma then asks for a dbusmenu
 that does not exist instead of calling ContextMenu, and a right click does
 nothing.
@@ -423,7 +425,7 @@ nothing.
 
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -476,6 +476,19 @@
+@@ -476,6 +476,23 @@
  
      wayland_surface_init_fractional_scale(surface, 1.0);
  
@@ -438,12 +440,16 @@ nothing.
 +        org_kde_plasma_surface_set_role(surface->plasma_surface, ORG_KDE_PLASMA_SURFACE_ROLE_APPLETPOPUP);
 +        org_kde_plasma_surface_set_skip_taskbar(surface->plasma_surface, 1);
 +        org_kde_plasma_surface_set_skip_switcher(surface->plasma_surface, 1);
++        /* The window has no frame in Windows, do not let the compositor add one. */
++        if (surface->xdg_decoration)
++            zxdg_toplevel_decoration_v1_set_mode(surface->xdg_decoration,
++                                                 ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE);
 +    }
 +
      wl_surface_commit(surface->wl_surface);
      wl_display_flush(process_wayland.wl_display);
  
-@@ -548,6 +561,12 @@
+@@ -548,6 +565,12 @@
          surface->wp_fractional_scale_v1 = NULL;
      }
  
@@ -456,7 +462,7 @@ nothing.
      switch (surface->role)
      {
      case WAYLAND_SURFACE_ROLE_NONE:
-@@ -929,6 +948,9 @@
+@@ -929,6 +952,9 @@
            wine_dbgstr_rect(&surface->processing.rect), surface->processing.state,
            wine_dbgstr_rect(&surface->current.rect), surface->current.state);
  
