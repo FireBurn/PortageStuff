@@ -1,0 +1,55 @@
+From: Michael Lothian <mike@fireburn.co.uk>
+Subject: [PATCH] winewayland.drv: Restore the window size when the compositor unmaximizes it.
+
+The maximized style was cleared but the window kept the maximized size, as
+the size hints are not used when the state is empty. Let Windows restore the
+rectangle it kept from before the window was maximized.
+
+---
+
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -313,6 +313,8 @@
+     struct wp_alpha_modifier_surface_v1 *wp_alpha_modifier_surface_v1;
+ 
+     struct wayland_surface_config pending, requested, processing, current;
++    /* The state of the last configure handled, to tell when the compositor unmaximizes the window. */
++    enum wayland_surface_config_state last_configure_state;
+     BOOL resizing;
+     struct wayland_window_config window;
+     int content_width, content_height;
+
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -533,6 +533,7 @@
+     BOOL needs_enter_size_move = FALSE;
+     BOOL needs_exit_size_move = FALSE;
+     BOOL restoring_from_minimize = FALSE;
++    BOOL was_maximized;
+     struct wayland_win_data *data;
+     RECT rect, surface_rect;
+ 
+@@ -626,6 +627,23 @@
+         wayland_win_data_release(data);
+         send_message(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+         return;
++    }
++
++    /* The compositor unmaximized the window. Windows keeps the rectangle the window had before
++     * it was maximized, let it restore that instead of keeping the maximized size. */
++    style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
++    was_maximized = surface->last_configure_state & WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED;
++    surface->last_configure_state = state;
++    if ((style & WS_MAXIMIZE) && was_maximized &&
++        !(state & (WAYLAND_SURFACE_CONFIG_STATE_MAXIMIZED | WAYLAND_SURFACE_CONFIG_STATE_FULLSCREEN)))
++    {
++        TRACE("hwnd=%p restoring from maximize\n", hwnd);
++        surface->current = surface->processing;
++        memset(&surface->processing, 0, sizeof(surface->processing));
++        xdg_surface_ack_configure(surface->xdg_surface, surface->current.serial);
++        wayland_win_data_release(data);
++        send_message(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
++        return;
+     }
+ 
+     SetRect(&rect, 0, 0, width, height);
