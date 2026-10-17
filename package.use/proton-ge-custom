@@ -1,1 +1,1 @@
-app-emulation/proton-ge-custom crossdev-mingw
+app-emulation/proton-ge-custom crossdev-mingw sdl
