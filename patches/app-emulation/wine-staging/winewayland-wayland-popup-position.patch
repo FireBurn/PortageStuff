@@ -7,6 +7,10 @@ appeared wherever the compositor liked. Place those windows with
 org_kde_plasma_surface where the compositor offers it. Positions reported by
 the desktop for tray icon clicks are logical, convert them to pixels.
 
+Do not advertise a Menu for tray icons. Plasma then asks for a dbusmenu
+that does not exist instead of calling ContextMenu, and a right click does
+nothing.
+
 ---
 
 --- a/dlls/winewayland.drv/Makefile.in
@@ -334,7 +338,41 @@ the desktop for tray icon clicks are logical, convert them to pixels.
 
 --- a/dlls/winewayland.drv/systray.c
 +++ b/dlls/winewayland.drv/systray.c
-@@ -608,11 +608,32 @@
+@@ -201,11 +201,12 @@
+     p_dbus_message_iter_close_container(iter, &array);
+ }
+ 
++/* There is no Menu: the desktop then calls ContextMenu, and a menu path makes it ask for a dbusmenu instead. */
+ static const char *const property_names[] =
+ {
+     "Category", "Id", "Title", "Status", "WindowId", "IconName", "IconPixmap",
+     "OverlayIconName", "OverlayIconPixmap", "AttentionIconName", "AttentionIconPixmap",
+-    "AttentionMovieName", "ToolTip", "ItemIsMenu", "Menu",
++    "AttentionMovieName", "ToolTip", "ItemIsMenu",
+ };
+ 
+ /* Append the value of a property as a variant, or return FALSE if it is unknown. */
+@@ -225,7 +226,6 @@
+     }
+     else if (!strcmp(name, "Title")) str = icon->tip;
+     else if (!strcmp(name, "Status")) str = "Active";
+-    else if (!strcmp(name, "Menu")) str = "/NO_DMENU";
+ 
+     if (!strcmp(name, "Category") || !strcmp(name, "Id") || !strcmp(name, "Title") ||
+         !strcmp(name, "Status") || !strcmp(name, "IconName") || !strcmp(name, "OverlayIconName") ||
+@@ -234,11 +234,6 @@
+         p_dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "s", &variant);
+         append_string(&variant, str);
+     }
+-    else if (!strcmp(name, "Menu"))
+-    {
+-        p_dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "o", &variant);
+-        p_dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &str);
+-    }
+     else if (!strcmp(name, "WindowId"))
+     {
+         p_dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "u", &variant);
+@@ -608,11 +603,32 @@
      NtUserMessageCall(owner, callback, wp, lp, 0, NtUserSendNotifyMessage, FALSE);
  }
  
