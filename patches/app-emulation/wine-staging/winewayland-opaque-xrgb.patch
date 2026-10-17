@@ -1,0 +1,32 @@
+From 9032139ecf7076fa6ef0fcf0e9f2c20a910c5b16 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sat, 17 Oct 2026 19:24:46 +0100
+Subject: [PATCH] winewayland.drv: Make the unused byte of XRGB window buffers
+ opaque.
+
+GDI leaves the unused byte of 32-bit pixels at zero, and the compositor
+may take it as alpha: KWin showed the client area of ordinary windows
+black while their thumbnails were correct.
+---
+ dlls/winewayland.drv/window_surface.c | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/dlls/winewayland.drv/window_surface.c b/dlls/winewayland.drv/window_surface.c
+index e7595b7..8feb1c2 100644
+--- a/dlls/winewayland.drv/window_surface.c
++++ b/dlls/winewayland.drv/window_surface.c
+@@ -439,8 +439,10 @@ static BOOL wayland_window_surface_flush(struct window_surface *window_surface,
+         copy_from_window_region = shm_buffer->damage_region;
+     }
+ 
++    /* The unused byte of an XRGB buffer is whatever GDI left there, usually zero,
++     * and some compositors take it as alpha and show the window black. */
+     wayland_shm_buffer_copy_data(shm_buffer, color_bits, &surface_rect, copy_from_window_region,
+-                                 shape_bits && !wws->layered);
++                                 buffer_format == WL_SHM_FORMAT_XRGB8888 || (shape_bits && !wws->layered));
+     if (shape_bits) wayland_shm_buffer_copy_shape(shm_buffer, rect, shape_info, shape_bits);
+ 
+     NtGdiSetRectRgn(shm_buffer->damage_region, 0, 0, 0, 0);
+-- 
+2.56.0
+

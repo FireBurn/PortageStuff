@@ -1,0 +1,983 @@
+From: Michael Lothian <mike@fireburn.co.uk>
+Subject: [PATCH] winewayland.drv: Show the frames rendered for windows of other processes.
+
+A Wayland surface cannot be made part of another client, so a process that
+renders into a window of another one, as the GPU process of a Chromium
+based application does, shows nothing. Read the frames of such a swapchain
+back through a headless Vulkan surface and send them to the process that
+owns the window, which shows them in a subsurface of the window.
+
+---
+
+--- a/dlls/win32u/vulkan.c
++++ b/dlls/win32u/vulkan.c
+@@ -150,11 +150,33 @@
+     return CONTAINING_RECORD( obj, struct surface, obj );
+ }
+ 
++/* The images of a swapchain for a window that belongs to another process cannot be shown
++ * by the driver, so each presented image is copied to host memory and handed over as pixels. */
++struct remote_present
++{
++    VkFormat format;
++    VkExtent2D extent;
++    uint32_t image_count;
++    VkCommandPool pool;
++    VkCommandBuffer *cmds;
++    VkBuffer buffer;
++    VkDeviceMemory memory;
++    void *map;
++    VkFence fence;
++    VkSemaphore semaphore;
++    PFN_vkDestroyCommandPool p_vkDestroyCommandPool;
++    PFN_vkDestroyBuffer p_vkDestroyBuffer;
++    PFN_vkWaitForFences p_vkWaitForFences;
++    PFN_vkResetFences p_vkResetFences;
++};
++
+ struct swapchain
+ {
+     struct vulkan_swapchain obj;
+     struct surface *surface;
+     VkExtent2D extents;
++    VkFormat format;
++    struct remote_present *remote;
+ };
+ 
+ static struct swapchain *swapchain_from_handle( VkSwapchainKHR handle )
+@@ -1848,6 +1870,214 @@
+     return i < format_count;
+ }
+ 
++
++static BOOL remote_present_format_is_bgra( VkFormat format, BOOL *bgra )
++{
++    switch (format)
++    {
++    case VK_FORMAT_B8G8R8A8_UNORM:
++    case VK_FORMAT_B8G8R8A8_SRGB:
++        *bgra = TRUE;
++        return TRUE;
++    case VK_FORMAT_R8G8B8A8_UNORM:
++    case VK_FORMAT_R8G8B8A8_SRGB:
++        *bgra = FALSE;
++        return TRUE;
++    default:
++        return FALSE;
++    }
++}
++
++static void remote_present_destroy( struct vulkan_device *device, struct swapchain *swapchain )
++{
++    struct remote_present *remote = swapchain->remote;
++
++    if (!remote) return;
++    swapchain->remote = NULL;
++
++    if (remote->semaphore) device->p_vkDestroySemaphore( device->host.device, remote->semaphore, NULL );
++    if (remote->fence) device->p_vkDestroyFence( device->host.device, remote->fence, NULL );
++    if (remote->map) device->p_vkUnmapMemory( device->host.device, remote->memory );
++    if (remote->buffer) remote->p_vkDestroyBuffer( device->host.device, remote->buffer, NULL );
++    if (remote->memory) device->p_vkFreeMemory( device->host.device, remote->memory, NULL );
++    if (remote->pool) remote->p_vkDestroyCommandPool( device->host.device, remote->pool, NULL );
++    free( remote->cmds );
++    free( remote );
++}
++
++static BOOL remote_present_create( struct vulkan_device *device, struct swapchain *swapchain, uint32_t family )
++{
++    PFN_vkGetSwapchainImagesKHR p_vkGetSwapchainImagesKHR = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkGetSwapchainImagesKHR" );
++    PFN_vkCreateCommandPool p_vkCreateCommandPool = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkCreateCommandPool" );
++    PFN_vkAllocateCommandBuffers p_vkAllocateCommandBuffers = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkAllocateCommandBuffers" );
++    PFN_vkBeginCommandBuffer p_vkBeginCommandBuffer = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkBeginCommandBuffer" );
++    PFN_vkEndCommandBuffer p_vkEndCommandBuffer = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkEndCommandBuffer" );
++    PFN_vkCmdPipelineBarrier p_vkCmdPipelineBarrier = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkCmdPipelineBarrier" );
++    PFN_vkCmdCopyImageToBuffer p_vkCmdCopyImageToBuffer = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkCmdCopyImageToBuffer" );
++    PFN_vkGetBufferMemoryRequirements p_vkGetBufferMemoryRequirements = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkGetBufferMemoryRequirements" );
++    PFN_vkBindBufferMemory p_vkBindBufferMemory = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkBindBufferMemory" );
++    struct vulkan_physical_device *physical_device = device->physical_device;
++    VkMemoryPropertyFlags wanted[] = { VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT,
++                                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT };
++    VkBufferCreateInfo buffer_info = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
++                                      .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
++    VkCommandPoolCreateInfo pool_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO, .queueFamilyIndex = family};
++    VkCommandBufferAllocateInfo cmd_info = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO, .level = VK_COMMAND_BUFFER_LEVEL_PRIMARY};
++    VkFenceCreateInfo fence_info = {.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
++    VkSemaphoreCreateInfo semaphore_info = {.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
++    VkMemoryRequirements requirements;
++    VkMemoryAllocateInfo alloc_info = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
++    struct remote_present *remote;
++    VkImage *images = NULL;
++    uint32_t i, j;
++    BOOL bgra;
++
++    if (!p_vkGetSwapchainImagesKHR || !p_vkCreateCommandPool || !p_vkAllocateCommandBuffers || !p_vkBeginCommandBuffer ||
++        !p_vkEndCommandBuffer || !p_vkCmdPipelineBarrier || !p_vkCmdCopyImageToBuffer || !p_vkGetBufferMemoryRequirements ||
++        !p_vkBindBufferMemory)
++        return FALSE;
++    if (!remote_present_format_is_bgra( swapchain->format, &bgra ))
++    {
++        FIXME( "Format %d of swapchain %p cannot be sent to the window owner\n", swapchain->format, swapchain );
++        return FALSE;
++    }
++    if (!(remote = calloc( 1, sizeof(*remote) ))) return FALSE;
++    swapchain->remote = remote;
++    remote->format = swapchain->format;
++    remote->extent = swapchain->extents;
++    remote->p_vkDestroyCommandPool = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkDestroyCommandPool" );
++    remote->p_vkDestroyBuffer = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkDestroyBuffer" );
++    remote->p_vkWaitForFences = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkWaitForFences" );
++    remote->p_vkResetFences = (void *)p_vkGetDeviceProcAddr( device->host.device, "vkResetFences" );
++
++    if (p_vkGetSwapchainImagesKHR( device->host.device, swapchain->obj.host.swapchain, &remote->image_count, NULL ) ||
++        !remote->image_count || !(images = calloc( remote->image_count, sizeof(*images) )) ||
++        p_vkGetSwapchainImagesKHR( device->host.device, swapchain->obj.host.swapchain, &remote->image_count, images ))
++        goto failed;
++
++    buffer_info.size = (VkDeviceSize)remote->extent.width * remote->extent.height * 4;
++    if (device->p_vkCreateBuffer( device->host.device, &buffer_info, NULL, &remote->buffer )) goto failed;
++    p_vkGetBufferMemoryRequirements( device->host.device, remote->buffer, &requirements );
++    alloc_info.allocationSize = requirements.size;
++    alloc_info.memoryTypeIndex = ~0u;
++    for (j = 0; j < ARRAY_SIZE(wanted) && alloc_info.memoryTypeIndex == ~0u; j++)
++    {
++        for (i = 0; i < physical_device->memory_properties.memoryTypeCount; i++)
++        {
++            if (!(requirements.memoryTypeBits & (1u << i))) continue;
++            if ((physical_device->memory_properties.memoryTypes[i].propertyFlags & wanted[j]) != wanted[j]) continue;
++            alloc_info.memoryTypeIndex = i;
++            break;
++        }
++    }
++    if (alloc_info.memoryTypeIndex == ~0u) goto failed;
++    if (device->p_vkAllocateMemory( device->host.device, &alloc_info, NULL, &remote->memory )) goto failed;
++    if (p_vkBindBufferMemory( device->host.device, remote->buffer, remote->memory, 0 )) goto failed;
++    if (device->p_vkMapMemory( device->host.device, remote->memory, 0, VK_WHOLE_SIZE, 0, &remote->map )) goto failed;
++
++    if (p_vkCreateCommandPool( device->host.device, &pool_info, NULL, &remote->pool )) goto failed;
++    if (!(remote->cmds = calloc( remote->image_count, sizeof(*remote->cmds) ))) goto failed;
++    cmd_info.commandPool = remote->pool;
++    cmd_info.commandBufferCount = remote->image_count;
++    if (p_vkAllocateCommandBuffers( device->host.device, &cmd_info, remote->cmds )) goto failed;
++
++    for (i = 0; i < remote->image_count; i++)
++    {
++        VkCommandBufferBeginInfo begin = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
++        VkImageSubresourceRange range = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .levelCount = 1, .layerCount = 1};
++        VkImageMemoryBarrier to_copy =
++        {
++            .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_MEMORY_READ_BIT,
++            .dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT, .oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
++            .newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .image = images[i], .subresourceRange = range,
++        };
++        VkImageMemoryBarrier to_present = to_copy;
++        VkBufferImageCopy copy =
++        {
++            .imageSubresource = {.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT, .layerCount = 1},
++            .imageExtent = {remote->extent.width, remote->extent.height, 1},
++        };
++        VkBufferMemoryBarrier to_host =
++        {
++            .sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER, .srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT,
++            .dstAccessMask = VK_ACCESS_HOST_READ_BIT, .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, .buffer = remote->buffer, .size = VK_WHOLE_SIZE,
++        };
++
++        to_present.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
++        to_present.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
++        to_present.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
++        to_present.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
++
++        if (p_vkBeginCommandBuffer( remote->cmds[i], &begin )) goto failed;
++        p_vkCmdPipelineBarrier( remote->cmds[i], VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
++                                0, NULL, 0, NULL, 1, &to_copy );
++        p_vkCmdCopyImageToBuffer( remote->cmds[i], images[i], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, remote->buffer, 1, &copy );
++        p_vkCmdPipelineBarrier( remote->cmds[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT, 0,
++                                0, NULL, 1, &to_host, 0, NULL );
++        p_vkCmdPipelineBarrier( remote->cmds[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
++                                0, NULL, 0, NULL, 1, &to_present );
++        if (p_vkEndCommandBuffer( remote->cmds[i] )) goto failed;
++    }
++
++    if (device->p_vkCreateFence( device->host.device, &fence_info, NULL, &remote->fence )) goto failed;
++    if (device->p_vkCreateSemaphore( device->host.device, &semaphore_info, NULL, &remote->semaphore )) goto failed;
++
++    free( images );
++    return TRUE;
++
++failed:
++    free( images );
++    remote_present_destroy( device, swapchain );
++    return FALSE;
++}
++
++/* Copies the image about to be presented and hands its pixels to the driver. Returns the
++ * semaphore the presentation has to wait for instead of the ones it was given. */
++static BOOL remote_present_frame( struct vulkan_device *device, struct vulkan_queue *queue, struct swapchain *swapchain,
++                                  uint32_t image_index, const VkPresentInfoKHR *present_info, VkSemaphore *semaphore )
++{
++    struct client_surface *client = swapchain->surface->client;
++    struct remote_present *remote = swapchain->remote;
++    VkPipelineStageFlags *stages = NULL;
++    VkSubmitInfo submit = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO};
++    BOOL bgra = TRUE, ret = FALSE;
++    uint32_t i;
++
++    if (!client->funcs->present_pixels) return FALSE;
++    if (!remote && !remote_present_create( device, swapchain, queue->info.queueFamilyIndex )) return FALSE;
++    remote = swapchain->remote;
++    if (image_index >= remote->image_count) return FALSE;
++
++    if (present_info->waitSemaphoreCount &&
++        !(stages = malloc( present_info->waitSemaphoreCount * sizeof(*stages) )))
++        return FALSE;
++    for (i = 0; i < present_info->waitSemaphoreCount; i++) stages[i] = VK_PIPELINE_STAGE_TRANSFER_BIT;
++
++    submit.waitSemaphoreCount = present_info->waitSemaphoreCount;
++    submit.pWaitSemaphores = present_info->pWaitSemaphores;
++    submit.pWaitDstStageMask = stages;
++    submit.commandBufferCount = 1;
++    submit.pCommandBuffers = &remote->cmds[image_index];
++    submit.signalSemaphoreCount = 1;
++    submit.pSignalSemaphores = &remote->semaphore;
++
++    if (device->p_vkQueueSubmit( queue->host.queue, 1, &submit, remote->fence )) goto done;
++    if (remote->p_vkWaitForFences( device->host.device, 1, &remote->fence, VK_TRUE, UINT64_MAX )) goto done;
++    remote->p_vkResetFences( device->host.device, 1, &remote->fence );
++
++    remote_present_format_is_bgra( remote->format, &bgra );
++    client->funcs->present_pixels( client, remote->extent.width, remote->extent.height, remote->extent.width * 4,
++                                   bgra, remote->map );
++    *semaphore = remote->semaphore;
++    ret = TRUE;
++
++done:
++    free( stages );
++    return ret;
++}
++
+ static VkResult win32u_vkCreateSwapchainKHR( VkDevice client_device, const VkSwapchainCreateInfoKHR *create_info,
+                                              const VkAllocationCallbacks *allocator, VkSwapchainKHR *ret )
+ {
+@@ -1899,6 +2129,9 @@
+         create_info_host.pNext = &scaling;
+     }
+ 
++    /* the pixels are read back from the images when the window belongs to another process */
++    if (surface->client->remote) create_info_host.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
++
+     if (!(swapchain = calloc( 1, sizeof(*swapchain) ))) return VK_ERROR_OUT_OF_HOST_MEMORY;
+ 
+     if ((res = device->p_vkCreateSwapchainKHR( device->host.device, &create_info_host, NULL, &host_swapchain )))
+@@ -1910,6 +2143,7 @@
+     vulkan_object_init( &swapchain->obj.obj, host_swapchain );
+     swapchain->surface = surface;
+     swapchain->extents = create_info->imageExtent;
++    swapchain->format = create_info->imageFormat;
+     instance->p_insert_object( instance, &swapchain->obj.obj );
+ 
+     *ret = swapchain->obj.client.swapchain;
+@@ -1926,6 +2160,7 @@
+     if (allocator) FIXME( "Support for allocation callbacks not implemented yet\n" );
+     if (!swapchain) return;
+ 
++    remote_present_destroy( device, swapchain );
+     device->p_vkDestroySwapchainKHR( device->host.device, swapchain->obj.host.swapchain, NULL );
+     instance->p_remove_object( instance, &swapchain->obj.obj );
+ 
+@@ -2024,6 +2259,20 @@
+         client_surface_update( surface->client );
+     }
+ 
++    /* a window of another process gets the pixels, the image is copied once rendering is done */
++    if (present_info->swapchainCount == 1)
++    {
++        struct swapchain *swapchain = swapchain_from_handle( client_swapchains[0] );
++        VkSemaphore remote_semaphore;
++
++        if (swapchain->surface->client->remote &&
++            remote_present_frame( device, queue, swapchain, present_info->pImageIndices[0], present_info, &remote_semaphore ))
++        {
++            present_info->waitSemaphoreCount = 1;
++            present_info->pWaitSemaphores = &swapchain->remote->semaphore;
++        }
++    }
++
+     res = device->p_vkQueuePresentKHR( queue->host.queue, present_info );
+ 
+     for (uint32_t i = 0; i < present_info->swapchainCount; i++)
+
+--- a/dlls/winewayland.drv/Makefile.in
++++ b/dlls/winewayland.drv/Makefile.in
+@@ -17,6 +17,7 @@
+ 	pointer-constraints-unstable-v1.xml \
+ 	pointer-warp-v1.xml \
+ 	relative-pointer-unstable-v1.xml \
++	remote.c \
+ 	systray.c \
+ 	text-input-unstable-v3.xml \
+ 	viewporter.xml \
+
+--- a/dlls/winewayland.drv/dllmain.c
++++ b/dlls/winewayland.drv/dllmain.c
+@@ -99,6 +99,12 @@
+     return 0;
+ }
+ 
++static DWORD WINAPI remote_thread(void *arg)
++{
++    WAYLANDDRV_UNIX_CALL(remote_run, NULL);
++    return 0;
++}
++
+ static BOOL is_explorer_process(void)
+ {
+     WCHAR path[MAX_PATH], *name;
+@@ -126,6 +132,9 @@
+     if (!WAYLANDDRV_UNIX_CALL(init_clipboard, NULL))
+         CloseHandle(CreateThread(NULL, 0, clipboard_thread, NULL, 0, &tid));
+ 
++    /* Take the frames that other processes render for the windows of this one. */
++    CloseHandle(CreateThread(NULL, 0, remote_thread, NULL, 0, &tid));
++
+     /* The system tray lives in explorer, which needs a thread to answer the desktop's requests. */
+     if (is_explorer_process())
+         CloseHandle(CreateThread(NULL, 0, systray_thread, NULL, 0, &tid));
+
+--- a/dlls/winewayland.drv/remote.c
++++ b/dlls/winewayland.drv/remote.c
+@@ -0,0 +1,429 @@
++/*
++ * Wayland driver support for windows that belong to another process
++ *
++ * A Wayland surface can only be made part of the surfaces of its own client, so
++ * a process that renders into a window of another one, as the GPU process of a
++ * Chromium based application does, cannot show anything by itself. Its frames
++ * are read back and sent to the process that owns the window, which shows them
++ * in a subsurface of the window.
++ *
++ * Copyright 2026 Michael Lothian
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++#if 0
++#pragma makedep unix
++#endif
++
++#include "config.h"
++
++#include <errno.h>
++#include <poll.h>
++#include <pthread.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <sys/socket.h>
++#include <sys/un.h>
++#include <unistd.h>
++
++#include "ntstatus.h"
++#define WIN32_NO_STATUS
++#include "waylanddrv.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(waylanddrv);
++
++#define REMOTE_MAGIC 0x57525346
++#define REMOTE_MAX_SIZE (256 * 1024 * 1024)
++
++enum remote_message_type
++{
++    REMOTE_FRAME = 1,
++    REMOTE_DESTROY,
++};
++
++struct remote_header
++{
++    UINT magic;
++    UINT type;
++    ULONGLONG hwnd;
++    UINT width;
++    UINT height;
++    UINT bgra;
++    UINT size;
++};
++
++/* The sockets of the processes of a prefix are told apart by the prefix and the process id. */
++static socklen_t remote_address(struct sockaddr_un *addr, DWORD pid)
++{
++    const char *prefix = getenv("WINEPREFIX"), *home = getenv("HOME");
++    char default_prefix[512];
++    ULONGLONG hash = 0xcbf29ce484222325ull;
++    int len;
++
++    if (!prefix)
++    {
++        snprintf(default_prefix, sizeof(default_prefix), "%s/.wine", home ? home : "");
++        prefix = default_prefix;
++    }
++    for (; *prefix; prefix++) hash = (hash ^ (unsigned char)*prefix) * 0x100000001b3ull;
++
++    memset(addr, 0, sizeof(*addr));
++    addr->sun_family = AF_UNIX;
++    len = snprintf(addr->sun_path + 1, sizeof(addr->sun_path) - 1, "wine-wayland-remote-%016llx-%x",
++                   (unsigned long long)hash, (unsigned int)pid);
++    return offsetof(struct sockaddr_un, sun_path) + 1 + len;
++}
++
++static BOOL write_all(int fd, const void *data, size_t size)
++{
++    const char *ptr = data;
++
++    while (size)
++    {
++        ssize_t ret = send(fd, ptr, size, MSG_NOSIGNAL);
++        if (ret < 0 && errno == EINTR) continue;
++        if (ret <= 0) return FALSE;
++        ptr += ret;
++        size -= ret;
++    }
++    return TRUE;
++}
++
++static BOOL read_all(int fd, void *data, size_t size)
++{
++    char *ptr = data;
++
++    while (size)
++    {
++        ssize_t ret = recv(fd, ptr, size, 0);
++        if (ret < 0 && errno == EINTR) continue;
++        if (ret <= 0) return FALSE;
++        ptr += ret;
++        size -= ret;
++    }
++    return TRUE;
++}
++
++/***********************************************************************
++ *           Process rendering into the window of another one
++ */
++
++static int remote_connect(HWND hwnd)
++{
++    struct sockaddr_un addr;
++    socklen_t len;
++    DWORD pid = 0;
++    int fd;
++
++    NtUserGetWindowThread(hwnd, &pid);
++    if (!pid) return -1;
++    len = remote_address(&addr, pid);
++    if ((fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) < 0) return -1;
++    if (connect(fd, (struct sockaddr *)&addr, len))
++    {
++        WARN("could not connect to the owner of %p: %s\n", hwnd, strerror(errno));
++        close(fd);
++        return -1;
++    }
++    return fd;
++}
++
++/***********************************************************************
++ *           wayland_remote_present_pixels
++ *
++ * Sends a frame rendered for a window of another process to its owner.
++ */
++void wayland_remote_present_pixels(struct client_surface *client, UINT width, UINT height, UINT stride,
++                                   BOOL bgra, const void *pixels)
++{
++    struct wayland_client_surface *surface = impl_from_client_surface(client);
++    struct remote_header header = {.magic = REMOTE_MAGIC, .type = REMOTE_FRAME, .hwnd = (ULONG_PTR)client->hwnd,
++                                   .width = width, .height = height, .bgra = bgra, .size = width * height * 4};
++    UINT y;
++
++    TRACE("%s %ux%u stride %u %s\n", debugstr_client_surface(client), width, height, stride, bgra ? "BGRA" : "RGBA");
++
++    if (surface->remote_fd < 0)
++    {
++        /* do not try to reach an owner that is not listening on every frame */
++        if (surface->remote_retry && surface->remote_retry--) return;
++        if ((surface->remote_fd = remote_connect(client->hwnd)) < 0)
++        {
++            surface->remote_retry = 120;
++            return;
++        }
++    }
++
++    if (!write_all(surface->remote_fd, &header, sizeof(header))) goto failed;
++    if (stride == width * 4)
++    {
++        if (!write_all(surface->remote_fd, pixels, header.size)) goto failed;
++    }
++    else for (y = 0; y < height; y++)
++    {
++        if (!write_all(surface->remote_fd, (const char *)pixels + y * stride, width * 4)) goto failed;
++    }
++    return;
++
++failed:
++    close(surface->remote_fd);
++    surface->remote_fd = -1;
++}
++
++/***********************************************************************
++ *           wayland_remote_destroy_surface
++ */
++void wayland_remote_destroy_surface(struct wayland_client_surface *surface)
++{
++    struct remote_header header = {.magic = REMOTE_MAGIC, .type = REMOTE_DESTROY,
++                                   .hwnd = (ULONG_PTR)surface->client.hwnd};
++
++    if (surface->remote_fd < 0) return;
++    write_all(surface->remote_fd, &header, sizeof(header));
++    close(surface->remote_fd);
++    surface->remote_fd = -1;
++}
++
++/***********************************************************************
++ *           Owner of the window
++ */
++
++struct remote_surface
++{
++    struct list entry;
++    HWND hwnd;
++    struct client_surface *client;
++    struct wayland_buffer_queue *queue;
++    UINT width, height;
++};
++
++static pthread_mutex_t remote_mutex = PTHREAD_MUTEX_INITIALIZER;
++static struct list remote_surfaces = LIST_INIT(remote_surfaces);
++
++static void free_remote_surface(struct remote_surface *remote)
++{
++    list_remove(&remote->entry);
++    if (remote->client) client_surface_release(remote->client);
++    if (remote->queue) wayland_buffer_queue_destroy(remote->queue);
++    free(remote);
++}
++
++static struct remote_surface *find_remote_surface(HWND hwnd)
++{
++    struct remote_surface *remote;
++
++    LIST_FOR_EACH_ENTRY(remote, &remote_surfaces, struct remote_surface, entry)
++        if (remote->hwnd == hwnd) return remote;
++    return NULL;
++}
++
++/***********************************************************************
++ *           wayland_remote_destroy_window
++ *
++ * Called when a window of this process goes away, not with the window data locked.
++ */
++void wayland_remote_destroy_window(HWND hwnd)
++{
++    struct remote_surface *remote;
++
++    pthread_mutex_lock(&remote_mutex);
++    if ((remote = find_remote_surface(hwnd))) free_remote_surface(remote);
++    pthread_mutex_unlock(&remote_mutex);
++}
++
++static BOOL window_is_ours(HWND hwnd)
++{
++    DWORD pid = 0;
++
++    if (!NtUserIsWindow(hwnd)) return FALSE;
++    NtUserGetWindowThread(hwnd, &pid);
++    return pid == HandleToULong(NtCurrentTeb()->ClientId.UniqueProcess);
++}
++
++static void show_frame(const struct remote_header *header, const unsigned char *pixels)
++{
++    struct wayland_shm_buffer *buffer;
++    struct wayland_client_surface *client;
++    struct remote_surface *remote;
++    HWND hwnd = (HWND)(ULONG_PTR)header->hwnd;
++    UINT32 *dst;
++    UINT i, count = header->width * header->height;
++
++    if (!window_is_ours(hwnd)) return;
++
++    pthread_mutex_lock(&remote_mutex);
++
++    if (!(remote = find_remote_surface(hwnd)))
++    {
++        if (!(remote = calloc(1, sizeof(*remote)))) goto done;
++        remote->hwnd = hwnd;
++        if (!(remote->client = WAYLAND_CreateClientSurface(hwnd, 0, FALSE)))
++        {
++            free(remote);
++            goto done;
++        }
++        list_add_tail(&remote_surfaces, &remote->entry);
++    }
++    client = impl_from_client_surface(remote->client);
++
++    if (!remote->queue || remote->width != header->width || remote->height != header->height)
++    {
++        if (remote->queue) wayland_buffer_queue_destroy(remote->queue);
++        remote->width = header->width;
++        remote->height = header->height;
++        if (!(remote->queue = wayland_buffer_queue_create(header->width, header->height, WL_SHM_FORMAT_ARGB8888))) goto done;
++    }
++
++    if (!(buffer = wayland_buffer_queue_get_free_buffer(remote->queue))) goto done;
++
++    /* The swapchain alpha is not meant to be shown, so it is not used. */
++    dst = buffer->map_data;
++    if (header->bgra)
++        for (i = 0; i < count; i++) dst[i] = ((const UINT32 *)pixels)[i] | 0xff000000;
++    else
++        for (i = 0; i < count; i++)
++        {
++            UINT32 p = ((const UINT32 *)pixels)[i];
++            dst[i] = 0xff000000 | (p & 0xff00ff00) | ((p & 0xff) << 16) | ((p >> 16) & 0xff);
++        }
++
++    /* Let the window place the surface in its client area, then give it the frame. */
++    client_surface_present(remote->client);
++
++    buffer->busy = TRUE;
++    wayland_shm_buffer_ref(buffer);
++    wl_surface_attach(client->wl_surface, buffer->wl_buffer, 0, 0);
++    wl_surface_damage_buffer(client->wl_surface, 0, 0, header->width, header->height);
++    wl_surface_commit(client->wl_surface);
++    wl_display_flush(process_wayland.wl_display);
++
++done:
++    pthread_mutex_unlock(&remote_mutex);
++}
++
++static void hide_surface(HWND hwnd)
++{
++    wayland_remote_destroy_window(hwnd);
++}
++
++static BOOL handle_message(int fd)
++{
++    struct remote_header header;
++    unsigned char *pixels;
++
++    if (!read_all(fd, &header, sizeof(header)) || header.magic != REMOTE_MAGIC) return FALSE;
++    if (header.type == REMOTE_DESTROY)
++    {
++        hide_surface((HWND)(ULONG_PTR)header.hwnd);
++        return TRUE;
++    }
++    if (header.type != REMOTE_FRAME || header.size != header.width * header.height * 4 ||
++        header.size > REMOTE_MAX_SIZE || !header.size)
++        return FALSE;
++
++    if (!(pixels = malloc(header.size))) return FALSE;
++    if (!read_all(fd, pixels, header.size))
++    {
++        free(pixels);
++        return FALSE;
++    }
++    show_frame(&header, pixels);
++    free(pixels);
++    return TRUE;
++}
++
++static BOOL peer_is_ours(int fd)
++{
++    struct ucred cred;
++    socklen_t len = sizeof(cred);
++
++    return !getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) && cred.uid == getuid();
++}
++
++/***********************************************************************
++ *           waylanddrv_unix_remote_run
++ *
++ * Runs on a thread of every process, taking the frames sent for its windows.
++ */
++NTSTATUS waylanddrv_unix_remote_run(void *arg)
++{
++    struct pollfd *fds;
++    struct sockaddr_un addr;
++    socklen_t len;
++    int listener, count = 1, capacity = 8, i;
++
++    if ((listener = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) < 0) return STATUS_UNSUCCESSFUL;
++    len = remote_address(&addr, HandleToULong(NtCurrentTeb()->ClientId.UniqueProcess));
++    if (bind(listener, (struct sockaddr *)&addr, len) || listen(listener, 4))
++    {
++        WARN("could not listen for frames: %s\n", strerror(errno));
++        close(listener);
++        return STATUS_UNSUCCESSFUL;
++    }
++
++    if (!(fds = calloc(capacity, sizeof(*fds)))) return STATUS_NO_MEMORY;
++    fds[0].fd = listener;
++    fds[0].events = POLLIN;
++
++    for (;;)
++    {
++        if (poll(fds, count, -1) < 0)
++        {
++            if (errno == EINTR) continue;
++            break;
++        }
++
++        if (fds[0].revents & POLLIN)
++        {
++            int fd = accept4(listener, NULL, NULL, SOCK_CLOEXEC);
++            if (fd >= 0)
++            {
++                if (!peer_is_ours(fd)) close(fd);
++                else
++                {
++                    if (count == capacity)
++                    {
++                        struct pollfd *new = realloc(fds, capacity * 2 * sizeof(*fds));
++                        if (!new) { close(fd); continue; }
++                        fds = new;
++                        capacity *= 2;
++                    }
++                    fds[count].fd = fd;
++                    fds[count].events = POLLIN;
++                    fds[count].revents = 0;
++                    count++;
++                }
++            }
++        }
++
++        for (i = 1; i < count; i++)
++        {
++            if (!(fds[i].revents & (POLLIN | POLLHUP | POLLERR))) continue;
++            if (!handle_message(fds[i].fd))
++            {
++                close(fds[i].fd);
++                fds[i] = fds[--count];
++                i--;
++            }
++        }
++    }
++
++    free(fds);
++    close(listener);
++    return STATUS_SUCCESS;
++}
+
+--- a/dlls/winewayland.drv/unixlib.h
++++ b/dlls/winewayland.drv/unixlib.h
+@@ -29,6 +29,7 @@
+     waylanddrv_unix_func_read_events,
+     waylanddrv_unix_func_init_clipboard,
+     waylanddrv_unix_func_systray_run,
++    waylanddrv_unix_func_remote_run,
+     waylanddrv_unix_func_count,
+ };
+ 
+
+--- a/dlls/winewayland.drv/vulkan.c
++++ b/dlls/winewayland.drv/vulkan.c
+@@ -47,6 +47,15 @@
+ 
+     TRACE("%s %p %p\n", debugstr_client_surface(client), instance, handle);
+ 
++    /* Nothing is shown from here for a window of another process, its frames are read back */
++    if (client->remote)
++    {
++        VkHeadlessSurfaceCreateInfoEXT headless = {.sType = VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT};
++
++        if (!instance->p_vkCreateHeadlessSurfaceEXT) return VK_ERROR_EXTENSION_NOT_PRESENT;
++        return instance->p_vkCreateHeadlessSurfaceEXT(instance->host.instance, &headless, NULL, handle);
++    }
++
+     create_info_host.sType = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR;
+     create_info_host.pNext = NULL;
+     create_info_host.flags = 0; /* reserved */
+@@ -72,8 +81,13 @@
+ 
+ static void wayland_map_instance_extensions(struct vulkan_instance_extensions *extensions)
+ {
++    static BOOL host_has_headless;
++
++    /* the first call is made with the extensions of the host */
++    if (extensions->has_VK_EXT_headless_surface) host_has_headless = TRUE;
+     if (extensions->has_VK_KHR_win32_surface) extensions->has_VK_KHR_wayland_surface = 1;
+     if (extensions->has_VK_KHR_wayland_surface) extensions->has_VK_KHR_win32_surface = 1;
++    if (extensions->has_VK_KHR_win32_surface && host_has_headless) extensions->has_VK_EXT_headless_surface = 1;
+ }
+ 
+ static void wayland_map_device_extensions(struct vulkan_device_extensions *extensions)
+
+--- a/dlls/winewayland.drv/wayland_surface.c
++++ b/dlls/winewayland.drv/wayland_surface.c
+@@ -1281,6 +1281,7 @@
+ 
+     TRACE("%s\n", debugstr_client_surface(client));
+ 
++    if (client->remote) wayland_remote_destroy_surface(surface);
+     if (surface->color_management)
+         wp_color_management_surface_v1_destroy(surface->color_management);
+     if (surface->wp_viewport)
+@@ -1357,6 +1358,8 @@
+     struct wp_image_description_v1 *desc;
+     struct wp_color_manager_v1 *manager;
+ 
++    if (client->remote) return FALSE;
++
+     TRACE("%s color_space %#x\n", debugstr_client_surface(client), color_space);
+ 
+     if (!(manager = process_wayland.wp_color_manager_v1)) return FALSE;
+@@ -1398,6 +1401,7 @@
+     .update = wayland_client_surface_update,
+     .present = wayland_client_surface_present,
+     .set_color_space = wayland_client_surface_set_color_space,
++    .present_pixels = wayland_remote_present_pixels,
+ };
+ 
+ struct wayland_client_surface *impl_from_client_surface(struct client_surface *client)
+@@ -1413,6 +1417,20 @@
+ 
+     if (!(client = client_surface_create(&wayland_client_surface_funcs, hwnd, pixel_format, raw))) return NULL;
+ 
++    /* A Wayland surface cannot be attached to the window of another process, whose frames
++     * are handed to the owner as pixels. */
++    {
++        DWORD pid = 0;
++
++        NtUserGetWindowThread(hwnd, &pid);
++        if (pid && pid != HandleToULong(NtCurrentTeb()->ClientId.UniqueProcess))
++        {
++            client->client.remote = TRUE;
++            client->remote_fd = -1;
++            return &client->client;
++        }
++    }
++
+     client->wl_surface =
+         wl_compositor_create_surface(process_wayland.wl_compositor);
+     if (!client->wl_surface)
+
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -262,6 +262,8 @@
+     struct wl_subsurface *wl_subsurface;
+     struct wp_viewport *wp_viewport;
+     struct wp_color_management_surface_v1 *color_management;
++    int remote_fd;       /* connection to the owner of the window, for windows of other processes */
++    int remote_retry;
+ };
+ 
+ extern struct wayland_client_surface *impl_from_client_surface(struct client_surface *client);
+@@ -473,6 +475,15 @@
+ LRESULT WAYLAND_NotifyIcon(HWND hwnd, UINT msg, NOTIFYICONDATAW *nid);
+ void WAYLAND_CleanupIcons(HWND hwnd);
+ NTSTATUS waylanddrv_unix_systray_run(void *arg);
++void wayland_remote_present_pixels(struct client_surface *client, UINT width, UINT height, UINT stride,
++                                   BOOL bgra, const void *pixels);
++void wayland_remote_destroy_surface(struct wayland_client_surface *surface);
++void wayland_remote_destroy_window(HWND hwnd);
++NTSTATUS waylanddrv_unix_remote_run(void *arg);
++struct wayland_buffer_queue;
++struct wayland_buffer_queue *wayland_buffer_queue_create(int width, int height, uint32_t format);
++void wayland_buffer_queue_destroy(struct wayland_buffer_queue *queue);
++struct wayland_shm_buffer *wayland_buffer_queue_get_free_buffer(struct wayland_buffer_queue *queue);
+ BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask);
+ void wayland_surface_set_decorations(struct wayland_surface *surface, BOOL server_side);
+ void WAYLAND_SetWindowIcons(HWND hwnd, HICON icon, const ICONINFO *ii, HICON icon_small, const ICONINFO *ii_small);
+
+--- a/dlls/winewayland.drv/waylanddrv_main.c
++++ b/dlls/winewayland.drv/waylanddrv_main.c
+@@ -132,6 +132,7 @@
+     waylanddrv_unix_read_events,
+     waylanddrv_unix_init_clipboard,
+     waylanddrv_unix_systray_run,
++    waylanddrv_unix_remote_run,
+ };
+ 
+ C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == waylanddrv_unix_func_count);
+@@ -144,6 +145,7 @@
+     waylanddrv_unix_read_events,
+     waylanddrv_unix_init_clipboard,
+     waylanddrv_unix_systray_run,
++    waylanddrv_unix_remote_run,
+ };
+ 
+ C_ASSERT(ARRAYSIZE(__wine_unix_call_wow64_funcs) == waylanddrv_unix_func_count);
+
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -451,6 +451,8 @@
+ 
+     TRACE("%p\n", hwnd);
+ 
++    wayland_remote_destroy_window(hwnd);
++
+     if (!(data = wayland_win_data_get(hwnd))) return;
+     wayland_win_data_destroy(data);
+ }
+
+--- a/dlls/winewayland.drv/window_surface.c
++++ b/dlls/winewayland.drv/window_surface.c
+@@ -69,7 +69,7 @@
+  *
+  * Destroys a buffer queue and any contained buffers.
+  */
+-static void wayland_buffer_queue_destroy(struct wayland_buffer_queue *queue)
++void wayland_buffer_queue_destroy(struct wayland_buffer_queue *queue)
+ {
+     struct wayland_shm_buffer *shm_buffer, *next;
+ 
+@@ -103,8 +103,7 @@
+  *
+  * Creates a buffer queue containing buffers with the specified width and height.
+  */
+-static struct wayland_buffer_queue *wayland_buffer_queue_create(int width, int height,
+-                                                                uint32_t format)
++struct wayland_buffer_queue *wayland_buffer_queue_create(int width, int height, uint32_t format)
+ {
+     struct wayland_buffer_queue *queue;
+ 
+@@ -132,7 +131,7 @@
+  * Gets a free buffer from the buffer queue. If no free buffers
+  * are available this function blocks until it can provide one.
+  */
+-static struct wayland_shm_buffer *wayland_buffer_queue_get_free_buffer(struct wayland_buffer_queue *queue)
++struct wayland_shm_buffer *wayland_buffer_queue_get_free_buffer(struct wayland_buffer_queue *queue)
+ {
+     struct wayland_shm_buffer *shm_buffer;
+ 
+
+--- a/include/wine/gdi_driver.h
++++ b/include/wine/gdi_driver.h
+@@ -260,6 +260,9 @@
+     void (*present)( struct client_surface *surface, HDC hdc );
+     /* try to set the client surface color space directly for vulkan pass-through */
+     BOOL (*set_color_space)( struct client_surface *surface, VkColorSpaceKHR color_space );
++    /* take the pixels of a presented frame, for surfaces of windows that belong to another process */
++    void (*present_pixels)( struct client_surface *surface, UINT width, UINT height, UINT stride,
++                            BOOL bgra, const void *pixels );
+ };
+ 
+ struct client_surface
+@@ -275,6 +278,7 @@
+     RECT                               virtual_rect;   /* virtual size and position in the toplevel ancestor, relative to its visible rect */
+     RECT                               monitor_rect;   /* raw physical size and position in the toplevel ancestor, relative to its visible rect */
+     BOOL                               raw;            /* use the raw physical position and size for the host client surface */
++    BOOL                               remote;         /* the window belongs to another process, frames are sent to it as pixels */
+ };
+ 
+ W32KAPI void *client_surface_create( const struct client_surface_funcs *funcs, HWND hwnd, int format, BOOL raw );
