@@ -8,26 +8,6 @@ archive member for them after code generation has run. Compile them without LTO.
 wow64 calls two functions from module level asm. Asm can only name a symbol the
 linker knows, so they cannot be static.
 
---- a/libs/c++/Makefile.in	2026-10-09 16:37:26.936106237 +0100
-+++ b/libs/c++/Makefile.in	2026-10-09 16:37:26.936190223 +0100
-@@ -1,6 +1,6 @@
- STATICLIB = libc++.a
- EXTRAINCL = -I$(srcdir)/src $(CXXABI_PE_CFLAGS)
--EXTRADEFS = -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
-+EXTRADEFS = -fno-lto -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
- 
- SOURCES = \
- 	src/algorithm.cpp \
---- a/libs/c++abi/Makefile.in	2026-10-09 16:37:26.936251517 +0100
-+++ b/libs/c++abi/Makefile.in	2026-10-09 16:37:26.936312871 +0100
-@@ -1,6 +1,6 @@
- STATICLIB = libc++abi.a
- EXTRAINCL = -I$(srcdir)/include $(UNWIND_PE_CFLAGS)
--EXTRADEFS = -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
-+EXTRADEFS = -fno-lto -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
- 
- SOURCES = \
- 	src/abort_message.cpp \
 --- a/libs/compiler-rt/Makefile.in	2026-10-09 16:37:26.935841054 +0100
 +++ b/libs/compiler-rt/Makefile.in	2026-10-09 16:37:26.935961668 +0100
 @@ -1,4 +1,5 @@
@@ -46,16 +26,6 @@ linker knows, so they cannot be static.
              -fno-builtin
  
  SOURCES = \
---- a/libs/unwind/Makefile.in	2026-10-09 16:37:26.936583243 +0100
-+++ b/libs/unwind/Makefile.in	2026-10-09 16:37:26.936630621 +0100
-@@ -1,6 +1,6 @@
- STATICLIB = libunwind.a
- EXTRAINCL = -I$(srcdir)/include
--EXTRADEFS = -D_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBUNWIND_IS_NATIVE_ONLY
-+EXTRADEFS = -fno-lto -D_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBUNWIND_IS_NATIVE_ONLY
- 
- SOURCES = \
- 	src/Unwind-seh.cpp \
 --- a/libs/winecrt0/Makefile.in	2026-10-09 16:37:26.936478990 +0100
 +++ b/libs/winecrt0/Makefile.in	2026-10-09 16:37:26.936529624 +0100
 @@ -1,4 +1,5 @@
@@ -84,3 +54,18 @@ linker knows, so they cannot be static.
  {
      NtCurrentTeb32()->ExceptionCode = code;
  
+--- a/libs/c++/Makefile.in
++++ b/libs/c++/Makefile.in
+@@ -3 +3 @@
+-EXTRADEFS = -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
++EXTRADEFS = -fno-lto -D_LIBCPP_BUILDING_LIBRARY -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
+--- a/libs/c++abi/Makefile.in
++++ b/libs/c++abi/Makefile.in
+@@ -3 +3 @@
+-EXTRADEFS = -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
++EXTRADEFS = -fno-lto -D_LIBCPP_ENABLE_CXX17_REMOVED_UNEXPECTED_FUNCTIONS -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS
+--- a/libs/unwind/Makefile.in
++++ b/libs/unwind/Makefile.in
+@@ -3 +3 @@
+-EXTRADEFS = -D_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBUNWIND_IS_NATIVE_ONLY
++EXTRADEFS = -fno-lto -D_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBUNWIND_IS_NATIVE_ONLY
