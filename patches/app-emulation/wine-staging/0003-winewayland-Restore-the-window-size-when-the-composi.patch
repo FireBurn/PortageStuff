@@ -1,15 +1,23 @@
-From: Michael Lothian <mike@fireburn.co.uk>
-Subject: [PATCH] winewayland.drv: Restore the window size when the compositor unmaximizes it.
+From 97bb01806fbe98d8f7a31d037875cbecdf7cf640 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 18 Oct 2026 16:24:45 +0100
+Subject: [PATCH 03/11] winewayland: Restore the window size when the
+ compositor unmaximizes it.
 
-The maximized style was cleared but the window kept the maximized size, as
-the size hints are not used when the state is empty. Let Windows restore the
-rectangle it kept from before the window was maximized.
-
+The maximized style was cleared, but the window kept the maximized size
+because the size hints are not used when the state is empty. Send
+SC_RESTORE so that the window gets back the rectangle it had before it
+was maximized.
 ---
+ dlls/winewayland.drv/waylanddrv.h |  2 ++
+ dlls/winewayland.drv/window.c     | 18 ++++++++++++++++++
+ 2 files changed, 20 insertions(+)
 
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+index 1cb525b..dae9059 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -313,6 +313,8 @@
+@@ -304,6 +304,8 @@ struct wayland_surface
      struct wp_alpha_modifier_surface_v1 *wp_alpha_modifier_surface_v1;
  
      struct wayland_surface_config pending, requested, processing, current;
@@ -18,10 +26,11 @@ rectangle it kept from before the window was maximized.
      BOOL resizing;
      struct wayland_window_config window;
      int content_width, content_height;
-
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index 270fdfb..76d50d6 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -533,6 +533,7 @@
+@@ -482,6 +482,7 @@ static void wayland_configure_window(HWND hwnd)
      BOOL needs_enter_size_move = FALSE;
      BOOL needs_exit_size_move = FALSE;
      BOOL restoring_from_minimize = FALSE;
@@ -29,12 +38,10 @@ rectangle it kept from before the window was maximized.
      struct wayland_win_data *data;
      RECT rect, surface_rect;
  
-@@ -626,6 +627,23 @@
-         wayland_win_data_release(data);
-         send_message(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
+@@ -577,6 +578,23 @@ static void wayland_configure_window(HWND hwnd)
          return;
-+    }
-+
+     }
+ 
 +    /* The compositor unmaximized the window. Windows keeps the rectangle the window had before
 +     * it was maximized, let it restore that instead of keeping the maximized size. */
 +    style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
@@ -50,6 +57,11 @@ rectangle it kept from before the window was maximized.
 +        wayland_win_data_release(data);
 +        send_message(hwnd, WM_SYSCOMMAND, SC_RESTORE, 0);
 +        return;
-     }
- 
++    }
++
      SetRect(&rect, 0, 0, width, height);
+     rect = map_rect_from_surface(surface, rect);
+     OffsetRect(&rect, data->rects.window.left, data->rects.window.top);
+-- 
+2.56.0
+

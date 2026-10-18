@@ -1,0 +1,39 @@
+From c282a75b3a66986b380d41ccf0dee2011287405b Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 18 Oct 2026 16:29:02 +0100
+Subject: [PATCH 07/11] winewayland: Show the last frame once a configure has
+ been processed.
+
+A frame drawn before the first configure of a surface is dropped, since
+the surface cannot be committed yet. A window that does not change
+afterwards, such as an open menu, is then never shown. Attach the stored
+contents when the configure has been processed.
+---
+ dlls/winewayland.drv/window.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index d6b398c..c86e2fa 100644
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -510,6 +510,17 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
+     else if (wayland_win_data_create_wayland_surface(data, owner_surface))
+     {
+         wayland_win_data_update_wayland_state(data);
++
++        /* A frame drawn before the configure was processed is dropped, and a window that does
++         * not change is not drawn again. */
++        if (data->window_contents && data->wayland_surface &&
++            data->wayland_surface->processing.serial && data->wayland_surface->processing.processed &&
++            wayland_surface_reconfigure(data->wayland_surface))
++        {
++            wayland_surface_attach_shm(data->wayland_surface, data->window_contents, NULL);
++            wl_surface_damage_buffer(data->wayland_surface->wl_surface, 0, 0, INT32_MAX, INT32_MAX);
++            wl_surface_commit(data->wayland_surface->wl_surface);
++        }
+     }
+ 
+     if (owner_data) wayland_win_data_release(owner_data);
+-- 
+2.56.0
+

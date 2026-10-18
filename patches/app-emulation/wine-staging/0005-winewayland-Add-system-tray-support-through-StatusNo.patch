@@ -1,26 +1,30 @@
-From 50b3db7db87389a17ad8be1c3c732d2b1ff978cd Mon Sep 17 00:00:00 2001
+From 713e8d78c912ccc9f994531d19c6ad0f6422da55 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
-Date: Sat, 17 Oct 2026 01:02:36 +0100
-Subject: [PATCH] winewayland.drv: Add system tray support through
+Date: Sun, 18 Oct 2026 16:24:44 +0100
+Subject: [PATCH 05/11] winewayland: Add system tray support through
  StatusNotifierItem.
 
-Without a user driver NotifyIcon hook explorer shows the tray icons in a
-window of its own. Export them to the desktop's tray over D-Bus instead,
-with clicks sent back as the usual tray messages and balloons shown through
-org.freedesktop.Notifications. Explorer keeps handling icons when there is
-no session bus or no StatusNotifierWatcher.
+Without a NotifyIcon entry point in the user driver, explorer shows tray
+icons in a window of its own. Export them to the desktop's tray over
+D-Bus instead, send clicks back as the usual tray messages, and show
+balloons through org.freedesktop.Notifications. Explorer keeps handling
+the icons when there is no session bus or no StatusNotifierWatcher.
+
+The desktop reports clicks in logical coordinates, so convert them to
+pixels. Do not advertise a Menu: the desktop would then ask for a
+dbusmenu that does not exist instead of calling ContextMenu.
 ---
  dlls/winewayland.drv/Makefile.in       |   3 +-
  dlls/winewayland.drv/dllmain.c         |  19 +
- dlls/winewayland.drv/systray.c         | 754 +++++++++++++++++++++++++
+ dlls/winewayland.drv/systray.c         | 770 +++++++++++++++++++++++++
  dlls/winewayland.drv/unixlib.h         |   1 +
  dlls/winewayland.drv/waylanddrv.h      |   3 +
  dlls/winewayland.drv/waylanddrv_main.c |   4 +
- 6 files changed, 783 insertions(+), 1 deletion(-)
+ 6 files changed, 799 insertions(+), 1 deletion(-)
  create mode 100644 dlls/winewayland.drv/systray.c
 
 diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
-index 10915b1..31588a2 100644
+index afe7902..fe1358a 100644
 --- a/dlls/winewayland.drv/Makefile.in
 +++ b/dlls/winewayland.drv/Makefile.in
 @@ -1,6 +1,6 @@
@@ -31,14 +35,14 @@ index 10915b1..31588a2 100644
  UNIX_LIBS = -lwin32u $(WAYLAND_CLIENT_LIBS) $(WAYLAND_EGL_LIBS) $(XKBCOMMON_LIBS) $(XKBREGISTRY_LIBS) $(PTHREAD_LIBS) -lm
  IMPORTS = user32 win32u
  
-@@ -11,6 +11,7 @@ SOURCES = \
- 	opengl.c \
+@@ -17,6 +17,7 @@ SOURCES = \
  	pointer-constraints-unstable-v1.xml \
+ 	pointer-warp-v1.xml \
  	relative-pointer-unstable-v1.xml \
 +	systray.c \
  	text-input-unstable-v3.xml \
- 	version.rc \
  	viewporter.xml \
+ 	vulkan.c \
 diff --git a/dlls/winewayland.drv/dllmain.c b/dlls/winewayland.drv/dllmain.c
 index 8055d88..8871d77 100644
 --- a/dlls/winewayland.drv/dllmain.c
@@ -77,10 +81,10 @@ index 8055d88..8871d77 100644
  }
 diff --git a/dlls/winewayland.drv/systray.c b/dlls/winewayland.drv/systray.c
 new file mode 100644
-index 0000000..882a209
+index 0000000..aced011
 --- /dev/null
 +++ b/dlls/winewayland.drv/systray.c
-@@ -0,0 +1,754 @@
+@@ -0,0 +1,770 @@
 +/*
 + * Wayland driver system tray support
 + *
@@ -284,11 +288,12 @@ index 0000000..882a209
 +    p_dbus_message_iter_close_container(iter, &array);
 +}
 +
++/* There is no Menu: the desktop then calls ContextMenu, and a menu path makes it ask for a dbusmenu instead. */
 +static const char *const property_names[] =
 +{
 +    "Category", "Id", "Title", "Status", "WindowId", "IconName", "IconPixmap",
 +    "OverlayIconName", "OverlayIconPixmap", "AttentionIconName", "AttentionIconPixmap",
-+    "AttentionMovieName", "ToolTip", "ItemIsMenu", "Menu",
++    "AttentionMovieName", "ToolTip", "ItemIsMenu",
 +};
 +
 +/* Append the value of a property as a variant, or return FALSE if it is unknown. */
@@ -308,7 +313,6 @@ index 0000000..882a209
 +    }
 +    else if (!strcmp(name, "Title")) str = icon->tip;
 +    else if (!strcmp(name, "Status")) str = "Active";
-+    else if (!strcmp(name, "Menu")) str = "/NO_DMENU";
 +
 +    if (!strcmp(name, "Category") || !strcmp(name, "Id") || !strcmp(name, "Title") ||
 +        !strcmp(name, "Status") || !strcmp(name, "IconName") || !strcmp(name, "OverlayIconName") ||
@@ -316,11 +320,6 @@ index 0000000..882a209
 +    {
 +        p_dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "s", &variant);
 +        append_string(&variant, str);
-+    }
-+    else if (!strcmp(name, "Menu"))
-+    {
-+        p_dbus_message_iter_open_container(parent, DBUS_TYPE_VARIANT, "o", &variant);
-+        p_dbus_message_iter_append_basic(&variant, DBUS_TYPE_OBJECT_PATH, &str);
 +    }
 +    else if (!strcmp(name, "WindowId"))
 +    {
@@ -691,11 +690,32 @@ index 0000000..882a209
 +    NtUserMessageCall(owner, callback, wp, lp, 0, NtUserSendNotifyMessage, FALSE);
 +}
 +
++/* The desktop reports positions in logical coordinates, Windows ones are in pixels. */
++static void logical_to_wine(int *x, int *y)
++{
++    struct wayland_output *output;
++
++    pthread_mutex_lock(&process_wayland.output_mutex);
++    wl_list_for_each(output, &process_wayland.output_list, link)
++    {
++        const struct wayland_output_state *state = &output->current;
++
++        if (!state->current_mode || !state->logical_w || !state->logical_h) continue;
++        if (*x < state->logical_x || *x >= state->logical_x + state->logical_w ||
++            *y < state->logical_y || *y >= state->logical_y + state->logical_h) continue;
++        *x = state->logical_x + (*x - state->logical_x) * state->current_mode->width / state->logical_w;
++        *y = state->logical_y + (*y - state->logical_y) * state->current_mode->height / state->logical_h;
++        break;
++    }
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++}
++
 +/* Deliver a click the way Windows does: the button messages, then the
 + * version 4 messages when the application asked for them. */
 +static void click_icon(HWND owner, UINT callback, UINT id, UINT version, UINT down, UINT up,
 +                       UINT extra, int x, int y)
 +{
++    logical_to_wine(&x, &y);
 +    NtUserSetCursorPos(x, y);
 +    notify_owner(owner, callback, id, version, down, x, y);
 +    notify_owner(owner, callback, id, version, up, x, y);
@@ -848,13 +868,13 @@ index d9378fe..21b6388 100644
  };
  
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index 9452d23..7022c54 100644
+index 50ef7f6..f55d70d 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -446,6 +446,9 @@ BOOL WAYLAND_SetIMECompositionRect(HWND hwnd, RECT rect);
- void WAYLAND_SetCursor(HWND hwnd, HCURSOR hcursor);
- BOOL WAYLAND_SetCursorPos(INT x, INT y);
+@@ -474,6 +474,9 @@ BOOL WAYLAND_SetCursorPos(INT x, INT y);
  void WAYLAND_SetLayeredWindowAttributes(HWND hwnd, COLORREF key, BYTE alpha, DWORD flags);
+ BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask);
+ void wayland_surface_set_decorations(struct wayland_surface *surface, BOOL server_side);
 +LRESULT WAYLAND_NotifyIcon(HWND hwnd, UINT msg, NOTIFYICONDATAW *nid);
 +void WAYLAND_CleanupIcons(HWND hwnd);
 +NTSTATUS waylanddrv_unix_systray_run(void *arg);
@@ -862,19 +882,19 @@ index 9452d23..7022c54 100644
  void WAYLAND_SetWindowStyle(HWND hwnd, INT offset, STYLESTRUCT *style);
  void WAYLAND_SetWindowText(HWND hwnd, LPCWSTR text);
 diff --git a/dlls/winewayland.drv/waylanddrv_main.c b/dlls/winewayland.drv/waylanddrv_main.c
-index cdb5dd8..9830c09 100644
+index 7d60bd1..67c2430 100644
 --- a/dlls/winewayland.drv/waylanddrv_main.c
 +++ b/dlls/winewayland.drv/waylanddrv_main.c
 @@ -41,6 +41,8 @@ static const struct user_driver_funcs waylanddrv_funcs =
-     .pDestroyWindow = WAYLAND_DestroyWindow,
      .pSetIMECompositionRect = WAYLAND_SetIMECompositionRect,
+     .pGetWindowStyleMasks = WAYLAND_GetWindowStyleMasks,
      .pKbdLayerDescriptor = WAYLAND_KbdLayerDescriptor,
 +    .pNotifyIcon = WAYLAND_NotifyIcon,
 +    .pCleanupIcons = WAYLAND_CleanupIcons,
      .pReleaseKbdTables = WAYLAND_ReleaseKbdTables,
      .pSetCursor = WAYLAND_SetCursor,
      .pSetCursorPos = WAYLAND_SetCursorPos,
-@@ -127,6 +129,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
+@@ -129,6 +131,7 @@ const unixlib_entry_t __wine_unix_call_funcs[] =
      waylanddrv_unix_init,
      waylanddrv_unix_read_events,
      waylanddrv_unix_init_clipboard,
@@ -882,7 +902,7 @@ index cdb5dd8..9830c09 100644
  };
  
  C_ASSERT(ARRAYSIZE(__wine_unix_call_funcs) == waylanddrv_unix_func_count);
-@@ -138,6 +141,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
+@@ -140,6 +143,7 @@ const unixlib_entry_t __wine_unix_call_wow64_funcs[] =
      waylanddrv_unix_init,
      waylanddrv_unix_read_events,
      waylanddrv_unix_init_clipboard,

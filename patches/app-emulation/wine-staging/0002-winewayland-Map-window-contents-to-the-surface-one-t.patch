@@ -1,15 +1,22 @@
-From: Michael Lothian <mike@fireburn.co.uk>
-Subject: [PATCH] winewayland.drv: Map window contents to the surface one to one.
+From 76701076effd9fa5b8bcd99ba947f1eec6100c71 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 18 Oct 2026 16:24:44 +0100
+Subject: [PATCH 02/11] winewayland: Map window contents to the surface one to
+ one.
 
-With a fractional scale a window size is rarely a multiple of it, so the
-compositor stretched the contents by a fraction of a pixel and text came
-out smeared. Use a source rectangle of exactly the pixels the destination
-covers.
-
+When the size of a window is not a multiple of the fractional scale, the
+compositor stretches the contents by a fraction of a pixel and text
+comes out smeared. Use a source rectangle of exactly the pixels the
+destination covers.
 ---
+ dlls/winewayland.drv/wayland_surface.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+index b32a43f..464dac3 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -676,6 +676,21 @@
+@@ -621,6 +621,21 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,
       * is partially or completely outside of the wl_buffe.
       * 0 is also an invalid width / height value so use 1x1 instead.
       */
@@ -31,3 +38,6 @@ covers.
      win_width = max(1, min(win_width, shm_buffer->width));
      win_height = max(1, min(win_height, shm_buffer->height));
  
+-- 
+2.56.0
+
