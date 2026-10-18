@@ -2,3 +2,4 @@
 # pulling in dev-util/mingw64-toolchain, which builds a GCC of its own.
 app-emulation/wine-staging crossdev-mingw mingw
 app-emulation/proton-ge-custom crossdev-mingw mingw
+app-emulation/wine-vanilla crossdev-mingw mingw

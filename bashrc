@@ -51,6 +51,8 @@ _restore_user_flags() {
 		for f in ${!v}; do
 			case ${f} in
 			-O[0-9sgz]|-Ofast|-march=*|-flto|-flto=*) ;;
+			# the ebuilds add it for mingw GCC, the clang of llvm-mingw does not need it
+			-mno-avx) [[ ${PN} == dxvk || ${PN} == vkd3d-proton ]] || out+=("${f}") ;;
 			*) out+=("${f}") ;;
 			esac
 		done
