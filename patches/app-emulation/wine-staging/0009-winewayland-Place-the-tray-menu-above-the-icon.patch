@@ -1,0 +1,155 @@
+From 3d4d349a5fbbb93691527469f8ad4a92e863a495 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 18 Oct 2026 16:30:13 +0100
+Subject: [PATCH 09/11] winewayland: Place the tray menu above the icon.
+
+Wayland has no work area to keep a menu off the panel, so the menu of a
+tray icon was put at the click and pushed against the corner of the
+screen. Place it above the icon, or below it for a panel at the top,
+centred on the icon and clear of the screen edges. The process that
+handles the click stores its position in a property of the desktop
+window, and the one that opens the menu reads it.
+---
+ dlls/winewayland.drv/systray.c         |  5 +++
+ dlls/winewayland.drv/wayland_surface.c | 62 ++++++++++++++++++++++++++
+ dlls/winewayland.drv/waylanddrv.h      | 13 ++++++
+ 3 files changed, 80 insertions(+)
+
+diff --git a/dlls/winewayland.drv/systray.c b/dlls/winewayland.drv/systray.c
+index ace2748..8cd118b 100644
+--- a/dlls/winewayland.drv/systray.c
++++ b/dlls/winewayland.drv/systray.c
+@@ -603,6 +603,9 @@ static void notify_owner(HWND owner, UINT callback, UINT id, UINT version, UINT
+     NtUserMessageCall(owner, callback, wp, lp, 0, NtUserSendNotifyMessage, FALSE);
+ }
+ 
++const WCHAR wayland_tray_click_propW[] =
++    {'_','_','w','i','n','e','w','a','y','l','a','n','d','_','t','r','a','y','_','c','l','i','c','k',0};
++
+ /* The desktop reports positions in logical coordinates, Windows ones are in pixels. */
+ static void logical_to_wine(int *x, int *y)
+ {
+@@ -654,6 +657,8 @@ static void click_icon(HWND owner, UINT callback, UINT id, UINT version, UINT do
+                        UINT extra, int x, int y)
+ {
+     click_to_logical(&x, &y);
++    NtUserSetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW,
++                  (HANDLE)tray_click_pack(NtGetTickCount(), x, y));
+     logical_to_wine(&x, &y);
+     NtUserSetCursorPos(x, y);
+     notify_owner(owner, callback, id, version, down, x, y);
+diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+index d653715..9c9bd54 100644
+--- a/dlls/winewayland.drv/wayland_surface.c
++++ b/dlls/winewayland.drv/wayland_surface.c
+@@ -947,6 +947,65 @@ static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surfa
+     wayland_win_data_release(owner_data);
+ }
+ 
++/**********************************************************************
++ *          wayland_surface_place_popup
++ *
++ * Places the menu opened by a tray icon click above the icon, or below it for
++ * a panel at the top of the screen, centred on the icon and clear of the screen
++ * edges. Wayland has no work area that would keep it off the panel.
++ */
++static void wayland_surface_place_popup(struct wayland_surface *surface, RECT *rect)
++{
++    const int margin = 12; /* distance to the edges of the screen */
++    const int gap = 44; /* distance to the icon, enough to clear a panel */
++    const int panel_zone = 200; /* panels are within this distance of an edge */
++    int width = rect->right - rect->left, height = rect->bottom - rect->top;
++    struct wayland_output *output;
++    ULONG_PTR click;
++    int x, y;
++
++    /* tooltips are smaller than menus */
++    if (width < 100 || height < 100) return;
++    if (!(click = (ULONG_PTR)NtUserGetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW))) return;
++
++    /* a menu window that is shown again for another click is placed again */
++    if (surface->popup_click == click)
++    {
++        OffsetRect(rect, surface->popup_x - rect->left, surface->popup_y - rect->top);
++        return;
++    }
++    if (NtGetTickCount() - tray_click_time(click) > TRAY_CLICK_MAX_AGE) return;
++    x = tray_click_x(click);
++    y = tray_click_y(click);
++
++    pthread_mutex_lock(&process_wayland.output_mutex);
++    wl_list_for_each(output, &process_wayland.output_list, link)
++    {
++        const struct wayland_output_state *state = &output->current;
++        int left = state->logical_x + margin, right = state->logical_x + state->logical_w - margin;
++        int top = state->logical_y + margin, bottom = state->logical_y + state->logical_h - margin;
++
++        if (!state->logical_w || !state->logical_h) continue;
++        if (x < state->logical_x || x >= state->logical_x + state->logical_w ||
++            y < state->logical_y || y >= state->logical_y + state->logical_h) continue;
++        if (y - state->logical_y > panel_zone && state->logical_y + state->logical_h - y > panel_zone) break;
++
++        rect->left = x - width / 2;
++        if (y > state->logical_y + state->logical_h / 2) rect->top = y - gap - height;
++        else rect->top = y + gap;
++        rect->left = max(left, min(rect->left, right - width));
++        rect->top = max(top, min(rect->top, bottom - height));
++        rect->right = rect->left + width;
++        rect->bottom = rect->top + height;
++        surface->popup_click = click;
++        surface->popup_x = rect->left;
++        surface->popup_y = rect->top;
++        TRACE("hwnd=%p click %d,%d placed the menu at %s\n", surface->hwnd, x, y, wine_dbgstr_rect(rect));
++        break;
++    }
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++}
++
+ /**********************************************************************
+  *          wayland_surface_reconfigure
+  *
+@@ -964,7 +1023,10 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
+           wine_dbgstr_rect(&surface->current.rect), surface->current.state);
+ 
+     if (surface->plasma_surface)
++    {
++        wayland_surface_place_popup(surface, &rect);
+         org_kde_plasma_surface_set_position(surface->plasma_surface, rect.left, rect.top);
++    }
+ 
+     switch (surface->role)
+     {
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+index 6db2b2b..752901b 100644
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -289,6 +289,8 @@ struct wayland_surface
+     struct wp_viewport *wp_viewport;
+     struct wp_fractional_scale_v1 *wp_fractional_scale_v1;
+     struct org_kde_plasma_surface *plasma_surface;
++    ULONG_PTR popup_click;
++    int popup_x, popup_y;
+     struct wayland_shm_buffer *small_icon_buffer;
+     struct wayland_shm_buffer *big_icon_buffer;
+ 
+@@ -350,6 +352,17 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,
+                                 struct wayland_shm_buffer *shm_buffer,
+                                 HRGN surface_damage_region);
+ BOOL wayland_surface_reconfigure(struct wayland_surface *surface);
++/* The last tray icon click, in logical coordinates and with its time, is kept as a property
++ * of the desktop window for the process that opens the menu it causes. */
++extern const WCHAR wayland_tray_click_propW[];
++#define TRAY_CLICK_MAX_AGE 10000 /* milliseconds */
++static inline ULONG_PTR tray_click_pack(ULONG time, int x, int y)
++{
++    return ((ULONG_PTR)time << 32) | ((x & 0xffff) << 16) | (y & 0xffff);
++}
++static inline ULONG tray_click_time(ULONG_PTR click) { return click >> 32; }
++static inline int tray_click_x(ULONG_PTR click) { return (click >> 16) & 0xffff; }
++static inline int tray_click_y(ULONG_PTR click) { return click & 0xffff; }
+ BOOL wayland_surface_config_is_compatible(struct wayland_surface_config *conf, RECT rect,
+                                           enum wayland_surface_config_state state);
+ RECT map_rect_to_surface(struct wayland_surface *surface, RECT rect);
+-- 
+2.56.0
+

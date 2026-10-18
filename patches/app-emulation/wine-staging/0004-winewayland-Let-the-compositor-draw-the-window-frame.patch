@@ -1,15 +1,29 @@
-From: Michael Lothian <mike@fireburn.co.uk>
-Subject: [PATCH] winewayland.drv: Let the compositor draw the window frame.
+From 84633870c17214a2514be4f0b12516d5b6528ef5 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Sun, 18 Oct 2026 16:24:44 +0100
+Subject: [PATCH 04/11] winewayland: Let the compositor draw the window frame.
 
 Ask for server side decorations through xdg-decoration and report the
-styles it draws through GetWindowStyleMasks, as the X11 driver does for
-the window manager. Wine then leaves the frame out of the surface, and the
-size from the compositor, which is that of the visible area, has the frame
-added back to become the size of the Wine window.
+styles the compositor draws through GetWindowStyleMasks, as the X11
+driver does for the window manager. The frame is then left out of the
+surface, and the size from the compositor, which is that of the visible
+area, has the frame added back to become the size of the window.
 ---
+ dlls/winewayland.drv/Makefile.in              |   1 +
+ dlls/winewayland.drv/wayland.c                |   5 +
+ dlls/winewayland.drv/wayland_surface.c        |  36 ++++
+ dlls/winewayland.drv/waylanddrv.h             |   6 +
+ dlls/winewayland.drv/waylanddrv_main.c        |   1 +
+ dlls/winewayland.drv/window.c                 |  73 +++++++-
+ .../xdg-decoration-unstable-v1.xml            | 176 ++++++++++++++++++
+ 7 files changed, 297 insertions(+), 1 deletion(-)
+ create mode 100644 dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
+
+diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
+index 411d045..afe7902 100644
 --- a/dlls/winewayland.drv/Makefile.in
 +++ b/dlls/winewayland.drv/Makefile.in
-@@ -32,6 +32,7 @@
+@@ -31,6 +31,7 @@ SOURCES = \
  	window.c \
  	window_surface.c \
  	wlr-data-control-unstable-v1.xml \
@@ -17,9 +31,11 @@ added back to become the size of the Wine window.
  	xdg-output-unstable-v1.xml \
  	xdg-shell.xml \
  	xdg-toplevel-icon-v1.xml
+diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
+index 118ee2d..2e931d1 100644
 --- a/dlls/winewayland.drv/wayland.c
 +++ b/dlls/winewayland.drv/wayland.c
-@@ -205,6 +205,11 @@
+@@ -205,6 +205,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
          process_wayland.wp_pointer_warp_v1 =
              wl_registry_bind(registry, id, &wp_pointer_warp_v1_interface, 1);
      }
@@ -31,9 +47,11 @@ added back to become the size of the Wine window.
      else if (strcmp(interface, "wp_alpha_modifier_v1") == 0)
      {
          process_wayland.wp_alpha_modifier_v1 =
+diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+index 464dac3..9b9dbe9 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -409,6 +409,30 @@
+@@ -409,6 +409,30 @@ static void wayland_surface_init_fractional_scale(struct wayland_surface *surfac
          surface->hwnd);
  }
  
@@ -64,7 +82,7 @@ added back to become the size of the Wine window.
  /**********************************************************************
   *          wayland_surface_make_toplevel
   *
-@@ -435,6 +459,12 @@
+@@ -435,6 +459,12 @@ void wayland_surface_make_toplevel(struct wayland_surface *surface)
      if (!surface->xdg_toplevel) goto err;
      xdg_toplevel_add_listener(surface->xdg_toplevel, &xdg_toplevel_listener, surface->hwnd);
  
@@ -77,7 +95,7 @@ added back to become the size of the Wine window.
      if (process_name)
          xdg_toplevel_set_app_id(surface->xdg_toplevel, process_name);
  
-@@ -533,6 +563,12 @@
+@@ -533,6 +563,12 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
              surface->xdg_toplevel_icon = NULL;
          }
  
@@ -90,6 +108,8 @@ added back to become the size of the Wine window.
          if (surface->xdg_toplevel)
          {
              xdg_toplevel_destroy(surface->xdg_toplevel);
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+index dae9059..50ef7f6 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
 @@ -36,6 +36,7 @@
@@ -100,7 +120,7 @@ added back to become the size of the Wine window.
  #include "wlr-data-control-unstable-v1-client-protocol.h"
  #include "xdg-toplevel-icon-v1-client-protocol.h"
  #include "pointer-warp-v1-client-protocol.h"
-@@ -71,6 +72,7 @@
+@@ -71,6 +72,7 @@ enum wayland_window_message
      WM_WAYLAND_INIT_DISPLAY_DEVICES = WM_WINE_FIRST_DRIVER_MSG,
      WM_WAYLAND_CONFIGURE,
      WM_WAYLAND_SET_FOREGROUND,
@@ -108,7 +128,7 @@ added back to become the size of the Wine window.
  };
  
  enum wayland_surface_config_state
-@@ -183,6 +185,7 @@
+@@ -183,6 +185,7 @@ struct wayland
      struct zwlr_data_control_manager_v1 *zwlr_data_control_manager_v1;
      struct wl_data_device_manager *wl_data_device_manager;
      struct xdg_toplevel_icon_manager_v1 *xdg_toplevel_icon_manager_v1;
@@ -116,7 +136,7 @@ added back to become the size of the Wine window.
      struct wp_cursor_shape_manager_v1 *wp_cursor_shape_manager_v1;
      struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
      struct wp_alpha_modifier_v1 *wp_alpha_modifier_v1;
-@@ -294,6 +297,7 @@
+@@ -294,6 +297,7 @@ struct wayland_surface
              struct xdg_surface *xdg_surface;
              struct xdg_toplevel *xdg_toplevel;
              struct xdg_toplevel_icon_v1 *xdg_toplevel_icon;
@@ -124,36 +144,42 @@ added back to become the size of the Wine window.
          };
          struct
          {
-@@ -469,6 +473,8 @@
- LRESULT WAYLAND_NotifyIcon(HWND hwnd, UINT msg, NOTIFYICONDATAW *nid);
- void WAYLAND_CleanupIcons(HWND hwnd);
- NTSTATUS waylanddrv_unix_systray_run(void *arg);
+@@ -468,6 +472,8 @@ BOOL WAYLAND_SetIMECompositionRect(HWND hwnd, RECT rect);
+ void WAYLAND_SetCursor(HWND hwnd, HCURSOR hcursor);
+ BOOL WAYLAND_SetCursorPos(INT x, INT y);
+ void WAYLAND_SetLayeredWindowAttributes(HWND hwnd, COLORREF key, BYTE alpha, DWORD flags);
 +BOOL WAYLAND_GetWindowStyleMasks(HWND hwnd, UINT style, UINT ex_style, UINT *style_mask, UINT *ex_style_mask);
 +void wayland_surface_set_decorations(struct wayland_surface *surface, BOOL server_side);
  void WAYLAND_SetWindowIcons(HWND hwnd, HICON icon, const ICONINFO *ii, HICON icon_small, const ICONINFO *ii_small);
  void WAYLAND_SetWindowStyle(HWND hwnd, INT offset, STYLESTRUCT *style);
  void WAYLAND_SetWindowText(HWND hwnd, LPCWSTR text);
+diff --git a/dlls/winewayland.drv/waylanddrv_main.c b/dlls/winewayland.drv/waylanddrv_main.c
+index 275a390..7d60bd1 100644
 --- a/dlls/winewayland.drv/waylanddrv_main.c
 +++ b/dlls/winewayland.drv/waylanddrv_main.c
-@@ -39,6 +39,7 @@
+@@ -39,6 +39,7 @@ static const struct user_driver_funcs waylanddrv_funcs =
      .pDesktopWindowProc = WAYLAND_DesktopWindowProc,
      .pDestroyWindow = WAYLAND_DestroyWindow,
      .pSetIMECompositionRect = WAYLAND_SetIMECompositionRect,
 +    .pGetWindowStyleMasks = WAYLAND_GetWindowStyleMasks,
      .pKbdLayerDescriptor = WAYLAND_KbdLayerDescriptor,
-     .pNotifyIcon = WAYLAND_NotifyIcon,
-     .pCleanupIcons = WAYLAND_CleanupIcons,
+     .pReleaseKbdTables = WAYLAND_ReleaseKbdTables,
+     .pSetCursor = WAYLAND_SetCursor,
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index 76d50d6..d6b398c 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
-@@ -56,21 +56,30 @@
-  *
-  * Create a data window structure for an existing window.
-  */
+@@ -51,6 +51,9 @@ static int wayland_win_data_cmp_rb(const void *key,
+ static pthread_mutex_t win_data_mutex;
+ static struct rb_tree win_data_rb = { wayland_win_data_cmp_rb };
+ 
 +static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen);
 +static BOOL window_has_compositor_frame(BOOL managed, UINT style, UINT ex_style);
 +
- static struct wayland_win_data *wayland_win_data_create(HWND hwnd, const struct window_rects *rects)
- {
+ /***********************************************************************
+  *           wayland_win_data_create
+  *
+@@ -61,16 +64,22 @@ static struct wayland_win_data *wayland_win_data_create(HWND hwnd, const struct
      struct wayland_win_data *data;
      struct rb_entry *rb_entry;
      HWND parent;
@@ -176,7 +202,7 @@ added back to become the size of the Wine window.
  
      pthread_mutex_lock(&win_data_mutex);
  
-@@ -300,6 +309,8 @@
+@@ -300,6 +309,8 @@ static void wayland_win_data_update_wayland_state(struct wayland_win_data *data)
          break;
      case WAYLAND_SURFACE_ROLE_TOPLEVEL:
          if (!surface->xdg_surface) break; /* surface role has been cleared */
@@ -185,7 +211,7 @@ added back to become the size of the Wine window.
          wayland_surface_update_state_toplevel(surface);
          break;
      case WAYLAND_SURFACE_ROLE_SUBSURFACE:
-@@ -399,6 +410,38 @@
+@@ -399,6 +410,38 @@ static BOOL is_window_managed(HWND hwnd, UINT swp_flags, BOOL fullscreen)
      return FALSE;
  }
  
@@ -224,7 +250,7 @@ added back to become the size of the Wine window.
  /***********************************************************************
   *           WAYLAND_DestroyWindow
   */
-@@ -437,7 +480,7 @@
+@@ -437,7 +480,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
      HWND owner = NtUserGetAncestor(hwnd, GA_ROOT);
      struct wayland_surface *owner_surface;
      struct wayland_win_data *data, *owner_data;
@@ -233,7 +259,7 @@ added back to become the size of the Wine window.
  
      TRACE("hwnd %p new_rects %s after %p flags %08x\n", hwnd, debugstr_window_rects(new_rects), insert_after, swp_flags);
  
-@@ -450,6 +493,7 @@
+@@ -450,6 +493,7 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
      owner_data = owner && owner != hwnd ? wayland_win_data_get(owner) : NULL;
      owner_surface = owner_data ? owner_data->wayland_surface : NULL;
  
@@ -241,19 +267,20 @@ added back to become the size of the Wine window.
      data->rects = *new_rects;
      data->is_fullscreen = fullscreen;
      data->resizeable = swp_flags & WINE_SWP_RESIZABLE;
-@@ -470,6 +514,11 @@
+@@ -470,6 +514,12 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
  
      if (owner_data) wayland_win_data_release(owner_data);
      wayland_win_data_release(data);
 +
-+    /* The compositor draws the frame of managed windows only, so go through the frame again. */
++    /* Whether the compositor draws the frame depends on the window being managed, so a window
++     * that became managed or unmanaged gets its frame computed again. */
 +    if (frame_changed && window_has_compositor_frame(managed, NtUserGetWindowLongW(hwnd, GWL_STYLE),
 +                                                      NtUserGetWindowLongW(hwnd, GWL_EXSTYLE)))
 +        NtUserPostMessage(hwnd, WM_WAYLAND_FRAME_CHANGED, 0, 0);
  }
  
  static void wayland_configure_window(HWND hwnd)
-@@ -607,6 +656,23 @@
+@@ -625,6 +675,23 @@ static void wayland_configure_window(HWND hwnd)
          flags |= SWP_NOSENDCHANGING;
      }
  
@@ -277,7 +304,7 @@ added back to become the size of the Wine window.
      NtUserSetRawWindowPos(hwnd, rect, flags, FALSE);
  }
  
-@@ -626,6 +692,10 @@
+@@ -644,6 +711,10 @@ LRESULT WAYLAND_WindowMessage(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
      case WM_WAYLAND_SET_FOREGROUND:
          NtUserSetForegroundWindowInternal(hwnd);
          return 0;
@@ -288,6 +315,9 @@ added back to become the size of the Wine window.
      default:
          FIXME("got window msg %x hwnd %p wp %lx lp %lx\n", msg, hwnd, (long)wp, lp);
          return 0;
+diff --git a/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml b/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
+new file mode 100644
+index 0000000..023589a
 --- /dev/null
 +++ b/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
 @@ -0,0 +1,176 @@
@@ -467,3 +497,6 @@ added back to become the size of the Wine window.
 +    </event>
 +  </interface>
 +</protocol>
+-- 
+2.56.0
+
