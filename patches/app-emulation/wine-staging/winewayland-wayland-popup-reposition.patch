@@ -14,7 +14,7 @@ is not drawn again, so it stayed invisible.
 ---
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -933,6 +933,74 @@
+@@ -933,6 +933,81 @@
  }
  
  /**********************************************************************
@@ -32,14 +32,21 @@ is not drawn again, so it stayed invisible.
 +    ULONG_PTR click;
 +    int click_x, click_y;
 +
-+    if (surface->popup_placed)
++    TRACE("hwnd=%p rect=%s\n", surface->hwnd, wine_dbgstr_rect(rect));
++    TRACE("hwnd=%p rect=%s\n", surface->hwnd, wine_dbgstr_rect(rect));
++    /* a menu has a size that a tooltip does not */
++    if (width < 100 || height < 100) return;
++    if (!(click = (ULONG_PTR)NtUserGetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW)))
++    {
++        TRACE("hwnd=%p no tray click\n", surface->hwnd);
++        return;
++    }
++    /* a window that is shown again for another menu is placed again */
++    if (surface->popup_click == click)
 +    {
 +        OffsetRect(rect, surface->popup_x - rect->left, surface->popup_y - rect->top);
 +        return;
 +    }
-+    /* a menu has a size that a tooltip does not */
-+    if (width < 100 || height < 100) return;
-+    if (!(click = (ULONG_PTR)NtUserGetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW))) return;
 +    if (NtGetTickCount() - (ULONG)(click >> 32) > 10000)
 +    {
 +        TRACE("hwnd=%p click too old\n", surface->hwnd);
@@ -54,32 +61,32 @@ is not drawn again, so it stayed invisible.
 +        const struct wayland_output_state *state = &output->current;
 +        int left = state->logical_x + margin, right = state->logical_x + state->logical_w - margin;
 +        int top = state->logical_y + margin, bottom = state->logical_y + state->logical_h - margin;
-+        int x, y;
 +
 +        if (!state->logical_w || !state->logical_h) continue;
-+        x = click_x;
-+        y = click_y;
-+        if (x < state->logical_x || x >= state->logical_x + state->logical_w ||
-+            y < state->logical_y || y >= state->logical_y + state->logical_h) continue;
-+        TRACE("hwnd=%p rect=%s click=%d,%d\n", surface->hwnd, wine_dbgstr_rect(rect), x, y);
++        TRACE("hwnd=%p click %d,%d output %d,%d %dx%d\n", surface->hwnd, click_x, click_y,
++              state->logical_x, state->logical_y, state->logical_w, state->logical_h);
++        TRACE("hwnd=%p click %d,%d output %d,%d %dx%d\n", surface->hwnd, click_x, click_y,
++              state->logical_x, state->logical_y, state->logical_w, state->logical_h);
++        if (click_x < state->logical_x || click_x >= state->logical_x + state->logical_w ||
++            click_y < state->logical_y || click_y >= state->logical_y + state->logical_h) continue;
 +        /* only a click near the edge of the screen, where a panel is */
-+        if (y - state->logical_y > 200 && state->logical_y + state->logical_h - y > 200)
++        if (click_y - state->logical_y > 200 && state->logical_y + state->logical_h - click_y > 200)
 +        {
-+            TRACE("hwnd=%p click %d,%d is not at a screen edge\n", surface->hwnd, x, y);
++            TRACE("hwnd=%p click %d,%d is not at a screen edge\n", surface->hwnd, click_x, click_y);
 +            break;
 +        }
 +
-+        rect->left = x - width / 2;
-+        if (y > state->logical_y + state->logical_h / 2) rect->top = y - gap - height;
-+        else rect->top = y + gap;
++        rect->left = click_x - width / 2;
++        if (click_y > state->logical_y + state->logical_h / 2) rect->top = click_y - gap - height;
++        else rect->top = click_y + gap;
 +        rect->left = max(left, min(rect->left, right - width));
 +        rect->top = max(top, min(rect->top, bottom - height));
 +        rect->right = rect->left + width;
 +        rect->bottom = rect->top + height;
-+        surface->popup_placed = TRUE;
++        surface->popup_click = click;
 +        surface->popup_x = rect->left;
 +        surface->popup_y = rect->top;
-+        TRACE("cursor %d,%d placed menu at %s\n", x, y, wine_dbgstr_rect(rect));
++        TRACE("hwnd=%p click %d,%d placed menu at %s\n", surface->hwnd, click_x, click_y, wine_dbgstr_rect(rect));
 +        break;
 +    }
 +    pthread_mutex_unlock(&process_wayland.output_mutex);
@@ -89,7 +96,7 @@ is not drawn again, so it stayed invisible.
   *          wayland_surface_reconfigure
   *
   * Reconfigures the wayland surface as needed to match the latest requested
-@@ -949,7 +1017,10 @@
+@@ -949,7 +1024,10 @@
            wine_dbgstr_rect(&surface->current.rect), surface->current.state);
  
      if (surface->plasma_surface)
@@ -114,10 +121,41 @@ is not drawn again, so it stayed invisible.
  /* The desktop reports positions in logical coordinates, Windows ones are in pixels. */
  static void logical_to_wine(int *x, int *y)
  {
-@@ -628,6 +633,8 @@
+@@ -623,11 +628,39 @@
+     pthread_mutex_unlock(&process_wayland.output_mutex);
+ }
+ 
++/* The desktop gives positions in logical coordinates or, from the panel, in pixels:
++ * a point outside the logical size of every output but inside its mode is in pixels. */
++static void click_to_logical(int *x, int *y)
++{
++    struct wayland_output *output;
++
++    pthread_mutex_lock(&process_wayland.output_mutex);
++    wl_list_for_each(output, &process_wayland.output_list, link)
++    {
++        const struct wayland_output_state *state = &output->current;
++
++        if (!state->current_mode || !state->logical_w || !state->logical_h) continue;
++        if (*x >= state->logical_x && *x < state->logical_x + state->logical_w &&
++            *y >= state->logical_y && *y < state->logical_y + state->logical_h) break;
++        if (*x >= state->logical_x && *x < state->logical_x + state->current_mode->width &&
++            *y >= state->logical_y && *y < state->logical_y + state->current_mode->height)
++        {
++            *x = state->logical_x + (*x - state->logical_x) * state->logical_w / state->current_mode->width;
++            *y = state->logical_y + (*y - state->logical_y) * state->logical_h / state->current_mode->height;
++            break;
++        }
++    }
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++}
++
+ /* Deliver a click the way Windows does: the button messages, then the
+  * version 4 messages when the application asked for them. */
  static void click_icon(HWND owner, UINT callback, UINT id, UINT version, UINT down, UINT up,
                         UINT extra, int x, int y)
  {
++    click_to_logical(&x, &y);
 +    NtUserSetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW,
 +                  (HANDLE)(((ULONG_PTR)NtGetTickCount() << 32) | ((x & 0xffff) << 16) | (y & 0xffff)));
      logical_to_wine(&x, &y);
@@ -129,7 +167,7 @@ is not drawn again, so it stayed invisible.
      struct wp_viewport *wp_viewport;
      struct wp_fractional_scale_v1 *wp_fractional_scale_v1;
      struct org_kde_plasma_surface *plasma_surface;
-+    BOOL popup_placed;
++    ULONG_PTR popup_click;
 +    int popup_x, popup_y;
      struct wayland_shm_buffer *small_icon_buffer;
      struct wayland_shm_buffer *big_icon_buffer;
