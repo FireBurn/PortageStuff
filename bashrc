@@ -20,10 +20,7 @@ _restore_user_flags() {
 			*) out+=("${f}") ;;
 			esac
 		done
-		# dxvk refuses AVX builds, and vkd3d-proton has the same stack alignment problem on 32-bit
-		local extra=
-		[[ ${PN} == dxvk || ${PN} == vkd3d-proton ]] && extra=" -mno-avx"
-		export "${v}=-O3 -march=native -flto=thin${extra} ${out[*]}"
+		export "${v}=-O3 -march=native -flto=thin ${out[*]}"
 	done
 }
 _wrap_flag_function() {

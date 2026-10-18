@@ -1,0 +1,19 @@
+Allow AVX when building with clang.
+
+The guard exists because mingw-gcc does not realign the stack for 256 bit spills
+under the 16 byte alignment of the Windows ABI. clang realigns the stack in any
+function that needs more, so the guard is kept for the other compilers.
+
+--- a/src/util/util_bit.h
++++ b/src/util/util_bit.h
+@@ -12,7 +12,9 @@
+ 
+ #ifdef DXVK_ARCH_X86
+   #ifndef _MSC_VER
+-    #if defined(_WIN32) && (defined(__AVX__) || defined(__AVX2__))
++    // The Windows x64 ABI only guarantees 16 byte stack alignment. gcc does not
++    // realign the stack for 256 bit spills there, clang does.
++    #if defined(_WIN32) && !defined(__clang__) && (defined(__AVX__) || defined(__AVX2__))
+       #error "AVX-enabled builds not supported due to stack alignment issues."
+     #endif
+     #if defined(__WINE__) && defined(__clang__)
