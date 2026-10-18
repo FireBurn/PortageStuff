@@ -14,7 +14,7 @@ is not drawn again, so it stayed invisible.
 ---
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -933,6 +933,65 @@
+@@ -933,6 +933,74 @@
  }
  
  /**********************************************************************
@@ -37,8 +37,14 @@ is not drawn again, so it stayed invisible.
 +        OffsetRect(rect, surface->popup_x - rect->left, surface->popup_y - rect->top);
 +        return;
 +    }
++    /* a menu has a size that a tooltip does not */
++    if (width < 100 || height < 100) return;
 +    if (!(click = (ULONG_PTR)NtUserGetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW))) return;
-+    if (NtGetTickCount() - (ULONG)(click >> 32) > 1500) return;
++    if (NtGetTickCount() - (ULONG)(click >> 32) > 10000)
++    {
++        TRACE("hwnd=%p click too old\n", surface->hwnd);
++        return;
++    }
 +    click_x = (click >> 16) & 0xffff;
 +    click_y = click & 0xffff;
 +
@@ -56,9 +62,12 @@ is not drawn again, so it stayed invisible.
 +        if (x < state->logical_x || x >= state->logical_x + state->logical_w ||
 +            y < state->logical_y || y >= state->logical_y + state->logical_h) continue;
 +        TRACE("hwnd=%p rect=%s click=%d,%d\n", surface->hwnd, wine_dbgstr_rect(rect), x, y);
-+        /* only a menu opened at the cursor, near the edge of the screen where a panel is */
-+        if (x < rect->left - 4 || x > rect->right + 4 || y < rect->top - 4 || y > rect->bottom + 4) break;
-+        if (y - state->logical_y > 120 && state->logical_y + state->logical_h - y > 120) break;
++        /* only a click near the edge of the screen, where a panel is */
++        if (y - state->logical_y > 200 && state->logical_y + state->logical_h - y > 200)
++        {
++            TRACE("hwnd=%p click %d,%d is not at a screen edge\n", surface->hwnd, x, y);
++            break;
++        }
 +
 +        rect->left = x - width / 2;
 +        if (y > state->logical_y + state->logical_h / 2) rect->top = y - gap - height;
@@ -80,7 +89,7 @@ is not drawn again, so it stayed invisible.
   *          wayland_surface_reconfigure
   *
   * Reconfigures the wayland surface as needed to match the latest requested
-@@ -949,7 +1008,10 @@
+@@ -949,7 +1017,10 @@
            wine_dbgstr_rect(&surface->current.rect), surface->current.state);
  
      if (surface->plasma_surface)
