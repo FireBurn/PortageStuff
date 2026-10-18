@@ -56,6 +56,8 @@ _restore_user_flags() {
 		done
 		flag="-O3 -march=native"
 		[[ -n ${LTO_SELF} ]] || flag+=" -flto=thin"
+		# dxvk refuses AVX builds, and vkd3d-proton has the same stack alignment problem on 32-bit
+		[[ ${PN} == dxvk || ${PN} == vkd3d-proton ]] && flag+=" -mno-avx"
 		export "${v}=${flag} ${out[*]}"
 	done
 }
