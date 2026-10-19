@@ -1,8 +1,8 @@
-From 0cbbc0e127dae029ca0e79cade680f83192ef1af Mon Sep 17 00:00:00 2001
+From e9d8da2ccb4c9c46d3f7dc7f41474208e4696aa2 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:24:44 +0100
-Subject: [PATCH 01/11] winewayland: Make the unused byte of XRGB window
- buffers opaque.
+Subject: [PATCH] winewayland: Make the unused byte of XRGB window buffers
+ opaque.
 
 GDI leaves the unused byte of 32-bit pixels at zero, and some
 compositors take it as alpha. KWin showed the client area of ordinary
@@ -12,7 +12,7 @@ windows black while their thumbnails were correct.
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/dlls/winewayland.drv/window_surface.c b/dlls/winewayland.drv/window_surface.c
-index 36a825a..6ab9cd1 100644
+index 36a825a7ab7..6ab9cd1f368 100644
 --- a/dlls/winewayland.drv/window_surface.c
 +++ b/dlls/winewayland.drv/window_surface.c
 @@ -439,8 +439,10 @@ static BOOL wayland_window_surface_flush(struct window_surface *window_surface,

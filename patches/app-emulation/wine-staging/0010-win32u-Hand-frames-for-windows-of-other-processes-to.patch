@@ -1,8 +1,8 @@
-From dad6353095bc4ea8d91ea33bc57fb56102b26f77 Mon Sep 17 00:00:00 2001
+From d8e488abf26899f6365b700a54e8317c3d3544d0 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:30:41 +0100
-Subject: [PATCH 10/11] win32u: Hand frames for windows of other processes to
- the driver.
+Subject: [PATCH] win32u: Hand frames for windows of other processes to the
+ driver.
 
 The surface of a window that belongs to another process cannot be shown
 by a driver that has to attach a surface of its own client. Copy each
@@ -14,7 +14,7 @@ the driver through a new present_pixels client surface function.
  2 files changed, 231 insertions(+)
 
 diff --git a/dlls/win32u/vulkan.c b/dlls/win32u/vulkan.c
-index 3265d74..c0f0de9 100644
+index 3265d7467c8..c0f0de92ea8 100644
 --- a/dlls/win32u/vulkan.c
 +++ b/dlls/win32u/vulkan.c
 @@ -150,11 +150,29 @@ static struct surface *surface_from_handle( VkSurfaceKHR handle )
@@ -292,7 +292,7 @@ index 3265d74..c0f0de9 100644
  
      for (uint32_t i = 0; i < present_info->swapchainCount; i++)
 diff --git a/include/wine/gdi_driver.h b/include/wine/gdi_driver.h
-index 4d7d71c..67fa583 100644
+index 4d7d71c6bbf..67fa583cca1 100644
 --- a/include/wine/gdi_driver.h
 +++ b/include/wine/gdi_driver.h
 @@ -260,6 +260,9 @@ struct client_surface_funcs

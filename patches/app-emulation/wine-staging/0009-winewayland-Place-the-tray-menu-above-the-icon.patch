@@ -1,7 +1,7 @@
-From 3d4d349a5fbbb93691527469f8ad4a92e863a495 Mon Sep 17 00:00:00 2001
+From 3794b27eb1212ee2528e71e940aa6a569935fd2f Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
-Date: Sun, 18 Oct 2026 16:30:13 +0100
-Subject: [PATCH 09/11] winewayland: Place the tray menu above the icon.
+Date: Mon, 19 Oct 2026 00:10:48 +0100
+Subject: [PATCH] winewayland: Place the tray menu above the icon.
 
 Wayland has no work area to keep a menu off the panel, so the menu of a
 tray icon was put at the click and pushed against the corner of the
@@ -16,7 +16,7 @@ window, and the one that opens the menu reads it.
  3 files changed, 80 insertions(+)
 
 diff --git a/dlls/winewayland.drv/systray.c b/dlls/winewayland.drv/systray.c
-index ace2748..8cd118b 100644
+index 92fa641b4fc..5e1e59920b8 100644
 --- a/dlls/winewayland.drv/systray.c
 +++ b/dlls/winewayland.drv/systray.c
 @@ -603,6 +603,9 @@ static void notify_owner(HWND owner, UINT callback, UINT id, UINT version, UINT
@@ -39,10 +39,10 @@ index ace2748..8cd118b 100644
      NtUserSetCursorPos(x, y);
      notify_owner(owner, callback, id, version, down, x, y);
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
-index d653715..9c9bd54 100644
+index 0110e32d3c4..75533ae3df9 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
-@@ -947,6 +947,65 @@ static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surfa
+@@ -1027,6 +1027,66 @@ static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surfa
      wayland_win_data_release(owner_data);
  }
  
@@ -68,9 +68,10 @@ index d653715..9c9bd54 100644
 +    if (!(click = (ULONG_PTR)NtUserGetProp(NtUserGetDesktopWindow(), wayland_tray_click_propW))) return;
 +
 +    /* a menu window that is shown again for another click is placed again */
-+    if (surface->popup_click == click)
++    if (surface->popup_click == click && surface->popup_placed.right - surface->popup_placed.left == width &&
++        surface->popup_placed.bottom - surface->popup_placed.top == height)
 +    {
-+        OffsetRect(rect, surface->popup_x - rect->left, surface->popup_y - rect->top);
++        *rect = surface->popup_placed;
 +        return;
 +    }
 +    if (NtGetTickCount() - tray_click_time(click) > TRAY_CLICK_MAX_AGE) return;
@@ -97,42 +98,40 @@ index d653715..9c9bd54 100644
 +        rect->right = rect->left + width;
 +        rect->bottom = rect->top + height;
 +        surface->popup_click = click;
-+        surface->popup_x = rect->left;
-+        surface->popup_y = rect->top;
++        surface->popup_placed = *rect;
 +        TRACE("hwnd=%p click %d,%d placed the menu at %s\n", surface->hwnd, x, y, wine_dbgstr_rect(rect));
 +        break;
 +    }
 +    pthread_mutex_unlock(&process_wayland.output_mutex);
 +}
 +
++
  /**********************************************************************
-  *          wayland_surface_reconfigure
+  *          wayland_hwnd_wants_popup
   *
-@@ -964,7 +1023,10 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
-           wine_dbgstr_rect(&surface->current.rect), surface->current.state);
+@@ -1148,6 +1208,8 @@ err:
  
-     if (surface->plasma_surface)
-+    {
-+        wayland_surface_place_popup(surface, &rect);
-         org_kde_plasma_surface_set_position(surface->plasma_surface, rect.left, rect.top);
-+    }
- 
-     switch (surface->role)
-     {
+ static BOOL wayland_surface_reconfigure_popup(struct wayland_surface *surface, RECT rect)
+ {
++    wayland_surface_place_popup(surface, &rect);
++
+     if ((surface->xdg_surface || surface->zwlr_layer_surface_v1) && !EqualRect(&rect, &surface->popup_rect))
+         wayland_surface_destroy_popup(surface);
+     if (!surface->xdg_surface && !surface->zwlr_layer_surface_v1)
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index 6db2b2b..752901b 100644
+index 5ae80156813..dec05133904 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
-@@ -289,6 +289,8 @@ struct wayland_surface
+@@ -291,6 +291,8 @@ struct wayland_surface
+     struct wl_surface *wl_surface;
      struct wp_viewport *wp_viewport;
      struct wp_fractional_scale_v1 *wp_fractional_scale_v1;
-     struct org_kde_plasma_surface *plasma_surface;
 +    ULONG_PTR popup_click;
-+    int popup_x, popup_y;
++    RECT popup_placed;
      struct wayland_shm_buffer *small_icon_buffer;
      struct wayland_shm_buffer *big_icon_buffer;
  
-@@ -350,6 +352,17 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,
+@@ -358,6 +360,17 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,
                                  struct wayland_shm_buffer *shm_buffer,
                                  HRGN surface_damage_region);
  BOOL wayland_surface_reconfigure(struct wayland_surface *surface);

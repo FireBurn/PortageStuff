@@ -1,8 +1,8 @@
-From 5a8ed869e7ab761e9b014ec2e94ffc6c14c60d7b Mon Sep 17 00:00:00 2001
+From 209f48a9524ff821f27f204bdfdb5b76520fec2a Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:30:03 +0100
-Subject: [PATCH 06/11] winewayland: Accept the position of a tray icon click
- in pixels.
+Subject: [PATCH] winewayland: Accept the position of a tray icon click in
+ pixels.
 
 The desktop reports where a tray icon was clicked in logical coordinates
 for some callers and in pixels for the panel. Treat a point that is
@@ -13,7 +13,7 @@ so that the menu of the icon opens at the icon and not past the screen.
  1 file changed, 26 insertions(+)
 
 diff --git a/dlls/winewayland.drv/systray.c b/dlls/winewayland.drv/systray.c
-index aced011..ace2748 100644
+index 4b58fe38eff..92fa641b4fc 100644
 --- a/dlls/winewayland.drv/systray.c
 +++ b/dlls/winewayland.drv/systray.c
 @@ -623,11 +623,37 @@ static void logical_to_wine(int *x, int *y)

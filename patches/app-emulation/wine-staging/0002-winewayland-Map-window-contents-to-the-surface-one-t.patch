@@ -1,8 +1,7 @@
-From 76701076effd9fa5b8bcd99ba947f1eec6100c71 Mon Sep 17 00:00:00 2001
+From 78fc984adccc0189abde6cd276011764b76b9b8c Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:24:44 +0100
-Subject: [PATCH 02/11] winewayland: Map window contents to the surface one to
- one.
+Subject: [PATCH] winewayland: Map window contents to the surface one to one.
 
 When the size of a window is not a multiple of the fractional scale, the
 compositor stretches the contents by a fraction of a pixel and text
@@ -13,7 +12,7 @@ destination covers.
  1 file changed, 15 insertions(+)
 
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
-index b32a43f..464dac3 100644
+index b32a43f7531..464dac38ee0 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
 @@ -621,6 +621,21 @@ void wayland_surface_attach_shm(struct wayland_surface *surface,

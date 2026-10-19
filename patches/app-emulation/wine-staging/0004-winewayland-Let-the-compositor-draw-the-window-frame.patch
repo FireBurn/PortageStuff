@@ -1,7 +1,7 @@
-From 84633870c17214a2514be4f0b12516d5b6528ef5 Mon Sep 17 00:00:00 2001
+From 7506cdbcd5f39f8e539eb446848474536099f948 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:24:44 +0100
-Subject: [PATCH 04/11] winewayland: Let the compositor draw the window frame.
+Subject: [PATCH] winewayland: Let the compositor draw the window frame.
 
 Ask for server side decorations through xdg-decoration and report the
 styles the compositor draws through GetWindowStyleMasks, as the X11
@@ -20,7 +20,7 @@ area, has the frame added back to become the size of the window.
  create mode 100644 dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
 
 diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
-index 411d045..afe7902 100644
+index 411d045f557..afe79027979 100644
 --- a/dlls/winewayland.drv/Makefile.in
 +++ b/dlls/winewayland.drv/Makefile.in
 @@ -31,6 +31,7 @@ SOURCES = \
@@ -32,7 +32,7 @@ index 411d045..afe7902 100644
  	xdg-shell.xml \
  	xdg-toplevel-icon-v1.xml
 diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
-index 118ee2d..2e931d1 100644
+index 118ee2d6945..2e931d1406c 100644
 --- a/dlls/winewayland.drv/wayland.c
 +++ b/dlls/winewayland.drv/wayland.c
 @@ -205,6 +205,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
@@ -48,7 +48,7 @@ index 118ee2d..2e931d1 100644
      {
          process_wayland.wp_alpha_modifier_v1 =
 diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
-index 464dac3..9b9dbe9 100644
+index 464dac38ee0..9b9dbe9e528 100644
 --- a/dlls/winewayland.drv/wayland_surface.c
 +++ b/dlls/winewayland.drv/wayland_surface.c
 @@ -409,6 +409,30 @@ static void wayland_surface_init_fractional_scale(struct wayland_surface *surfac
@@ -109,7 +109,7 @@ index 464dac3..9b9dbe9 100644
          {
              xdg_toplevel_destroy(surface->xdg_toplevel);
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index dae9059..50ef7f6 100644
+index dae9059d4ce..50ef7f616bc 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
 @@ -36,6 +36,7 @@
@@ -154,7 +154,7 @@ index dae9059..50ef7f6 100644
  void WAYLAND_SetWindowStyle(HWND hwnd, INT offset, STYLESTRUCT *style);
  void WAYLAND_SetWindowText(HWND hwnd, LPCWSTR text);
 diff --git a/dlls/winewayland.drv/waylanddrv_main.c b/dlls/winewayland.drv/waylanddrv_main.c
-index 275a390..7d60bd1 100644
+index 275a3907f92..7d60bd19121 100644
 --- a/dlls/winewayland.drv/waylanddrv_main.c
 +++ b/dlls/winewayland.drv/waylanddrv_main.c
 @@ -39,6 +39,7 @@ static const struct user_driver_funcs waylanddrv_funcs =
@@ -166,7 +166,7 @@ index 275a390..7d60bd1 100644
      .pReleaseKbdTables = WAYLAND_ReleaseKbdTables,
      .pSetCursor = WAYLAND_SetCursor,
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index 76d50d6..d6b398c 100644
+index 76d50d6edf1..d6b398c1b5e 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
 @@ -51,6 +51,9 @@ static int wayland_win_data_cmp_rb(const void *key,
@@ -317,7 +317,7 @@ index 76d50d6..d6b398c 100644
          return 0;
 diff --git a/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml b/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
 new file mode 100644
-index 0000000..023589a
+index 00000000000..023589ad047
 --- /dev/null
 +++ b/dlls/winewayland.drv/xdg-decoration-unstable-v1.xml
 @@ -0,0 +1,176 @@

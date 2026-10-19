@@ -1,8 +1,8 @@
-From c282a75b3a66986b380d41ccf0dee2011287405b Mon Sep 17 00:00:00 2001
+From 3b547c60c6305812f1bd14373e824728a2b92ef9 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:29:02 +0100
-Subject: [PATCH 07/11] winewayland: Show the last frame once a configure has
- been processed.
+Subject: [PATCH] winewayland: Show the last frame once a configure has been
+ processed.
 
 A frame drawn before the first configure of a surface is dropped, since
 the surface cannot be committed yet. A window that does not change
@@ -13,7 +13,7 @@ contents when the configure has been processed.
  1 file changed, 11 insertions(+)
 
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index d6b398c..c86e2fa 100644
+index d6b398c1b5e..c86e2fa8c57 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
 @@ -510,6 +510,17 @@ void WAYLAND_WindowPosChanged(HWND hwnd, HWND insert_after, HWND owner_hint, UIN
