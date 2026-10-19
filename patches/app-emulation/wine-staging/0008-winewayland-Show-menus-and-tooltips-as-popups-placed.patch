@@ -1,0 +1,891 @@
+From 466698d250d5e23131ad5df490eb35b602f4c0e4 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Mon, 19 Oct 2026 00:10:48 +0100
+Subject: [PATCH] winewayland: Show menus and tooltips as popups placed by the
+ compositor.
+
+A Wayland client cannot choose where a window goes, so a menu or tooltip
+that does not belong to a window with a surface, such as the menu of a
+tray icon, appeared wherever the compositor liked. Show those windows
+as an xdg_popup anchored to an output with xx_output_popup_v1, or as a
+wlr-layer-shell surface when that is missing. Compositors with neither
+keep showing them as toplevels.
+---
+ dlls/winewayland.drv/Makefile.in              |   4 +-
+ dlls/winewayland.drv/wayland.c                |  10 +
+ dlls/winewayland.drv/wayland_surface.c        | 233 +++++++++++-
+ dlls/winewayland.drv/waylanddrv.h             |  11 +
+ dlls/winewayland.drv/window.c                 |   7 +
+ .../wlr-layer-shell-unstable-v1.xml           | 342 ++++++++++++++++++
+ dlls/winewayland.drv/xx-output-popup-v1.xml   | 110 ++++++
+ 7 files changed, 715 insertions(+), 2 deletions(-)
+ create mode 100644 dlls/winewayland.drv/wlr-layer-shell-unstable-v1.xml
+ create mode 100644 dlls/winewayland.drv/xx-output-popup-v1.xml
+
+diff --git a/dlls/winewayland.drv/Makefile.in b/dlls/winewayland.drv/Makefile.in
+index fe1358a5484..20a3b14eb38 100644
+--- a/dlls/winewayland.drv/Makefile.in
++++ b/dlls/winewayland.drv/Makefile.in
+@@ -32,7 +32,9 @@ SOURCES = \
+ 	window.c \
+ 	window_surface.c \
+ 	wlr-data-control-unstable-v1.xml \
++	wlr-layer-shell-unstable-v1.xml \
+ 	xdg-decoration-unstable-v1.xml \
+ 	xdg-output-unstable-v1.xml \
+ 	xdg-shell.xml \
+-	xdg-toplevel-icon-v1.xml
++	xdg-toplevel-icon-v1.xml \
++	xx-output-popup-v1.xml
+diff --git a/dlls/winewayland.drv/wayland.c b/dlls/winewayland.drv/wayland.c
+index 2e931d1406c..d2eb296baac 100644
+--- a/dlls/winewayland.drv/wayland.c
++++ b/dlls/winewayland.drv/wayland.c
+@@ -194,6 +194,16 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
+         process_wayland.xdg_toplevel_icon_manager_v1 =
+             wl_registry_bind(registry, id, &xdg_toplevel_icon_manager_v1_interface, 1);
+     }
++    else if (strcmp(interface, "xx_output_popup_manager_v1") == 0)
++    {
++        process_wayland.xx_output_popup_manager_v1 =
++            wl_registry_bind(registry, id, &xx_output_popup_manager_v1_interface, 1);
++    }
++    else if (strcmp(interface, "zwlr_layer_shell_v1") == 0)
++    {
++        process_wayland.zwlr_layer_shell_v1 =
++            wl_registry_bind(registry, id, &zwlr_layer_shell_v1_interface, 1);
++    }
+     else if (strcmp(interface, "wp_cursor_shape_manager_v1") == 0)
+     {
+         process_wayland.wp_cursor_shape_manager_v1 =
+diff --git a/dlls/winewayland.drv/wayland_surface.c b/dlls/winewayland.drv/wayland_surface.c
+index 9b9dbe9e528..0110e32d3c4 100644
+--- a/dlls/winewayland.drv/wayland_surface.c
++++ b/dlls/winewayland.drv/wayland_surface.c
+@@ -137,7 +137,14 @@ static void xdg_surface_handle_configure(void *private, struct xdg_surface *xdg_
+ 
+     /* Handle this event only if wayland_surface is still associated with
+      * the target xdg_surface. */
+-    if ((surface = data->wayland_surface) && wayland_surface_is_toplevel(surface) &&
++    if ((surface = data->wayland_surface) && surface->role == WAYLAND_SURFACE_ROLE_POPUP &&
++        surface->xdg_surface == xdg_surface)
++    {
++        xdg_surface_ack_configure(xdg_surface, serial);
++        initial_configure = surface->current.serial == 0;
++        surface->current.serial = serial;
++    }
++    else if (surface && wayland_surface_is_toplevel(surface) &&
+         surface->xdg_surface == xdg_surface)
+     {
+         /* If we have a previously requested config, we have already sent a
+@@ -226,6 +233,68 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener =
+     xdg_toplevel_handle_close
+ };
+ 
++static void popup_dismissed(HWND hwnd)
++{
++    TRACE("hwnd=%p\n", hwnd);
++    NtUserPostMessage(hwnd, WM_CANCELMODE, 0, 0);
++}
++
++static void xdg_popup_handle_configure(void *private, struct xdg_popup *xdg_popup,
++                                       int32_t x, int32_t y, int32_t width, int32_t height)
++{
++    TRACE("hwnd=%p %d,%d %dx%d\n", private, x, y, width, height);
++}
++
++static void xdg_popup_handle_popup_done(void *private, struct xdg_popup *xdg_popup)
++{
++    popup_dismissed(private);
++}
++
++static void xdg_popup_handle_repositioned(void *private, struct xdg_popup *xdg_popup, uint32_t token)
++{
++}
++
++static const struct xdg_popup_listener xdg_popup_listener =
++{
++    xdg_popup_handle_configure,
++    xdg_popup_handle_popup_done,
++    xdg_popup_handle_repositioned
++};
++
++static void layer_surface_handle_configure(void *private, struct zwlr_layer_surface_v1 *layer_surface,
++                                           uint32_t serial, uint32_t width, uint32_t height)
++{
++    struct wayland_surface *surface;
++    struct wayland_win_data *data;
++    BOOL initial_configure = FALSE;
++    HWND hwnd = private;
++
++    TRACE("hwnd=%p serial=%u %ux%u\n", hwnd, serial, width, height);
++
++    if (!(data = wayland_win_data_get(hwnd))) return;
++    if ((surface = data->wayland_surface) && surface->role == WAYLAND_SURFACE_ROLE_POPUP &&
++        surface->zwlr_layer_surface_v1 == layer_surface)
++    {
++        zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
++        initial_configure = surface->current.serial == 0;
++        surface->current.serial = serial;
++    }
++    wayland_win_data_release(data);
++
++    if (initial_configure) NtUserExposeWindowSurface(hwnd, 0, NULL);
++}
++
++static void layer_surface_handle_closed(void *private, struct zwlr_layer_surface_v1 *layer_surface)
++{
++    popup_dismissed(private);
++}
++
++static const struct zwlr_layer_surface_v1_listener layer_surface_listener =
++{
++    layer_surface_handle_configure,
++    layer_surface_handle_closed
++};
++
+ void wp_fractional_scale_handle_scale(void* user_data,
+                                       struct wp_fractional_scale_v1 *fractional_scale_v1,
+                                       uint32_t scale_fixed)
+@@ -486,6 +555,32 @@ err:
+     ERR("Failed to assign toplevel role to wayland surface\n");
+ }
+ 
++static void wayland_surface_destroy_popup(struct wayland_surface *surface)
++{
++    if (surface->zwlr_layer_surface_v1)
++    {
++        zwlr_layer_surface_v1_destroy(surface->zwlr_layer_surface_v1);
++        surface->zwlr_layer_surface_v1 = NULL;
++    }
++    if (surface->xx_output_popup_v1)
++    {
++        xx_output_popup_v1_destroy(surface->xx_output_popup_v1);
++        surface->xx_output_popup_v1 = NULL;
++    }
++    if (surface->xdg_popup)
++    {
++        xdg_popup_destroy(surface->xdg_popup);
++        surface->xdg_popup = NULL;
++    }
++    if (surface->xdg_surface)
++    {
++        xdg_surface_destroy(surface->xdg_surface);
++        surface->xdg_surface = NULL;
++    }
++    memset(&surface->current, 0, sizeof(surface->current));
++    SetRectEmpty(&surface->popup_rect);
++}
++
+ /**********************************************************************
+  *          wayland_surface_make_subsurface
+  *
+@@ -591,6 +686,10 @@ void wayland_surface_clear_role(struct wayland_surface *surface)
+ 
+         surface->owner_hwnd = NULL;
+         break;
++
++    case WAYLAND_SURFACE_ROLE_POPUP:
++        wayland_surface_destroy_popup(surface);
++        break;
+     }
+ 
+     memset(&surface->pending, 0, sizeof(surface->pending));
+@@ -928,6 +1027,135 @@ static void wayland_surface_reconfigure_subsurface(struct wayland_surface *surfa
+     wayland_win_data_release(owner_data);
+ }
+ 
++/**********************************************************************
++ *          wayland_hwnd_wants_popup
++ *
++ * Whether a window is a menu or tooltip that should be shown as a popup
++ * placed by the compositor, and the compositor can place one.
++ */
++BOOL wayland_hwnd_wants_popup(HWND hwnd)
++{
++    UINT style = NtUserGetWindowLongW(hwnd, GWL_STYLE);
++    UINT ex_style = NtUserGetWindowLongW(hwnd, GWL_EXSTYLE);
++
++    if (!process_wayland.xx_output_popup_manager_v1 && !process_wayland.zwlr_layer_shell_v1) return FALSE;
++    return (style & WS_POPUP) && (style & WS_CAPTION) != WS_CAPTION && (ex_style & WS_EX_TOOLWINDOW);
++}
++
++/**********************************************************************
++ *          wayland_surface_make_popup
++ *
++ * Gives the popup role to a plain wayland surface. The popup itself is
++ * created when its position is known.
++ */
++void wayland_surface_make_popup(struct wayland_surface *surface)
++{
++    assert(!surface->role || surface->role == WAYLAND_SURFACE_ROLE_POPUP);
++    if (surface->role == WAYLAND_SURFACE_ROLE_POPUP) return;
++
++    wayland_surface_clear_role(surface);
++    surface->role = WAYLAND_SURFACE_ROLE_POPUP;
++}
++
++static void wayland_surface_realize_popup(struct wayland_surface *surface, RECT rect)
++{
++    int width = rect.right - rect.left, height = rect.bottom - rect.top;
++    struct wayland_output *output, *found = NULL;
++    int x, y;
++
++    if (width <= 0 || height <= 0) return;
++
++    pthread_mutex_lock(&process_wayland.output_mutex);
++    wl_list_for_each(output, &process_wayland.output_list, link)
++    {
++        const struct wayland_output_state *state = &output->current;
++
++        if (!state->logical_w || !state->logical_h) continue;
++        if (!found) found = output;
++        if (rect.left >= state->logical_x && rect.left < state->logical_x + state->logical_w &&
++            rect.top >= state->logical_y && rect.top < state->logical_y + state->logical_h)
++        {
++            found = output;
++            break;
++        }
++    }
++    if (!found)
++    {
++        pthread_mutex_unlock(&process_wayland.output_mutex);
++        return;
++    }
++    x = rect.left - found->current.logical_x;
++    y = rect.top - found->current.logical_y;
++
++    TRACE("hwnd=%p popup at %d,%d %dx%d\n", surface->hwnd, x, y, width, height);
++
++    if (process_wayland.xx_output_popup_manager_v1)
++    {
++        struct xdg_positioner *positioner;
++
++        if (!(surface->xdg_surface = xdg_wm_base_get_xdg_surface(process_wayland.xdg_wm_base,
++                                                                 surface->wl_surface))) goto err;
++        xdg_surface_add_listener(surface->xdg_surface, &xdg_surface_listener, surface->hwnd);
++
++        positioner = xdg_wm_base_create_positioner(process_wayland.xdg_wm_base);
++        xdg_positioner_set_size(positioner, width, height);
++        xdg_positioner_set_anchor_rect(positioner, x, y, 1, 1);
++        xdg_positioner_set_anchor(positioner, XDG_POSITIONER_ANCHOR_TOP_LEFT);
++        xdg_positioner_set_gravity(positioner, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
++        xdg_positioner_set_constraint_adjustment(positioner,
++                                                 XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_X |
++                                                 XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_SLIDE_Y |
++                                                 XDG_POSITIONER_CONSTRAINT_ADJUSTMENT_FLIP_Y);
++        surface->xdg_popup = xdg_surface_get_popup(surface->xdg_surface, NULL, positioner);
++        xdg_positioner_destroy(positioner);
++        if (!surface->xdg_popup) goto err;
++        xdg_popup_add_listener(surface->xdg_popup, &xdg_popup_listener, surface->hwnd);
++
++        surface->xx_output_popup_v1 =
++            xx_output_popup_manager_v1_get_output_parent(process_wayland.xx_output_popup_manager_v1,
++                                                         surface->xdg_popup, found->wl_output, NULL);
++        if (!surface->xx_output_popup_v1) goto err;
++    }
++    else
++    {
++        struct zwlr_layer_surface_v1 *layer;
++
++        layer = zwlr_layer_shell_v1_get_layer_surface(process_wayland.zwlr_layer_shell_v1,
++                                                      surface->wl_surface, found->wl_output,
++                                                      ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY, "wine");
++        if (!(surface->zwlr_layer_surface_v1 = layer)) goto err;
++        zwlr_layer_surface_v1_add_listener(layer, &layer_surface_listener, surface->hwnd);
++        zwlr_layer_surface_v1_set_size(layer, width, height);
++        zwlr_layer_surface_v1_set_anchor(layer, ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP |
++                                                ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
++        zwlr_layer_surface_v1_set_margin(layer, y, 0, 0, x);
++        zwlr_layer_surface_v1_set_exclusive_zone(layer, -1);
++    }
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++
++    if (!surface->wp_fractional_scale_v1) wayland_surface_init_fractional_scale(surface, surface->window.scale);
++    surface->popup_rect = rect;
++
++    wl_surface_commit(surface->wl_surface);
++    wl_display_flush(process_wayland.wl_display);
++    return;
++
++err:
++    pthread_mutex_unlock(&process_wayland.output_mutex);
++    wayland_surface_destroy_popup(surface);
++    ERR("Failed to create the popup for wayland surface\n");
++}
++
++static BOOL wayland_surface_reconfigure_popup(struct wayland_surface *surface, RECT rect)
++{
++    if ((surface->xdg_surface || surface->zwlr_layer_surface_v1) && !EqualRect(&rect, &surface->popup_rect))
++        wayland_surface_destroy_popup(surface);
++    if (!surface->xdg_surface && !surface->zwlr_layer_surface_v1)
++        wayland_surface_realize_popup(surface, rect);
++
++    return surface->current.serial != 0;
++}
++
+ /**********************************************************************
+  *          wayland_surface_reconfigure
+  *
+@@ -956,6 +1184,9 @@ BOOL wayland_surface_reconfigure(struct wayland_surface *surface)
+         if (!surface->wl_subsurface) break; /* surface role has been cleared */
+         wayland_surface_reconfigure_subsurface(surface);
+         break;
++    case WAYLAND_SURFACE_ROLE_POPUP:
++        if (!wayland_surface_reconfigure_popup(surface, rect)) return FALSE;
++        break;
+     }
+ 
+     wayland_surface_reconfigure_size(surface, rect.right - rect.left, rect.bottom - rect.top);
+diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
+index f55d70d5b6c..5ae80156813 100644
+--- a/dlls/winewayland.drv/waylanddrv.h
++++ b/dlls/winewayland.drv/waylanddrv.h
+@@ -42,6 +42,8 @@
+ #include "pointer-warp-v1-client-protocol.h"
+ #include "alpha-modifier-v1-client-protocol.h"
+ #include "fractional-scale-v1-client-protocol.h"
++#include "wlr-layer-shell-unstable-v1-client-protocol.h"
++#include "xx-output-popup-v1-client-protocol.h"
+ #include "color-management-v1-client-protocol.h"
+ 
+ #include "windef.h"
+@@ -88,6 +90,7 @@ enum wayland_surface_role
+     WAYLAND_SURFACE_ROLE_NONE,
+     WAYLAND_SURFACE_ROLE_TOPLEVEL,
+     WAYLAND_SURFACE_ROLE_SUBSURFACE,
++    WAYLAND_SURFACE_ROLE_POPUP,
+ };
+ 
+ struct wayland_keyboard
+@@ -185,6 +188,8 @@ struct wayland
+     struct zwlr_data_control_manager_v1 *zwlr_data_control_manager_v1;
+     struct wl_data_device_manager *wl_data_device_manager;
+     struct xdg_toplevel_icon_manager_v1 *xdg_toplevel_icon_manager_v1;
++    struct xx_output_popup_manager_v1 *xx_output_popup_manager_v1;
++    struct zwlr_layer_shell_v1 *zwlr_layer_shell_v1;
+     struct zxdg_decoration_manager_v1 *zxdg_decoration_manager_v1;
+     struct wp_cursor_shape_manager_v1 *wp_cursor_shape_manager_v1;
+     struct wp_pointer_warp_v1 *wp_pointer_warp_v1;
+@@ -298,6 +303,10 @@ struct wayland_surface
+             struct xdg_toplevel *xdg_toplevel;
+             struct xdg_toplevel_icon_v1 *xdg_toplevel_icon;
+             struct zxdg_toplevel_decoration_v1 *xdg_decoration;
++            struct xdg_popup *xdg_popup;
++            struct xx_output_popup_v1 *xx_output_popup_v1;
++            struct zwlr_layer_surface_v1 *zwlr_layer_surface_v1;
++            RECT popup_rect;
+         };
+         struct
+         {
+@@ -340,6 +349,8 @@ void color_management_init(void);
+ struct wayland_surface *wayland_surface_create(HWND hwnd);
+ void wayland_surface_destroy(struct wayland_surface *surface);
+ void wayland_surface_make_toplevel(struct wayland_surface *surface);
++BOOL wayland_hwnd_wants_popup(HWND hwnd);
++void wayland_surface_make_popup(struct wayland_surface *surface);
+ void wayland_surface_make_subsurface(struct wayland_surface *surface,
+                                      struct wayland_surface *parent);
+ void wayland_surface_clear_role(struct wayland_surface *surface);
+diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
+index c86e2fa8c57..63733c67c55 100644
+--- a/dlls/winewayland.drv/window.c
++++ b/dlls/winewayland.drv/window.c
+@@ -196,6 +196,7 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+ 
+     if (!visible) role = WAYLAND_SURFACE_ROLE_NONE;
+     else if (owner_surface) role = WAYLAND_SURFACE_ROLE_SUBSURFACE;
++    else if (wayland_hwnd_wants_popup(data->hwnd)) role = WAYLAND_SURFACE_ROLE_POPUP;
+     else role = WAYLAND_SURFACE_ROLE_TOPLEVEL;
+ 
+     /* we can temporarily clear the role of a surface but cannot assign a different one after it's set */
+@@ -233,9 +234,13 @@ static BOOL wayland_win_data_create_wayland_surface(struct wayland_win_data *dat
+     case WAYLAND_SURFACE_ROLE_SUBSURFACE:
+         wayland_surface_make_subsurface(surface, owner_surface);
+         break;
++    case WAYLAND_SURFACE_ROLE_POPUP:
++        wayland_surface_make_popup(surface);
++        break;
+     }
+ 
+     wayland_win_data_get_config(data, &surface->window);
++    if (role == WAYLAND_SURFACE_ROLE_POPUP) wayland_surface_reconfigure(surface);
+ 
+     /* Size/position changes affect the effective pointer constraint, so update
+      * it as needed. */
+@@ -320,6 +325,8 @@ static void wayland_win_data_update_wayland_state(struct wayland_win_data *data)
+         surface->processing.serial = 1;
+         surface->processing.processed = TRUE;
+         break;
++    case WAYLAND_SURFACE_ROLE_POPUP:
++        break;
+     }
+ 
+     wl_display_flush(process_wayland.wl_display);
+diff --git a/dlls/winewayland.drv/wlr-layer-shell-unstable-v1.xml b/dlls/winewayland.drv/wlr-layer-shell-unstable-v1.xml
+new file mode 100644
+index 00000000000..2d464090e3c
+--- /dev/null
++++ b/dlls/winewayland.drv/wlr-layer-shell-unstable-v1.xml
+@@ -0,0 +1,342 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="wlr_layer_shell_unstable_v1">
++  <copyright>
++    Copyright © 2017 Drew DeVault
++
++    Permission to use, copy, modify, distribute, and sell this
++    software and its documentation for any purpose is hereby granted
++    without fee, provided that the above copyright notice appear in
++    all copies and that both that copyright notice and this permission
++    notice appear in supporting documentation, and that the name of
++    the copyright holders not be used in advertising or publicity
++    pertaining to distribution of the software without specific,
++    written prior permission.  The copyright holders make no
++    representations about the suitability of this software for any
++    purpose.  It is provided "as is" without express or implied
++    warranty.
++
++    THE COPYRIGHT HOLDERS DISCLAIM ALL WARRANTIES WITH REGARD TO THIS
++    SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
++    FITNESS, IN NO EVENT SHALL THE COPYRIGHT HOLDERS BE LIABLE FOR ANY
++    SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
++    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
++    AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION,
++    ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
++    THIS SOFTWARE.
++  </copyright>
++
++  <interface name="zwlr_layer_shell_v1" version="5">
++    <description summary="create surfaces that are layers of the desktop">
++      Clients can use this interface to assign the surface_layer role to
++      wl_surfaces. Such surfaces are assigned to a "layer" of the output and
++      rendered with a defined z-depth respective to each other. They may also be
++      anchored to the edges and corners of a screen and specify input handling
++      semantics. This interface should be suitable for the implementation of
++      many desktop shell components, and a broad number of other applications
++      that interact with the desktop.
++    </description>
++
++    <request name="get_layer_surface">
++      <description summary="create a layer_surface from a surface">
++        Create a layer surface for an existing surface. This assigns the role of
++        layer_surface, or raises a protocol error if another role is already
++        assigned.
++
++        Creating a layer surface from a wl_surface which has a buffer attached
++        or committed is a client error, and any attempts by a client to attach
++        or manipulate a buffer prior to the first layer_surface.configure call
++        must also be treated as errors.
++
++        After creating a layer_surface object and setting it up, the client
++        must perform an initial commit without any buffer attached.
++        The compositor will reply with a layer_surface.configure event.
++        The client must acknowledge it and is then allowed to attach a buffer
++        to map the surface.
++
++        You may pass NULL for output to allow the compositor to decide which
++        output to use. Generally this will be the one that the user most
++        recently interacted with.
++
++        Clients can specify a namespace that defines the purpose of the layer
++        surface.
++      </description>
++      <arg name="id" type="new_id" interface="zwlr_layer_surface_v1"/>
++      <arg name="surface" type="object" interface="wl_surface"/>
++      <arg name="output" type="object" interface="wl_output" allow-null="true"/>
++      <arg name="layer" type="uint" enum="layer" summary="layer to add this surface to"/>
++      <arg name="scope" type="string" summary="namespace for the layer surface"/>
++    </request>
++
++    <enum name="error">
++      <entry name="role" value="0" summary="wl_surface has another role"/>
++      <entry name="invalid_layer" value="1" summary="layer value is invalid"/>
++      <entry name="already_constructed" value="2" summary="wl_surface has a buffer attached or committed"/>
++    </enum>
++
++    <enum name="layer">
++      <description summary="available layers for surfaces">
++        These values indicate which layers a surface can be rendered in. They
++        are ordered by z depth, bottom-most first. Traditional shell surfaces
++        will typically be rendered between the bottom and top layers.
++        Fullscreen shell surfaces are typically rendered at the top layer.
++        Multiple surfaces can share a single layer, and ordering within a
++        single layer is undefined.
++      </description>
++
++      <entry name="background" value="0"/>
++      <entry name="bottom" value="1"/>
++      <entry name="top" value="2"/>
++      <entry name="overlay" value="3"/>
++    </enum>
++
++    <!-- Version 3 additions -->
++
++    <request name="destroy" type="destructor" since="3">
++      <description summary="destroy the layer_shell object">
++        This request indicates that the client will not use the layer_shell
++        object any more. Objects that have been created through this instance
++        are not affected.
++      </description>
++    </request>
++  </interface>
++
++  <interface name="zwlr_layer_surface_v1" version="5">
++    <description summary="layer metadata interface">
++      An interface that may be implemented by a wl_surface, for surfaces that
++      are designed to be rendered as a layer of a stacked desktop-like
++      environment.
++
++      Layer surface state (layer, size, anchor, exclusive zone,
++      margin, interactivity) is double-buffered, and will be applied at the
++      time wl_surface.commit of the corresponding wl_surface is called.
++
++      Attaching a null buffer to a layer surface unmaps it.
++
++      Unmapping a layer_surface means that the surface cannot be shown by the
++      compositor until it is explicitly mapped again. The layer_surface
++      returns to the state it had right after layer_shell.get_layer_surface.
++      The client can re-map the surface by performing a commit without any
++      buffer attached, waiting for a configure event and handling it as usual.
++    </description>
++
++    <request name="set_size">
++      <description summary="sets the size of the surface">
++        Sets the size of the surface in surface-local coordinates. The
++        compositor will display the surface centered with respect to its
++        anchors.
++
++        If you pass 0 for either value, the compositor will assign it and
++        inform you of the assignment in the configure event. You must set your
++        anchor to opposite edges in the dimensions you omit; not doing so is a
++        protocol error. Both values are 0 by default.
++
++        Size is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="width" type="uint"/>
++      <arg name="height" type="uint"/>
++    </request>
++
++    <request name="set_anchor">
++      <description summary="configures the anchor point of the surface">
++        Requests that the compositor anchor the surface to the specified edges
++        and corners. If two orthogonal edges are specified (e.g. 'top' and
++        'left'), then the anchor point will be the intersection of the edges
++        (e.g. the top left corner of the output); otherwise the anchor point
++        will be centered on that edge, or in the center if none is specified.
++
++        Anchor is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="anchor" type="uint" enum="anchor"/>
++    </request>
++
++    <request name="set_exclusive_zone">
++      <description summary="configures the exclusive geometry of this surface">
++        Requests that the compositor avoids occluding an area with other
++        surfaces. The compositor's use of this information is
++        implementation-dependent - do not assume that this region will not
++        actually be occluded.
++
++        A positive value is only meaningful if the surface is anchored to one
++        edge or an edge and both perpendicular edges. If the surface is not
++        anchored, anchored to only two perpendicular edges (a corner), anchored
++        to only two parallel edges or anchored to all edges, a positive value
++        will be treated the same as zero.
++
++        A positive zone is the distance from the edge in surface-local
++        coordinates to consider exclusive.
++
++        Surfaces that do not wish to have an exclusive zone may instead specify
++        how they should interact with surfaces that do. If set to zero, the
++        surface indicates that it would like to be moved to avoid occluding
++        surfaces with a positive exclusive zone. If set to -1, the surface
++        indicates that it would not like to be moved to accommodate for other
++        surfaces, and the compositor should extend it all the way to the edges
++        it is anchored to.
++
++        For example, a panel might set its exclusive zone to 10, so that
++        maximized shell surfaces are not shown on top of it. A notification
++        might set its exclusive zone to 0, so that it is moved to avoid
++        occluding the panel, but shell surfaces are shown underneath it. A
++        wallpaper or lock screen might set their exclusive zone to -1, so that
++        they stretch below or over the panel.
++
++        The default value is 0.
++
++        Exclusive zone is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="zone" type="int"/>
++    </request>
++
++    <request name="set_margin">
++      <description summary="sets a margin from the anchor point">
++        Requests that the surface be placed some distance away from the anchor
++        point on the output, in surface-local coordinates. Setting this value
++        for edges you are not anchored to has no effect.
++
++        The exclusive zone includes the margin.
++
++        Margin is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="top" type="int"/>
++      <arg name="right" type="int"/>
++      <arg name="bottom" type="int"/>
++      <arg name="left" type="int"/>
++    </request>
++
++    <request name="set_keyboard_interactivity">
++      <description summary="requests keyboard events">
++        Set to 1 to request that the seat send keyboard events to this layer
++        surface. For layers below the shell surface layer, the seat will use
++        normal focus semantics. For layers above the shell surface layers, the
++        seat will always give exclusive keyboard focus to the top-most layer
++        which has keyboard interactivity set to true.
++
++        Layer surfaces receive pointer, touch, and tablet events normally. If
++        you do not want to receive them, set the input region on your surface
++        to an empty region.
++
++        Events is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="keyboard_interactivity" type="uint"/>
++    </request>
++
++    <request name="get_popup">
++      <description summary="assign this layer_surface as an xdg_popup parent">
++        This assigns an xdg_popup's parent to this layer_surface.  This popup
++        should have been created via xdg_surface::get_popup with the parent set
++        to NULL, and this request must be invoked before committing the popup's
++        initial state.
++
++        See the documentation of xdg_popup for more details about what an
++        xdg_popup is and how it is used.
++      </description>
++      <arg name="popup" type="object" interface="xdg_popup"/>
++    </request>
++
++    <request name="ack_configure">
++      <description summary="ack a configure event">
++        When a configure event is received, if a client commits the
++        surface in response to the configure event, then the client
++        must make an ack_configure request sometime before the commit
++        request, passing along the serial of the configure event.
++
++        If the client receives multiple configure events before it
++        can respond to one, it only has to ack the last configure event.
++
++        A client is not required to commit immediately after sending
++        an ack_configure request - it may even ack_configure several times
++        before its next surface commit.
++
++        A client may send multiple ack_configure requests before committing, but
++        only the last request sent before a commit indicates which configure
++        event the client really is responding to.
++      </description>
++      <arg name="serial" type="uint" summary="the serial from the configure event"/>
++    </request>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the layer_surface">
++        This request destroys the layer surface.
++      </description>
++    </request>
++
++    <event name="configure">
++      <description summary="suggest a surface change">
++        The configure event asks the client to resize its surface.
++
++        Clients should arrange their surface for the new states, and then send
++        an ack_configure request with the serial sent in this configure event at
++        some point before committing the new surface.
++
++        The client is free to dismiss all but the last configure event it
++        received.
++
++        The width and height arguments specify the size of the window in
++        surface-local coordinates.
++
++        The size is a hint, in the sense that the client is free to ignore it if
++        it doesn't resize, pick a smaller size (to satisfy aspect ratio or
++        resize in steps of NxM pixels). If the client picks a smaller size and
++        is anchored to two opposite anchors (e.g. 'top' and 'bottom'), the
++        surface will be centered on this axis.
++
++        If the width or height arguments are zero, it means the client should
++        decide its own window dimension.
++      </description>
++      <arg name="serial" type="uint"/>
++      <arg name="width" type="uint"/>
++      <arg name="height" type="uint"/>
++    </event>
++
++    <event name="closed">
++      <description summary="surface should be closed">
++        The closed event is sent by the compositor when the surface will no
++        longer be shown. The output may have been destroyed or the user may
++        have asked for it to be removed. Further changes to the surface will be
++        ignored. The client should destroy the resource after receiving this
++        event, and create a new surface if they so choose.
++      </description>
++    </event>
++
++    <enum name="error">
++      <entry name="invalid_surface_state" value="0" summary="provided surface state is invalid"/>
++      <entry name="invalid_size" value="1" summary="size is invalid"/>
++      <entry name="invalid_anchor" value="2" summary="anchor bitfield is invalid"/>
++      <entry name="invalid_exclusive_edge" value="4" summary="exclusive edge is invalid given the surface anchors"/>
++    </enum>
++
++    <enum name="anchor" bitfield="true">
++      <entry name="top" value="1" summary="the top edge of the anchor rectangle"/>
++      <entry name="bottom" value="2" summary="the bottom edge of the anchor rectangle"/>
++      <entry name="left" value="4" summary="the left edge of the anchor rectangle"/>
++      <entry name="right" value="8" summary="the right edge of the anchor rectangle"/>
++    </enum>
++
++    <!-- Version 2 additions -->
++
++    <request name="set_layer" since="2">
++      <description summary="change the layer of the surface">
++        Change the layer that the surface is rendered on.
++
++        Layer is double-buffered, see wl_surface.commit.
++      </description>
++      <arg name="layer" type="uint" enum="zwlr_layer_shell_v1.layer" summary="layer to move this surface to"/>
++    </request>
++
++    <!-- Version 5 additions -->
++
++    <request name="set_exclusive_edge" since="5">
++      <description summary="set the edge the exclusive zone will be applied to">
++        Requests an edge for the exclusive zone to apply. The exclusive
++        edge will be automatically deduced from anchor points when possible,
++        but when the surface is anchored to a corner, it will be necessary
++        to set it explicitly to disambiguate, as it is not possible to deduce
++        which one of the two corner edges should be used.
++
++        The edge must be one the surface is anchored to, otherwise the
++        invalid_exclusive_edge protocol error will be raised.
++      </description>
++      <arg name="edge" type="uint"/>
++    </request>
++  </interface>
++</protocol>
+diff --git a/dlls/winewayland.drv/xx-output-popup-v1.xml b/dlls/winewayland.drv/xx-output-popup-v1.xml
+new file mode 100644
+index 00000000000..bc40d355a00
+--- /dev/null
++++ b/dlls/winewayland.drv/xx-output-popup-v1.xml
+@@ -0,0 +1,110 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<protocol name="xx_output_popup_v1">
++  <copyright>
++    Copyright © 2026 Mike Lothian
++
++    Permission is hereby granted, free of charge, to any person obtaining a
++    copy of this software and associated documentation files (the "Software"),
++    to deal in the Software without restriction, including without limitation
++    the rights to use, copy, modify, merge, publish, distribute, sublicense,
++    and/or sell copies of the Software, and to permit persons to whom the
++    Software is furnished to do so, subject to the following conditions:
++
++    The above copyright notice and this permission notice (including the next
++    paragraph) shall be included in all copies or substantial portions of the
++    Software.
++
++    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
++    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
++    DEALINGS IN THE SOFTWARE.
++  </copyright>
++
++  <interface name="xx_output_popup_manager_v1" version="1">
++    <description summary="popups anchored to an output">
++      A client that is asked to show a menu for something it has no window
++      for, such as an icon in a system tray, cannot use xdg_popup: the
++      popup needs a parent surface and the client has none. This protocol
++      lets such a client use an output as the parent of an xdg_popup.
++
++      The xdg_surface.get_popup request already allows a null parent when
++      the parent is set by another protocol before the initial commit. This
++      is that protocol. It changes nothing for popups that have a parent.
++
++      Warning! The protocol described in this file is currently in the
++      testing phase. Backward compatible changes may be added together with
++      the corresponding interface version bump. Backward incompatible
++      changes can only be done by creating a new major version of the
++      extension.
++    </description>
++
++    <enum name="error">
++      <entry name="invalid_popup" value="0"
++             summary="the xdg_popup already has a parent or was committed"/>
++      <entry name="already_constructed" value="1"
++             summary="the xdg_popup already has an output parent object"/>
++    </enum>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the manager">
++        Destroy the manager. Parent objects created through it are not
++        affected.
++      </description>
++    </request>
++
++    <request name="get_output_parent">
++      <description summary="create a parent object for an xdg_popup">
++        Make an output the parent of an xdg_popup that was created with a
++        null parent. This must happen before the first commit of the
++        xdg_surface.
++
++        The anchor rectangle of the xdg_positioner used for the popup is
++        in the logical coordinate space of the output, relative to its
++        top left corner, instead of the window geometry of a parent.
++        Constraint adjustments apply to the usable area of the output, the
++        part that panels and docks do not cover.
++
++        The activation token proves that the popup follows an interaction
++        of the user, such as the activation of an item in a system tray. It
++        was obtained through xdg_activation_v1 or the protocol of the item.
++        A compositor may refuse a popup without a valid token by sending
++        xdg_popup.popup_done before it is mapped.
++
++        The client has no input serial for that interaction, so it cannot
++        use xdg_popup.grab. A compositor that accepts the token should
++        dismiss the popup on a click outside it and on the keyboard, as it
++        does for a popup with a grab.
++      </description>
++      <arg name="id" type="new_id" interface="xx_output_popup_v1"/>
++      <arg name="popup" type="object" interface="xdg_popup"/>
++      <arg name="output" type="object" interface="wl_output"/>
++      <arg name="token" type="string" allow-null="true"
++           summary="xdg_activation_v1 token"/>
++    </request>
++  </interface>
++
++  <interface name="xx_output_popup_v1" version="1">
++    <description summary="output parent of an xdg_popup">
++      The association between an xdg_popup and the output it is anchored to.
++      It ends with the xdg_popup or when destroyed, and the xdg_popup is
++      then dismissed.
++    </description>
++
++    <request name="destroy" type="destructor">
++      <description summary="destroy the object">
++        The xdg_popup is dismissed if it is still mapped.
++      </description>
++    </request>
++
++    <request name="set_output">
++      <description summary="move the popup to another output">
++        Anchor the popup to another output. It takes effect on the next
++        commit of the xdg_surface, as the anchor rectangle does.
++      </description>
++      <arg name="output" type="object" interface="wl_output"/>
++    </request>
++  </interface>
++</protocol>
+-- 
+2.56.0
+

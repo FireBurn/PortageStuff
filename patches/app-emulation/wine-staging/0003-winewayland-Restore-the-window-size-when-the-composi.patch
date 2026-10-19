@@ -1,8 +1,8 @@
-From 97bb01806fbe98d8f7a31d037875cbecdf7cf640 Mon Sep 17 00:00:00 2001
+From 461957f578132e1017d6d606810bc13d788bcbd4 Mon Sep 17 00:00:00 2001
 From: Mike Lothian <mike@fireburn.co.uk>
 Date: Sun, 18 Oct 2026 16:24:45 +0100
-Subject: [PATCH 03/11] winewayland: Restore the window size when the
- compositor unmaximizes it.
+Subject: [PATCH] winewayland: Restore the window size when the compositor
+ unmaximizes it.
 
 The maximized style was cleared, but the window kept the maximized size
 because the size hints are not used when the state is empty. Send
@@ -14,7 +14,7 @@ was maximized.
  2 files changed, 20 insertions(+)
 
 diff --git a/dlls/winewayland.drv/waylanddrv.h b/dlls/winewayland.drv/waylanddrv.h
-index 1cb525b..dae9059 100644
+index 1cb525b213e..dae9059d4ce 100644
 --- a/dlls/winewayland.drv/waylanddrv.h
 +++ b/dlls/winewayland.drv/waylanddrv.h
 @@ -304,6 +304,8 @@ struct wayland_surface
@@ -27,7 +27,7 @@ index 1cb525b..dae9059 100644
      struct wayland_window_config window;
      int content_width, content_height;
 diff --git a/dlls/winewayland.drv/window.c b/dlls/winewayland.drv/window.c
-index 270fdfb..76d50d6 100644
+index 270fdfb40e6..76d50d6edf1 100644
 --- a/dlls/winewayland.drv/window.c
 +++ b/dlls/winewayland.drv/window.c
 @@ -482,6 +482,7 @@ static void wayland_configure_window(HWND hwnd)
