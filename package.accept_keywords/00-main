@@ -4,8 +4,6 @@ app-emulation/dxvk			**
 app-emulation/vkd3d-proton		**
 #<www-client/chromium-9999		**
 #app-emulation/wine-proton		**
-#=cross-i686-w64-mingw32/binutils-9999 **
-#=cross-x86_64-w64-mingw32/binutils-9999 **
 media-libs/libsdl2			**
 media-libs/zxing-cpp			**
 =dev-debug/rr-9999			**

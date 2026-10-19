@@ -10,10 +10,6 @@ app-emulation/wine-staging		clango3lto.conf wine-llvm-mingw.conf
 app-emulation/wine-vanilla		clango3lto.conf wine-llvm-mingw.conf
 app-office/libreoffice			clango3lto.conf
 app-text/doxygen			clango3lto.conf
-cross-i686-w64-mingw32/*		o2.conf
-cross-i686-w64-mingw32/gcc		enable-posix.conf
-cross-x86_64-w64-mingw32/*		o2.conf
-cross-x86_64-w64-mingw32/gcc		enable-posix.conf
 dev-cpp/abseil-cpp			o3.conf
 dev-debug/valgrind			o3.conf
 dev-java/openjdk			clango3lto.conf

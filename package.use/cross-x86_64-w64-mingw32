@@ -1,3 +1,0 @@
-cross-x86_64-w64-mingw32/binutils -default-gold
-cross-x86_64-w64-mingw32/gcc libssp zstd -fortran -hardened -pie -sanitize -vtv -d -objc -objc++ -objc-gc -multilib
-cross-x86_64-w64-mingw32/mingw64-runtime libraries tools
