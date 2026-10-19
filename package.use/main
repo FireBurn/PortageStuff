@@ -86,7 +86,7 @@ x11-libs/wxGTK				-gstreamer
 x11-misc/sddm				-X
 kde-plasma/plasma-meta			-X
 kde-plasma/plasma-login-sessions	-X
-sci-misc/llama-cpp 			curl -openmp vulkan hip
+sci-misc/llama-cpp 			curl -openmp vulkan hip -opencl
 sci-libs/hipBLASLt			amdgpu_targets_gfx90a
 dev-util/electron			-X
 gui-wm/gamescope			-gui
@@ -140,3 +140,4 @@ gui-apps/sddm-gentoo-config kwin -weston -custom-compositor
 # required by @selected
 # required by @world (argument)
 >=dev-qt/qttools-6.12.0 qdoc
+sci-misc/stable-diffusion-cpp -opencl
