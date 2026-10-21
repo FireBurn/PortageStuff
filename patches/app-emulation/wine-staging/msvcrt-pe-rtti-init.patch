@@ -1,0 +1,271 @@
+From 37f119c9b365b43b791a05ccca5c5d88f915a6e8 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Wed, 21 Oct 2026 12:17:59 +0100
+Subject: [PATCH] msvcrt: Initialise the RTTI data at run time in PE builds.
+
+The PE build macros emit the RTTI and exception type tables from asm
+inside a function body. With LTO the compiler never sees those labels as
+definitions, so the link fails with undefined symbols such as
+bad_alloc_rtti.
+
+The run time initialisation that the 64-bit builtin build already uses
+works for PE as well, so drop the PE special case from the msvcrt,
+msvcp90 and vccorlib140 headers.
+---
+ dlls/msvcp90/cxx.h     | 57 -----------------------------
+ dlls/msvcrt/cxx.h      | 57 -----------------------------
+ dlls/vccorlib140/cxx.h | 81 ------------------------------------------
+ 3 files changed, 195 deletions(-)
+
+diff --git a/dlls/msvcp90/cxx.h b/dlls/msvcp90/cxx.h
+index 8887217c830..104abd15ac4 100644
+--- a/dlls/msvcp90/cxx.h
++++ b/dlls/msvcp90/cxx.h
+@@ -85,35 +85,6 @@ const rtti_object_locator name ## _rtti = \
+ 
+ #define INIT_RTTI(name,base) /* nothing to do */
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_RTTI_DATA2(name, off, mangled_name, ...) \
+-extern const rtti_object_locator name##_rtti; \
+-type_info name ## _type_info = { &type_info_vtable, NULL, mangled_name }; \
+-extern const rtti_base_descriptor name ## _rtti_base_descriptor[1]; \
+-void __asm_dummy_ ## name ## _rtti(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#name "_rtti_base_descriptor") "\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".long %c0-1, 0, -1, 0, 64\n" \
+-         #name "_rtti_base_array:\n\t" \
+-         ".rva " #__VA_ARGS__ "\n" \
+-         #name "_rtti_hierarchy:\n\t" \
+-         ".long 0, 0, %c0\n\t" \
+-         ".rva " #name "_rtti_base_array\n\t" \
+-         __ASM_GLOBL(#name "_rtti") "\n\t" \
+-         ".long 1, %c1, 0\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".rva " #name "_rtti_hierarchy\n\t" \
+-         ".rva " #name "_rtti\n\t" \
+-         :: "i"(ARRAY_SIZE(((const void *[]){ __VA_ARGS__ }))), "i"(off) ); \
+-}
+-#define DEFINE_RTTI_DATA(name, off, mangled_name, ...) \
+-    DEFINE_RTTI_DATA2(name, off, mangled_name, name ## _rtti_base_descriptor, ##__VA_ARGS__)
+-
+-#define INIT_RTTI(name,base) /* nothing to do */
+-
+ #else  /* RTTI_USE_RVA */
+ 
+ #define DEFINE_RTTI_DATA(name, off, mangled_name, ...) \
+@@ -160,34 +131,6 @@ static const cxx_exception_type type ## _exception_type = \
+ 
+ #define INIT_CXX_TYPE(name,base) (void)name ## _exception_type
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_CXX_TYPE2(type, dtor, ...) \
+-extern const cxx_type_info type ## _cxx_type_info[1]; \
+-extern const cxx_exception_type type ## _exception_type; \
+-void __asm_dummy_ ## type ## _exception_type(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#type "_cxx_type_info") "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #type "_type_info\n\t" \
+-         ".long 0, -1, 0, %c0\n\t" \
+-         ".rva " #type "_copy_ctor\n" \
+-         #type "_type_table:\n\t" \
+-         ".long %c1\n\t" \
+-         ".rva " #__VA_ARGS__ "\n\t" \
+-         __ASM_GLOBL(#type "_exception_type") "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #dtor "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #type "_type_table\n\t" \
+-         :: "i"(sizeof(type)), "i"(ARRAY_SIZE(((const void *[]){ &__VA_ARGS__ }))) ); \
+-}
+-#define DEFINE_CXX_TYPE(type, dtor, ...) \
+-    DEFINE_CXX_TYPE2(type, dtor, type ## _cxx_type_info, ##__VA_ARGS__)
+-
+-#define INIT_CXX_TYPE(name,base) /* nothing to do */
+-
+ #else  /* CXX_USE_RVA */
+ 
+ #define DEFINE_CXX_TYPE(type, dtor, ...)  \
+diff --git a/dlls/msvcrt/cxx.h b/dlls/msvcrt/cxx.h
+index 8887217c830..104abd15ac4 100644
+--- a/dlls/msvcrt/cxx.h
++++ b/dlls/msvcrt/cxx.h
+@@ -85,35 +85,6 @@ const rtti_object_locator name ## _rtti = \
+ 
+ #define INIT_RTTI(name,base) /* nothing to do */
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_RTTI_DATA2(name, off, mangled_name, ...) \
+-extern const rtti_object_locator name##_rtti; \
+-type_info name ## _type_info = { &type_info_vtable, NULL, mangled_name }; \
+-extern const rtti_base_descriptor name ## _rtti_base_descriptor[1]; \
+-void __asm_dummy_ ## name ## _rtti(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#name "_rtti_base_descriptor") "\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".long %c0-1, 0, -1, 0, 64\n" \
+-         #name "_rtti_base_array:\n\t" \
+-         ".rva " #__VA_ARGS__ "\n" \
+-         #name "_rtti_hierarchy:\n\t" \
+-         ".long 0, 0, %c0\n\t" \
+-         ".rva " #name "_rtti_base_array\n\t" \
+-         __ASM_GLOBL(#name "_rtti") "\n\t" \
+-         ".long 1, %c1, 0\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".rva " #name "_rtti_hierarchy\n\t" \
+-         ".rva " #name "_rtti\n\t" \
+-         :: "i"(ARRAY_SIZE(((const void *[]){ __VA_ARGS__ }))), "i"(off) ); \
+-}
+-#define DEFINE_RTTI_DATA(name, off, mangled_name, ...) \
+-    DEFINE_RTTI_DATA2(name, off, mangled_name, name ## _rtti_base_descriptor, ##__VA_ARGS__)
+-
+-#define INIT_RTTI(name,base) /* nothing to do */
+-
+ #else  /* RTTI_USE_RVA */
+ 
+ #define DEFINE_RTTI_DATA(name, off, mangled_name, ...) \
+@@ -160,34 +131,6 @@ static const cxx_exception_type type ## _exception_type = \
+ 
+ #define INIT_CXX_TYPE(name,base) (void)name ## _exception_type
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_CXX_TYPE2(type, dtor, ...) \
+-extern const cxx_type_info type ## _cxx_type_info[1]; \
+-extern const cxx_exception_type type ## _exception_type; \
+-void __asm_dummy_ ## type ## _exception_type(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#type "_cxx_type_info") "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #type "_type_info\n\t" \
+-         ".long 0, -1, 0, %c0\n\t" \
+-         ".rva " #type "_copy_ctor\n" \
+-         #type "_type_table:\n\t" \
+-         ".long %c1\n\t" \
+-         ".rva " #__VA_ARGS__ "\n\t" \
+-         __ASM_GLOBL(#type "_exception_type") "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #dtor "\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #type "_type_table\n\t" \
+-         :: "i"(sizeof(type)), "i"(ARRAY_SIZE(((const void *[]){ &__VA_ARGS__ }))) ); \
+-}
+-#define DEFINE_CXX_TYPE(type, dtor, ...) \
+-    DEFINE_CXX_TYPE2(type, dtor, type ## _cxx_type_info, ##__VA_ARGS__)
+-
+-#define INIT_CXX_TYPE(name,base) /* nothing to do */
+-
+ #else  /* CXX_USE_RVA */
+ 
+ #define DEFINE_CXX_TYPE(type, dtor, ...)  \
+diff --git a/dlls/vccorlib140/cxx.h b/dlls/vccorlib140/cxx.h
+index 1834f77f03e..230a7479203 100644
+--- a/dlls/vccorlib140/cxx.h
++++ b/dlls/vccorlib140/cxx.h
+@@ -89,44 +89,6 @@ const rtti_object_locator name ## _rtti = \
+ #define INIT_RTTI_BASE(name,base) /* nothing to do */
+ #define INIT_RTTI(name,base) /* nothing to do */
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_RTTI_BASE(name, this_off, base_classes, mangled_name) \
+-type_info name ## _type_info = { &type_info_vtable, NULL, mangled_name }; \
+-extern const rtti_base_descriptor name ## _rtti_base_descriptor[1]; \
+-void __asm_dummy_ ## name ## _rtti_base(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#name "_rtti_base_descriptor") "\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".long %c0, %c1, -1, 0, 64\n" \
+-         :: "i"(base_classes), "i"(this_off) ); \
+-}
+-
+-#define DEFINE_RTTI_DATA2(name, off, mangled_name, ...) \
+-extern const rtti_object_locator name##_rtti; \
+-DEFINE_RTTI_BASE(name, 0, ARRAY_SIZE(((const void *[]){ __VA_ARGS__ }))-1, mangled_name) \
+-void __asm_dummy_ ## name ## _rtti(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         #name "_rtti_base_array:\n\t" \
+-         ".rva " #__VA_ARGS__ "\n" \
+-         #name "_rtti_hierarchy:\n\t" \
+-         ".long 0, 0, %c0\n\t" \
+-         ".rva " #name "_rtti_base_array\n\t" \
+-         __ASM_GLOBL(#name "_rtti") "\n\t" \
+-         ".long 1, %c1, 0\n\t" \
+-         ".rva " #name "_type_info\n\t" \
+-         ".rva " #name "_rtti_hierarchy\n\t" \
+-         ".rva " #name "_rtti\n\t" \
+-         :: "i"(ARRAY_SIZE(((const void *[]){ __VA_ARGS__ }))), "i"(off) ); \
+-}
+-#define DEFINE_RTTI_DATA(name, off, mangled_name, ...) \
+-    DEFINE_RTTI_DATA2(name, off, mangled_name, name ## _rtti_base_descriptor, ##__VA_ARGS__)
+-
+-#define INIT_RTTI_BASE(name,base) /* nothing to do */
+-#define INIT_RTTI(name,base) /* nothing to do */
+-
+ #else  /* RTTI_USE_RVA */
+ 
+ #define DEFINE_RTTI_BASE(name, this_off, base_classes, mangled_name) \
+@@ -188,49 +150,6 @@ static const cxx_type_info type ## _cxx_type_info[1] = \
+ #define INIT_CXX_TYPE(name,base) /* nothing to do */
+ #define INIT_CXX_BASE(name,base) /* nothing to do */
+ 
+-#elif defined __WINE_PE_BUILD
+-
+-#define DEFINE_CXX_TYPE2(type, ...) \
+-extern const cxx_type_info type ## _cxx_type_info[1]; \
+-extern const cxx_exception_type type ## _exception_type; \
+-void __asm_dummy_ ## type ## _exception_type(void) \
+-{ \
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#type "_cxx_type_info") "\n\t" \
+-         ".long 9\n\t" \
+-         ".rva " #type "_type_info\n\t" \
+-         ".long 0, -1, 0, %c0\n\t" \
+-         ".long 0\n\t" \
+-         #type "_type_table:\n\t" \
+-         ".long %c1\n\t" \
+-         ".rva " #__VA_ARGS__ "\n\t" \
+-         __ASM_GLOBL(#type "_exception_type") "\n\t" \
+-         ".long 16\n\t" \
+-         ".long 0\n\t" \
+-         ".long 0\n\t" \
+-         ".rva " #type "_type_table\n\t" \
+-         :: "i"(sizeof(type)), "i"(ARRAY_SIZE(((const void *[]){ &__VA_ARGS__ }))) ); \
+-}
+-#define DEFINE_CXX_TYPE(type, ...) \
+-    DEFINE_CXX_TYPE2(type, type ## _cxx_type_info, ##__VA_ARGS__)
+-
+-#define DEFINE_CXX_BASE(type, flags, off, mangled_name) \
+-type_info type ## _type_info = { &type_info_vtable, NULL, mangled_name }; \
+-extern const cxx_type_info type ## _cxx_type_info[1]; \
+-void __asm_dummy_ ## type ## _exception_type(void) \
+-{\
+-    asm( ".balign 4\n\t" \
+-         __ASM_GLOBL(#type "_cxx_type_info") "\n\t" \
+-         ".long %c0\n\t" \
+-         ".rva " #type "_type_info\n\t" \
+-         ".long %c1, -1, 0, %c2\n\t" \
+-         ".long 0\n\t" \
+-         :: "i"(flags), "i"(off), "i"(sizeof(void *)) ); \
+-}
+-
+-#define INIT_CXX_TYPE(name,base) /* nothing to do */
+-#define INIT_CXX_BASE(name,base) /* nothing to do */
+-
+ #else  /* CXX_USE_RVA */
+ 
+ #define DEFINE_CXX_TYPE(type, ...)  \
+-- 
+2.56.0
+
