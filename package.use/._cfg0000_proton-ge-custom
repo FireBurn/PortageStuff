@@ -1,6 +1,0 @@
-app-emulation/proton-ge-custom crossdev-mingw sdl
-# required by dev-libs/rocm-opencl-runtime-10.1.0-r1::gentoo
-# required by dev-util/rocm-meta-10.1.0::FireBurn
-# required by @selected
-# required by @world (argument)
->=media-libs/mesa-9999 -opencl

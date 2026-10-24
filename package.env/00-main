@@ -78,5 +78,6 @@ sys-libs/libfaketime			o3.conf
 www-client/chromium			clango3lto.conf
 www-client/firefox			clango3lto.conf
 x11-apps/mesa-progs			clango3lto.conf
-x11-misc/sddm				clango3lto.conf
+# move x11-misc/sddm gui-apps/sddm
+gui-apps/sddm				clango3lto.conf
 app-emulation/proton-ge-custom		clango3lto.conf wine-llvm-mingw.conf
