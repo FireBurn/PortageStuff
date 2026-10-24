@@ -63,7 +63,7 @@ net-proxy/haproxy			lua -slz
 net-wireless/wpa_supplicant tkip wep
 sys-apps/fwupd flashrom gnutls nvme synaptics tpm uefi
 sys-apps/pciutils			-zlib
-sys-apps/systemd			elfutils sysv-utils -gcrypt
+sys-apps/systemd			acl elfutils sysv-utils -gcrypt
 sys-boot/gnu-efi			-custom-cflags
 sys-devel/gcc				zstd
 llvm-core/llvm				-ncurses

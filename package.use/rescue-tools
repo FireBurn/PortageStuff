@@ -19,7 +19,7 @@ sys-apps/dbus systemd
 # pulls sysvinit back in to supply them. The rest is kept close to what the
 # hand built configuration had, so this is the same systemd under new
 # management rather than a larger one.
-sys-apps/systemd sysv-utils kmod -acl -dns-over-tls -gcrypt -kernel-install
+sys-apps/systemd sysv-utils kmod acl -dns-over-tls -gcrypt -kernel-install
 # pam is already how the rest of the image authenticates: util-linux was
 # built with it and pambase is installed, so systemd uses it too rather
 # than being the one thing that does not.

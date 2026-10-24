@@ -1,0 +1,1130 @@
+From f0c649073a8e975615e684e448ce1b77c4ca2b9a Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 15 Oct 2026 01:49:05 +0100
+Subject: [PATCH 3/5] SessionManager: add Running Terminals dock for tmux and
+ screen sessions
+
+Lists the sessions of the local machine and of ssh hosts. A session opens in a
+new tab, can be created, renamed, ended or moved from another viewer. Only the
+tools found installed on a host are offered.
+---
+ src/plugins/SessionManager/CMakeLists.txt     |  19 +
+ .../konsole_sessionmanager.in.json            |   7 +
+ src/plugins/SessionManager/muxmodel.cpp       | 257 ++++++++++++
+ src/plugins/SessionManager/muxmodel.h         |  74 ++++
+ src/plugins/SessionManager/muxprobe.h         |   1 +
+ src/plugins/SessionManager/muxwidget.cpp      | 384 ++++++++++++++++++
+ src/plugins/SessionManager/muxwidget.h        |  59 +++
+ .../SessionManager/sessionmanagerplugin.cpp   | 191 +++++++++
+ .../SessionManager/sessionmanagerplugin.h     |  50 +++
+ 9 files changed, 1042 insertions(+)
+ create mode 100644 src/plugins/SessionManager/konsole_sessionmanager.in.json
+ create mode 100644 src/plugins/SessionManager/muxmodel.cpp
+ create mode 100644 src/plugins/SessionManager/muxmodel.h
+ create mode 100644 src/plugins/SessionManager/muxwidget.cpp
+ create mode 100644 src/plugins/SessionManager/muxwidget.h
+ create mode 100644 src/plugins/SessionManager/sessionmanagerplugin.cpp
+ create mode 100644 src/plugins/SessionManager/sessionmanagerplugin.h
+
+diff --git a/src/plugins/SessionManager/CMakeLists.txt b/src/plugins/SessionManager/CMakeLists.txt
+index 934e9562a..e7e067257 100644
+--- a/src/plugins/SessionManager/CMakeLists.txt
++++ b/src/plugins/SessionManager/CMakeLists.txt
+@@ -9,3 +9,22 @@ target_link_libraries(konsole_multiplexer PUBLIC Qt::Core KF6::ConfigCore KF6::I
+ if(BUILD_TESTING)
+     add_subdirectory(autotests)
+ endif()
++
++kcoreaddons_add_plugin(konsole_sessionmanagerplugin
++SOURCES
++    sessionmanagerplugin.cpp
++    muxmodel.cpp
++    muxwidget.cpp
++INSTALL_NAMESPACE
++    "konsoleplugins"
++)
++
++configure_file(konsole_sessionmanager.in.json konsole_sessionmanager.json)
++target_link_libraries(konsole_sessionmanagerplugin
++    konsole_multiplexer
++    konsoleprivate
++    konsoleapp
++    KF6::CoreAddons
++    KF6::Crash
++    KF6::I18n
++)
+diff --git a/src/plugins/SessionManager/konsole_sessionmanager.in.json b/src/plugins/SessionManager/konsole_sessionmanager.in.json
+new file mode 100644
+index 000000000..e9b168cc7
+--- /dev/null
++++ b/src/plugins/SessionManager/konsole_sessionmanager.in.json
+@@ -0,0 +1,7 @@
++{
++    "KPlugin": {
++        "Name": "Running Terminals",
++        "Description": "List, open and manage tmux and screen sessions on this computer and over ssh",
++        "Version": "@RELEASE_SERVICE_VERSION@"
++    }
++}
+diff --git a/src/plugins/SessionManager/muxmodel.cpp b/src/plugins/SessionManager/muxmodel.cpp
+new file mode 100644
+index 000000000..603682fdb
+--- /dev/null
++++ b/src/plugins/SessionManager/muxmodel.cpp
+@@ -0,0 +1,257 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxmodel.h"
++
++#include <KConfigGroup>
++#include <KLocalizedString>
++#include <KSharedConfig>
++
++using namespace Multiplexer;
++
++static const ProbeResult emptyResult;
++
++MuxModel::MuxModel(QObject *parent)
++    : QStandardItemModel(parent)
++{
++    connect(&m_probe, &MuxProbe::probed, this, &MuxModel::onProbed);
++    reloadHosts();
++}
++
++MuxProbe *MuxModel::probe()
++{
++    return &m_probe;
++}
++
++const QList<MuxHost> &MuxModel::hosts() const
++{
++    return m_hosts;
++}
++
++MuxHost MuxModel::host(const QString &hostId) const
++{
++    for (const MuxHost &h : m_hosts) {
++        if (h.id == hostId) {
++            return h;
++        }
++    }
++    return {};
++}
++
++const ProbeResult &MuxModel::result(const QString &hostId) const
++{
++    const auto it = m_results.constFind(hostId);
++    return it == m_results.constEnd() ? emptyResult : *it;
++}
++
++QString MuxModel::sessionKey(const QString &hostId, const Session &session)
++{
++    return hostId + QLatin1Char('\n') + toolName(session.tool) + QLatin1Char('\n') + session.name;
++}
++
++QStringList MuxModel::manualDestinations() const
++{
++    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).readEntry("ManualHosts", QStringList());
++}
++
++QStringList MuxModel::hiddenHosts() const
++{
++    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).readEntry("HiddenHosts", QStringList());
++}
++
++void MuxModel::reloadHosts()
++{
++    m_hosts = {MuxHosts::local()};
++    MuxHosts::merge(m_hosts, MuxHosts::fromSshManager());
++    MuxHosts::merge(m_hosts, MuxHosts::fromSshConfig());
++    QList<MuxHost> manual;
++    for (const QString &destination : manualDestinations()) {
++        manual.append(MuxHosts::fromDestination(destination, MuxHost::Source::Manual));
++    }
++    MuxHosts::merge(m_hosts, manual);
++    MuxHosts::merge(m_hosts, m_openTabHosts);
++    const QStringList hidden = hiddenHosts();
++    m_hosts.removeIf([&hidden](const MuxHost &h) {
++        return !h.isLocal() && hidden.contains(h.id);
++    });
++    rebuild();
++}
++
++void MuxModel::addManualHost(const QString &destination)
++{
++    QStringList list = manualDestinations();
++    const QString trimmed = destination.trimmed();
++    if (trimmed.isEmpty()) {
++        return;
++    }
++    const QString hostId = MuxHosts::fromDestination(trimmed, MuxHost::Source::Manual).id;
++    KConfigGroup group = KSharedConfig::openConfig()->group(QStringLiteral("SessionManager"));
++    if (!list.contains(trimmed)) {
++        list.append(trimmed);
++        group.writeEntry("ManualHosts", list);
++    }
++    QStringList hidden = hiddenHosts();
++    if (hidden.removeAll(hostId) > 0) {
++        group.writeEntry("HiddenHosts", hidden);
++    }
++    group.sync();
++    reloadHosts();
++    refresh(hostId);
++}
++
++void MuxModel::hideHost(const QString &hostId)
++{
++    if (hostId == MuxHosts::local().id) {
++        return;
++    }
++    KConfigGroup group = KSharedConfig::openConfig()->group(QStringLiteral("SessionManager"));
++    QStringList manual = manualDestinations();
++    manual.removeIf([&hostId](const QString &destination) {
++        return MuxHosts::fromDestination(destination, MuxHost::Source::Manual).id == hostId;
++    });
++    group.writeEntry("ManualHosts", manual);
++    QStringList hidden = hiddenHosts();
++    if (!hidden.contains(hostId)) {
++        hidden.append(hostId);
++    }
++    group.writeEntry("HiddenHosts", hidden);
++    group.sync();
++    reloadHosts();
++}
++
++void MuxModel::addOpenTabHosts(const QList<MuxHost> &hosts)
++{
++    if (hosts == m_openTabHosts) {
++        return;
++    }
++    m_openTabHosts = hosts;
++    reloadHosts();
++}
++
++void MuxModel::rebuild()
++{
++    clear();
++    for (const MuxHost &h : std::as_const(m_hosts)) {
++        auto *item = new QStandardItem(h.label);
++        item->setData(HostKind, KindRole);
++        item->setData(h.id, HostIdRole);
++        item->setEditable(false);
++        appendRow(item);
++        updateHost(h.id);
++    }
++}
++
++QStandardItem *MuxModel::hostItem(const QString &hostId) const
++{
++    for (int row = 0; row < rowCount(); ++row) {
++        if (item(row)->data(HostIdRole).toString() == hostId) {
++            return item(row);
++        }
++    }
++    return nullptr;
++}
++
++void MuxModel::refreshAll()
++{
++    for (const MuxHost &h : std::as_const(m_hosts)) {
++        refresh(h.id);
++    }
++}
++
++void MuxModel::refresh(const QString &hostId)
++{
++    const MuxHost h = host(hostId);
++    if (h.id.isEmpty() || m_probe.isProbing(h)) {
++        return;
++    }
++    if (!m_status.contains(hostId)) {
++        if (QStandardItem *item = hostItem(hostId)) {
++            item->setData(i18nc("@info:status", "Checking…"), SummaryRole);
++        }
++    }
++    m_probe.probe(h);
++}
++
++void MuxModel::onProbed(const QString &hostId, MuxProbe::Status status, const ProbeResult &probeResult)
++{
++    m_status.insert(hostId, status);
++    if (status == MuxProbe::Status::Ok) {
++        m_results.insert(hostId, probeResult);
++    }
++    updateHost(hostId);
++}
++
++void MuxModel::setOpenKeys(const QSet<QString> &keys)
++{
++    if (keys == m_openKeys) {
++        return;
++    }
++    m_openKeys = keys;
++    for (int row = 0; row < rowCount(); ++row) {
++        applyOpenState(item(row));
++    }
++}
++
++void MuxModel::applyOpenState(QStandardItem *parent)
++{
++    const QString hostId = parent->data(HostIdRole).toString();
++    for (int row = 0; row < parent->rowCount(); ++row) {
++        QStandardItem *child = parent->child(row);
++        const auto session = child->data(SessionRole).value<Session>();
++        child->setData(m_openKeys.contains(sessionKey(hostId, session)), OpenRole);
++    }
++}
++
++void MuxModel::updateHost(const QString &hostId)
++{
++    QStandardItem *parent = hostItem(hostId);
++    if (!parent) {
++        return;
++    }
++    parent->removeRows(0, parent->rowCount());
++
++    const auto statusIt = m_status.constFind(hostId);
++    if (statusIt == m_status.constEnd()) {
++        parent->setData(i18nc("@info:status", "Checking…"), SummaryRole);
++        return;
++    }
++    parent->setData(QVariant::fromValue(*statusIt), StatusRole);
++
++    const ProbeResult &r = result(hostId);
++    switch (*statusIt) {
++    case MuxProbe::Status::NeedsLogin:
++        parent->setData(i18nc("@info:status", "Needs a login. Connect once in a tab to allow it."), SummaryRole);
++        if (!m_results.contains(hostId)) {
++            return;
++        }
++        break;
++    case MuxProbe::Status::Unreachable:
++        parent->setData(i18nc("@info:status", "Not reachable"), SummaryRole);
++        if (!m_results.contains(hostId)) {
++            return;
++        }
++        break;
++    case MuxProbe::Status::Ok:
++        if (!r.tmuxAvailable && !r.screenAvailable) {
++            parent->setData(i18nc("@info:status", "tmux and screen are not installed"), SummaryRole);
++            return;
++        }
++        parent->setData(i18ncp("@info:status", "%1 running terminal", "%1 running terminals", r.sessions.size()), SummaryRole);
++        break;
++    }
++
++    for (const Session &session : r.sessions) {
++        auto *child = new QStandardItem(session.name);
++        child->setEditable(false);
++        child->setData(SessionKind, KindRole);
++        child->setData(hostId, HostIdRole);
++        child->setData(QVariant::fromValue(session), SessionRole);
++        parent->appendRow(child);
++    }
++    applyOpenState(parent);
++}
++
++#include "moc_muxmodel.cpp"
+diff --git a/src/plugins/SessionManager/muxmodel.h b/src/plugins/SessionManager/muxmodel.h
+new file mode 100644
+index 000000000..6580a9a6b
+--- /dev/null
++++ b/src/plugins/SessionManager/muxmodel.h
+@@ -0,0 +1,74 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXMODEL_H
++#define MUXMODEL_H
++
++#include <QHash>
++#include <QSet>
++#include <QStandardItemModel>
++
++#include "multiplexer.h"
++#include "muxhost.h"
++#include "muxprobe.h"
++
++/** Hosts at the top level, the sessions found on each below them. */
++class MuxModel : public QStandardItemModel
++{
++    Q_OBJECT
++public:
++    enum Roles {
++        KindRole = Qt::UserRole + 1,
++        HostIdRole,
++        SessionRole,
++        OpenRole, // session is shown in a tab of this Konsole
++        StatusRole,
++        SummaryRole,
++    };
++    enum Kind {
++        HostKind,
++        SessionKind,
++    };
++
++    explicit MuxModel(QObject *parent = nullptr);
++
++    void reloadHosts();
++    void addManualHost(const QString &destination);
++    /** Stops listing a host. Hosts typed in by hand are forgotten, others are only hidden. */
++    void hideHost(const QString &hostId);
++    void addOpenTabHosts(const QList<MuxHost> &hosts);
++
++    void refreshAll();
++    void refresh(const QString &hostId);
++
++    /** Keys from sessionKey() of every session currently shown in a tab. */
++    void setOpenKeys(const QSet<QString> &keys);
++
++    const QList<MuxHost> &hosts() const;
++    MuxHost host(const QString &hostId) const;
++    const Multiplexer::ProbeResult &result(const QString &hostId) const;
++    MuxProbe *probe();
++
++    static QString sessionKey(const QString &hostId, const Multiplexer::Session &session);
++
++private:
++    void rebuild();
++    void updateHost(const QString &hostId);
++    QStandardItem *hostItem(const QString &hostId) const;
++    void applyOpenState(QStandardItem *hostItem);
++    void onProbed(const QString &hostId, MuxProbe::Status status, const Multiplexer::ProbeResult &result);
++    QStringList manualDestinations() const;
++    QStringList hiddenHosts() const;
++
++    MuxProbe m_probe;
++    QList<MuxHost> m_hosts;
++    QList<MuxHost> m_openTabHosts;
++    QHash<QString, Multiplexer::ProbeResult> m_results;
++    QHash<QString, MuxProbe::Status> m_status;
++    QSet<QString> m_openKeys;
++};
++
++#endif
+diff --git a/src/plugins/SessionManager/muxprobe.h b/src/plugins/SessionManager/muxprobe.h
+index e5e9faf49..0498a1a67 100644
+--- a/src/plugins/SessionManager/muxprobe.h
++++ b/src/plugins/SessionManager/muxprobe.h
+@@ -47,5 +47,6 @@ private:
+ 
+ Q_DECLARE_METATYPE(MuxProbe::Status)
+ Q_DECLARE_METATYPE(Multiplexer::ProbeResult)
++Q_DECLARE_METATYPE(Multiplexer::Session)
+ 
+ #endif
+diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
+new file mode 100644
+index 000000000..a74b6a5f6
+--- /dev/null
++++ b/src/plugins/SessionManager/muxwidget.cpp
+@@ -0,0 +1,384 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxwidget.h"
++
++#include "muxmodel.h"
++
++#include <KLocalizedString>
++#include <KMessageBox>
++
++#include <QApplication>
++#include <QHBoxLayout>
++#include <QInputDialog>
++#include <QLabel>
++#include <QMenu>
++#include <QPainter>
++#include <QPushButton>
++#include <QStyledItemDelegate>
++#include <QToolButton>
++#include <QTreeView>
++#include <QVBoxLayout>
++
++using namespace Multiplexer;
++
++namespace
++{
++QString sessionSubtitle(const Session &session, bool open)
++{
++    QStringList parts;
++    parts << toolName(session.tool);
++    if (!session.command.isEmpty()) {
++        parts << i18nc("@info the program a terminal is running", "running %1", session.command);
++    }
++    if (session.windows > 1) {
++        parts << i18ncp("@info", "%1 window", "%1 windows", session.windows);
++    }
++    if (open) {
++        parts << i18nc("@info a terminal that is shown in a tab right now", "open in a tab");
++    } else if (session.attached()) {
++        parts << i18nc("@info a terminal that something else is connected to", "in use");
++    } else {
++        parts << i18nc("@info a terminal nothing is connected to", "waiting");
++    }
++    return parts.join(QStringLiteral(" · "));
++}
++
++class MuxDelegate : public QStyledItemDelegate
++{
++public:
++    using QStyledItemDelegate::QStyledItemDelegate;
++
++    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
++    {
++        Q_UNUSED(index)
++        return QSize(option.rect.width(), option.fontMetrics.height() * 2 + 14);
++    }
++
++    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
++    {
++        QStyleOptionViewItem opt = option;
++        initStyleOption(&opt, index);
++        const QString title = opt.text;
++        opt.text.clear();
++        opt.icon = QIcon();
++        QStyle *style = opt.widget ? opt.widget->style() : QApplication::style();
++        style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, opt.widget);
++
++        const bool isHost = index.data(MuxModel::KindRole).toInt() == MuxModel::HostKind;
++        const auto selected = opt.state & QStyle::State_Selected;
++        const QPalette::ColorRole fg = selected ? QPalette::HighlightedText : QPalette::Text;
++        const QColor dim = opt.palette.color(selected ? QPalette::HighlightedText : QPalette::PlaceholderText);
++
++        QString subtitle;
++        QIcon icon;
++        if (isHost) {
++            subtitle = index.data(MuxModel::SummaryRole).toString();
++            icon = QIcon::fromTheme(QStringLiteral("computer"));
++        } else {
++            const auto session = index.data(MuxModel::SessionRole).value<Session>();
++            subtitle = sessionSubtitle(session, index.data(MuxModel::OpenRole).toBool());
++            icon = QIcon::fromTheme(QStringLiteral("utilities-terminal"));
++        }
++
++        const QRect r = opt.rect.adjusted(8, 4, -8, -4);
++        const int iconSize = isHost ? 28 : 22;
++        const QRect iconRect(r.left(), r.top() + (r.height() - iconSize) / 2, iconSize, iconSize);
++        icon.paint(painter, iconRect, Qt::AlignCenter, selected ? QIcon::Selected : QIcon::Normal);
++
++        const QRect textRect = r.adjusted(iconSize + 10, 0, 0, 0);
++        QFont titleFont = opt.font;
++        titleFont.setBold(isHost || index.data(MuxModel::OpenRole).toBool());
++        painter->save();
++        painter->setFont(titleFont);
++        const bool idle = isHost && index.model()->rowCount(index) == 0;
++        painter->setPen(idle && !selected ? dim : opt.palette.color(fg));
++        const QFontMetrics tfm(titleFont);
++        painter->drawText(textRect.adjusted(0, 0, 0, -r.height() / 2),
++                          Qt::AlignLeft | Qt::AlignVCenter,
++                          tfm.elidedText(title, Qt::ElideRight, textRect.width()));
++        painter->setFont(opt.font);
++        painter->setPen(dim);
++        painter->drawText(textRect.adjusted(0, r.height() / 2, 0, 0),
++                          Qt::AlignLeft | Qt::AlignVCenter,
++                          opt.fontMetrics.elidedText(subtitle, Qt::ElideRight, textRect.width()));
++        painter->restore();
++    }
++};
++}
++
++MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
++    : QWidget(parent)
++    , m_model(model)
++    , m_view(new QTreeView(this))
++    , m_empty(new QLabel(this))
++    , m_openButton(new QPushButton(QIcon::fromTheme(QStringLiteral("media-playback-start")), i18nc("@action:button", "Open"), this))
++    , m_openAllButton(new QPushButton(QIcon::fromTheme(QStringLiteral("view-restore")), i18nc("@action:button", "Open All"), this))
++    , m_newButton(new QToolButton(this))
++{
++    qRegisterMetaType<Multiplexer::Session>();
++
++    m_view->setModel(model);
++    m_view->setHeaderHidden(true);
++    m_view->setItemDelegate(new MuxDelegate(m_view));
++    m_view->setEditTriggers(QAbstractItemView::NoEditTriggers);
++    m_view->setContextMenuPolicy(Qt::CustomContextMenu);
++    m_view->setIndentation(14);
++    m_view->setFrameShape(QFrame::NoFrame);
++    m_view->setUniformRowHeights(true);
++    m_view->setExpandsOnDoubleClick(false);
++    m_view->setSelectionMode(QAbstractItemView::SingleSelection);
++
++    m_empty->setWordWrap(true);
++    m_empty->setAlignment(Qt::AlignCenter);
++    m_empty->setText(i18n("No running terminals found.\nUse New to start one that keeps running when Konsole is closed."));
++    m_empty->hide();
++
++    m_newButton->setText(i18nc("@action:button", "New"));
++    m_newButton->setIcon(QIcon::fromTheme(QStringLiteral("list-add")));
++    m_newButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
++    m_newButton->setPopupMode(QToolButton::InstantPopup);
++    m_newButton->setMenu(new QMenu(m_newButton));
++
++    auto *refresh = new QToolButton(this);
++    refresh->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
++    refresh->setToolTip(i18nc("@info:tooltip", "Look for running terminals again"));
++    auto *addHostButton = new QToolButton(this);
++    addHostButton->setIcon(QIcon::fromTheme(QStringLiteral("network-server")));
++    addHostButton->setToolTip(i18nc("@info:tooltip", "Add another computer"));
++
++    auto *top = new QHBoxLayout;
++    auto *title = new QLabel(i18n("Running terminals"), this);
++    QFont titleFont = title->font();
++    titleFont.setBold(true);
++    title->setFont(titleFont);
++    top->addWidget(title, 1);
++    top->addWidget(addHostButton);
++    top->addWidget(refresh);
++
++    auto *bottom = new QHBoxLayout;
++    bottom->addWidget(m_openButton);
++    bottom->addWidget(m_openAllButton);
++    bottom->addWidget(m_newButton);
++
++    auto *layout = new QVBoxLayout(this);
++    layout->setContentsMargins(6, 6, 6, 6);
++    layout->addLayout(top);
++    layout->addWidget(m_view, 1);
++    layout->addWidget(m_empty);
++    layout->addLayout(bottom);
++
++    connect(refresh, &QToolButton::clicked, m_model, &MuxModel::refreshAll);
++    connect(addHostButton, &QToolButton::clicked, this, &MuxWidget::addHost);
++    connect(m_view, &QTreeView::customContextMenuRequested, this, &MuxWidget::showContextMenu);
++    connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this, &MuxWidget::updateButtons);
++    connect(m_view, &QTreeView::doubleClicked, this, [this](const QModelIndex &index) {
++        const Selection s = selection(index);
++        if (s.isSession) {
++            Q_EMIT openRequested(s.hostId, s.session, false);
++        } else {
++            m_view->setExpanded(index, !m_view->isExpanded(index));
++        }
++    });
++    connect(m_openButton, &QPushButton::clicked, this, [this] {
++        const Selection s = selection(m_view->currentIndex());
++        if (s.isSession) {
++            Q_EMIT openRequested(s.hostId, s.session, false);
++        }
++    });
++    connect(m_openAllButton, &QPushButton::clicked, this, [this] {
++        const Selection s = selection(m_view->currentIndex());
++        if (!s.hostId.isEmpty()) {
++            Q_EMIT openAllRequested(s.hostId);
++        }
++    });
++    connect(m_model, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex &parent) {
++        if (!parent.isValid()) {
++            m_view->expandAll();
++        }
++        updateEmptyState();
++    });
++    connect(m_model, &QAbstractItemModel::modelReset, this, &MuxWidget::updateEmptyState);
++    connect(m_model, &QAbstractItemModel::rowsRemoved, this, &MuxWidget::updateEmptyState);
++    connect(m_model, &QAbstractItemModel::dataChanged, this, &MuxWidget::updateButtons);
++
++    m_view->expandAll();
++    updateButtons();
++}
++
++void MuxWidget::showEvent(QShowEvent *event)
++{
++    QWidget::showEvent(event);
++    m_model->refreshAll();
++}
++
++MuxWidget::Selection MuxWidget::selection(const QModelIndex &index) const
++{
++    Selection s;
++    if (!index.isValid()) {
++        return s;
++    }
++    s.hostId = index.data(MuxModel::HostIdRole).toString();
++    s.isSession = index.data(MuxModel::KindRole).toInt() == MuxModel::SessionKind;
++    if (s.isSession) {
++        s.session = index.data(MuxModel::SessionRole).value<Session>();
++    }
++    return s;
++}
++
++void MuxWidget::updateEmptyState()
++{
++    // Only the local machine and no sessions: say how to start.
++    bool any = false;
++    for (int row = 0; row < m_model->rowCount(); ++row) {
++        any = any || m_model->item(row)->rowCount() > 0;
++    }
++    m_empty->setVisible(!any);
++}
++
++void MuxWidget::updateButtons()
++{
++    const Selection s = selection(m_view->currentIndex());
++    m_openButton->setEnabled(s.isSession);
++    const MuxModel *model = m_model;
++    const bool hostHasSessions = !s.hostId.isEmpty() && !model->result(s.hostId).sessions.isEmpty();
++    m_openAllButton->setEnabled(hostHasSessions);
++    m_newButton->menu()->clear();
++    fillNewMenu(m_newButton->menu(), s.hostId);
++    m_newButton->setEnabled(!s.hostId.isEmpty() && !m_newButton->menu()->isEmpty());
++}
++
++void MuxWidget::fillNewMenu(QMenu *menu, const QString &hostId)
++{
++    if (hostId.isEmpty()) {
++        return;
++    }
++    // Only offer tools that exist on that machine.
++    const ProbeResult &r = m_model->result(hostId);
++    const auto add = [&](Tool tool, const QString &text) {
++        QAction *action = menu->addAction(QIcon::fromTheme(QStringLiteral("list-add")), text);
++        connect(action, &QAction::triggered, this, [this, hostId, tool] {
++            bool ok = false;
++            const QString name = QInputDialog::getText(this, i18n("New Running Terminal"), i18n("Name (optional):"), QLineEdit::Normal, QString(), &ok);
++            if (ok) {
++                Q_EMIT newRequested(hostId, tool, name.trimmed());
++            }
++        });
++    };
++    if (r.tmuxAvailable && r.screenAvailable) {
++        add(Tool::Tmux, i18nc("@action", "New (tmux)"));
++        add(Tool::Screen, i18nc("@action", "New (screen)"));
++    } else if (r.tmuxAvailable) {
++        add(Tool::Tmux, i18nc("@action", "New running terminal"));
++    } else if (r.screenAvailable) {
++        add(Tool::Screen, i18nc("@action", "New running terminal"));
++    }
++}
++
++void MuxWidget::showContextMenu(const QPoint &pos)
++{
++    const QModelIndex index = m_view->indexAt(pos);
++    const Selection s = selection(index);
++    if (s.hostId.isEmpty()) {
++        return;
++    }
++    QMenu menu(this);
++    if (s.isSession) {
++        menu.addAction(QIcon::fromTheme(QStringLiteral("media-playback-start")), i18n("Open in New Tab"), this, [this, s] {
++            Q_EMIT openRequested(s.hostId, s.session, false);
++        });
++        if (s.session.attached()) {
++            menu.addAction(QIcon::fromTheme(QStringLiteral("go-jump")), i18n("Move Here (disconnect other viewers)"), this, [this, s] {
++                Q_EMIT openRequested(s.hostId, s.session, true);
++            });
++            menu.addAction(QIcon::fromTheme(QStringLiteral("network-disconnect")), i18n("Disconnect Other Viewers"), this, [this, s] {
++                detachSession(s);
++            });
++        }
++        menu.addSeparator();
++        menu.addAction(QIcon::fromTheme(QStringLiteral("edit-rename")), i18n("Rename…"), this, [this, s] {
++            renameSession(s);
++        });
++        menu.addAction(QIcon::fromTheme(QStringLiteral("edit-delete")), i18n("End…"), this, [this, s] {
++            endSession(s);
++        });
++    } else {
++        QAction *all = menu.addAction(QIcon::fromTheme(QStringLiteral("view-restore")), i18n("Open All in Tabs"), this, [this, s] {
++            Q_EMIT openAllRequested(s.hostId);
++        });
++        all->setEnabled(!m_model->result(s.hostId).sessions.isEmpty());
++        QMenu *newMenu = menu.addMenu(QIcon::fromTheme(QStringLiteral("list-add")), i18n("New"));
++        fillNewMenu(newMenu, s.hostId);
++        newMenu->setEnabled(!newMenu->isEmpty());
++        menu.addAction(QIcon::fromTheme(QStringLiteral("view-refresh")), i18n("Refresh"), this, [this, s] {
++            m_model->refresh(s.hostId);
++        });
++        if (!m_model->host(s.hostId).isLocal()) {
++            menu.addSeparator();
++            menu.addAction(QIcon::fromTheme(QStringLiteral("list-remove")), i18n("Hide This Computer"), this, [this, s] {
++                m_model->hideHost(s.hostId);
++            });
++        }
++    }
++    menu.exec(m_view->viewport()->mapToGlobal(pos));
++}
++
++void MuxWidget::addHost()
++{
++    bool ok = false;
++    const QString destination =
++        QInputDialog::getText(this, i18n("Add Computer"), i18n("Computer to look at (for example name or user@name):"), QLineEdit::Normal, QString(), &ok);
++    if (ok) {
++        m_model->addManualHost(destination);
++    }
++}
++
++void MuxWidget::runOnHost(const Selection &selected, const QString &command)
++{
++    MuxProbe *probe = m_model->probe();
++    const MuxHost host = m_model->host(selected.hostId);
++    auto *connection = new QMetaObject::Connection;
++    *connection = connect(probe,
++                          &MuxProbe::commandFinished,
++                          this,
++                          [this, connection, hostId = selected.hostId](const QString &finishedHost, bool success, const QString &errorText) {
++                              if (finishedHost != hostId) {
++                                  return;
++                              }
++                              disconnect(*connection);
++                              delete connection;
++                              if (!success && !errorText.isEmpty()) {
++                                  KMessageBox::error(this, errorText, i18n("Running Terminals"));
++                              }
++                              m_model->refresh(hostId);
++                          });
++    probe->run(host, command);
++}
++
++void MuxWidget::renameSession(const Selection &selected)
++{
++    bool ok = false;
++    const QString name = QInputDialog::getText(this, i18n("Rename"), i18n("New name:"), QLineEdit::Normal, selected.session.name, &ok).trimmed();
++    if (ok && !name.isEmpty() && name != selected.session.name) {
++        runOnHost(selected, renameCommand(selected.session, name));
++    }
++}
++
++void MuxWidget::endSession(const Selection &selected)
++{
++    const QString text = i18n("End “%1”? Everything running in it will stop.", selected.session.name);
++    if (KMessageBox::warningContinueCancel(this, text, i18n("End Running Terminal"), KGuiItem(i18n("End"), QStringLiteral("edit-delete")))
++        == KMessageBox::Continue) {
++        runOnHost(selected, killCommand(selected.session));
++    }
++}
++
++void MuxWidget::detachSession(const Selection &selected)
++{
++    runOnHost(selected, detachCommand(selected.session));
++}
++
++#include "moc_muxwidget.cpp"
+diff --git a/src/plugins/SessionManager/muxwidget.h b/src/plugins/SessionManager/muxwidget.h
+new file mode 100644
+index 000000000..25258280c
+--- /dev/null
++++ b/src/plugins/SessionManager/muxwidget.h
+@@ -0,0 +1,59 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXWIDGET_H
++#define MUXWIDGET_H
++
++#include <QWidget>
++
++#include "multiplexer.h"
++
++class MuxModel;
++class QLabel;
++class QPushButton;
++class QToolButton;
++class QTreeView;
++
++class MuxWidget : public QWidget
++{
++    Q_OBJECT
++public:
++    explicit MuxWidget(MuxModel *model, QWidget *parent = nullptr);
++
++Q_SIGNALS:
++    void openRequested(const QString &hostId, const Multiplexer::Session &session, bool takeOver);
++    void openAllRequested(const QString &hostId);
++    void newRequested(const QString &hostId, Multiplexer::Tool tool, const QString &name);
++
++protected:
++    void showEvent(QShowEvent *event) override;
++
++private:
++    struct Selection {
++        QString hostId;
++        bool isSession = false;
++        Multiplexer::Session session;
++    };
++    Selection selection(const QModelIndex &index) const;
++    void updateButtons();
++    void showContextMenu(const QPoint &pos);
++    void fillNewMenu(class QMenu *menu, const QString &hostId);
++    void addHost();
++    void renameSession(const Selection &selected);
++    void endSession(const Selection &selected);
++    void detachSession(const Selection &selected);
++    void runOnHost(const Selection &selected, const QString &command);
++    void updateEmptyState();
++
++    MuxModel *m_model;
++    QTreeView *m_view;
++    QLabel *m_empty;
++    QPushButton *m_openButton;
++    QPushButton *m_openAllButton;
++    QToolButton *m_newButton;
++};
++
++#endif
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.cpp b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+new file mode 100644
+index 000000000..ec3a0c8ce
+--- /dev/null
++++ b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+@@ -0,0 +1,191 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "sessionmanagerplugin.h"
++
++#include "muxmodel.h"
++#include "muxwidget.h"
++
++#include "MainWindow.h"
++#include "ProcessInfo.h"
++#include "SSHProcessInfo.h"
++#include "ViewManager.h"
++#include "profile/ProfileManager.h"
++#include "session/Session.h"
++#include "session/SessionManager.h"
++#include "widgets/ViewContainer.h"
++
++#include <KActionCollection>
++#include <KLocalizedString>
++#include <KPluginFactory>
++
++#include <QAction>
++#include <QDockWidget>
++#include <QTimer>
++
++K_PLUGIN_CLASS_WITH_JSON(SessionManagerPlugin, "konsole_sessionmanager.json")
++
++using namespace Multiplexer;
++
++static const char keyProperty[] = "konsoleMuxKey";
++
++SessionManagerPlugin::SessionManagerPlugin(QObject *object, const QVariantList &args)
++    : Konsole::IKonsolePlugin(object, args)
++    , m_model(std::make_unique<MuxModel>())
++    , m_timer(new QTimer(this))
++{
++    setName(QStringLiteral("SessionManager"));
++
++    m_timer->setInterval(10000);
++    connect(m_timer, &QTimer::timeout, this, [this] {
++        updateOpenState();
++        m_model->refreshAll();
++    });
++}
++
++SessionManagerPlugin::~SessionManagerPlugin() = default;
++
++void SessionManagerPlugin::createWidgetsForMainWindow(Konsole::MainWindow *mainWindow)
++{
++    auto *dock = new QDockWidget(mainWindow);
++    auto *widget = new MuxWidget(m_model.get());
++    dock->setWidget(widget);
++    dock->setWindowTitle(i18n("Running Terminals"));
++    dock->setObjectName(QStringLiteral("SessionManagerDock"));
++    dock->setVisible(false);
++    dock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
++    mainWindow->addDockWidget(Qt::RightDockWidgetArea, dock);
++    m_docks[mainWindow] = dock;
++
++    connect(widget, &MuxWidget::openRequested, this, [this, mainWindow](const QString &hostId, const Session &session, bool takeOver) {
++        openSession(mainWindow, hostId, session, takeOver);
++    });
++    connect(widget, &MuxWidget::openAllRequested, this, [this, mainWindow](const QString &hostId) {
++        openAll(mainWindow, hostId);
++    });
++    connect(widget, &MuxWidget::newRequested, this, [this, mainWindow](const QString &hostId, Tool tool, const QString &name) {
++        createSession(mainWindow, hostId, tool, name);
++    });
++
++    // Only poll while a panel is visible.
++    connect(dock, &QDockWidget::visibilityChanged, this, [this] {
++        const bool anyVisible = std::any_of(m_docks.cbegin(), m_docks.cend(), [](QDockWidget *d) {
++            return d->isVisible();
++        });
++        if (anyVisible) {
++            updateOpenState();
++            m_timer->start();
++        } else {
++            m_timer->stop();
++        }
++    });
++    connect(mainWindow, &QObject::destroyed, this, [this, mainWindow] {
++        m_docks.remove(mainWindow);
++    });
++}
++
++QList<QAction *> SessionManagerPlugin::menuBarActions(Konsole::MainWindow *mainWindow) const
++{
++    auto *toggle = new QAction(i18n("Show Running Terminals"), mainWindow);
++    toggle->setCheckable(true);
++    mainWindow->actionCollection()->setDefaultShortcut(toggle, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F3));
++    QDockWidget *dock = m_docks.value(mainWindow);
++    connect(toggle, &QAction::triggered, dock, &QDockWidget::setVisible);
++    connect(dock, &QDockWidget::visibilityChanged, toggle, &QAction::setChecked);
++    return {toggle};
++}
++
++void SessionManagerPlugin::activeViewChanged(Konsole::SessionController *controller, Konsole::MainWindow *mainWindow)
++{
++    Q_UNUSED(controller)
++    Q_UNUSED(mainWindow)
++}
++
++Konsole::Session *
++SessionManagerPlugin::openCommand(Konsole::MainWindow *mainWindow, const QString &hostId, const QString &command, const QString &title, const QString &key)
++{
++    const MuxHost host = m_model->host(hostId);
++    const QString text = host.isLocal() ? command : remoteTerminalCommand(host.sshArgs, command);
++
++    Konsole::Profile::Ptr profile = Konsole::ProfileManager::instance()->defaultProfile();
++    Konsole::Session *session = Konsole::SessionManager::instance()->createSession(profile);
++    const QString tabTitle = host.isLocal() ? title : i18nc("@title:tab session name and computer", "%1 (%2)", title, host.label);
++    session->setTabTitleFormat(Konsole::Session::LocalTabTitle, tabTitle);
++    session->setTabTitleFormat(Konsole::Session::RemoteTabTitle, tabTitle);
++    session->setProperty(keyProperty, key);
++    session->sendTextToTerminal(text, QLatin1Char('\r'));
++
++    // The view must exist before the process starts, see MainWindow::createSSHSession().
++    Konsole::ViewManager *viewManager = mainWindow->viewManager();
++    viewManager->activeContainer()->addView(viewManager->createView(session));
++
++    connect(session, &QObject::destroyed, this, [this] {
++        QTimer::singleShot(0, this, &SessionManagerPlugin::updateOpenState);
++    });
++    updateOpenState();
++    return session;
++}
++
++Konsole::Session *SessionManagerPlugin::openSession(Konsole::MainWindow *mainWindow, const QString &hostId, const Session &session, bool takeOver)
++{
++    return openCommand(mainWindow, hostId, attachCommand(session, takeOver), session.name, MuxModel::sessionKey(hostId, session));
++}
++
++void SessionManagerPlugin::openAll(Konsole::MainWindow *mainWindow, const QString &hostId)
++{
++    const QList<Session> sessions = m_model->result(hostId).sessions;
++    const auto open = Konsole::SessionManager::instance()->sessions();
++    QSet<QString> alreadyOpen;
++    for (const Konsole::Session *s : open) {
++        alreadyOpen.insert(s->property(keyProperty).toString());
++    }
++    for (const Session &session : sessions) {
++        if (!alreadyOpen.contains(MuxModel::sessionKey(hostId, session))) {
++            openSession(mainWindow, hostId, session, false);
++        }
++    }
++}
++
++void SessionManagerPlugin::createSession(Konsole::MainWindow *mainWindow, const QString &hostId, Tool tool, const QString &name)
++{
++    // The name is only known to the tool once it exists, so the tab is not marked as open
++    // until the next refresh finds it.
++    const QString title = name.isEmpty() ? i18n("New terminal") : name;
++    openCommand(mainWindow, hostId, newSessionCommand(tool, name), title, QString());
++    QTimer::singleShot(2000, m_model.get(), [this, hostId] {
++        m_model->refresh(hostId);
++    });
++}
++
++void SessionManagerPlugin::updateOpenState()
++{
++    QSet<QString> keys;
++    QList<MuxHost> tabHosts;
++    const auto sessions = Konsole::SessionManager::instance()->sessions();
++    for (Konsole::Session *session : sessions) {
++        const QString key = session->property(keyProperty).toString();
++        if (!key.isEmpty()) {
++            keys.insert(key);
++        }
++        Konsole::ProcessInfo *info = session->getProcessInfo();
++        bool ok = false;
++        if (info && info->name(&ok) == QLatin1String("ssh") && ok) {
++            const Konsole::SSHProcessInfo ssh(*info);
++            if (!ssh.host().isEmpty() && ssh.command().isEmpty()) {
++                QString destination = ssh.userName().isEmpty() ? ssh.host() : ssh.userName() + QLatin1Char('@') + ssh.host();
++                if (!ssh.port().isEmpty() && ssh.port() != QLatin1String("22")) {
++                    destination += QLatin1Char(':') + ssh.port();
++                }
++                tabHosts.append(MuxHosts::fromDestination(destination, MuxHost::Source::OpenTab));
++            }
++        }
++    }
++    m_model->setOpenKeys(keys);
++    m_model->addOpenTabHosts(tabHosts);
++}
++
++#include "moc_sessionmanagerplugin.cpp"
++#include "sessionmanagerplugin.moc"
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.h b/src/plugins/SessionManager/sessionmanagerplugin.h
+new file mode 100644
+index 000000000..24eca8cf7
+--- /dev/null
++++ b/src/plugins/SessionManager/sessionmanagerplugin.h
+@@ -0,0 +1,50 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef SESSIONMANAGERPLUGIN_H
++#define SESSIONMANAGERPLUGIN_H
++
++#include <pluginsystem/IKonsolePlugin.h>
++
++#include <QHash>
++#include <memory>
++
++#include "multiplexer.h"
++
++class MuxModel;
++class QDockWidget;
++class QTimer;
++
++namespace Konsole
++{
++class Session;
++}
++
++/** Dock panel that lists tmux and screen sessions on this computer and over ssh, and opens them in tabs. */
++class SessionManagerPlugin : public Konsole::IKonsolePlugin
++{
++    Q_OBJECT
++public:
++    SessionManagerPlugin(QObject *object, const QVariantList &args);
++    ~SessionManagerPlugin() override;
++
++    void createWidgetsForMainWindow(Konsole::MainWindow *mainWindow) override;
++    void activeViewChanged(Konsole::SessionController *controller, Konsole::MainWindow *mainWindow) override;
++    QList<QAction *> menuBarActions(Konsole::MainWindow *mainWindow) const override;
++
++private:
++    Konsole::Session *openSession(Konsole::MainWindow *mainWindow, const QString &hostId, const Multiplexer::Session &session, bool takeOver);
++    void openAll(Konsole::MainWindow *mainWindow, const QString &hostId);
++    void createSession(Konsole::MainWindow *mainWindow, const QString &hostId, Multiplexer::Tool tool, const QString &name);
++    Konsole::Session *openCommand(Konsole::MainWindow *mainWindow, const QString &hostId, const QString &command, const QString &title, const QString &key);
++    void updateOpenState();
++
++    std::unique_ptr<MuxModel> m_model;
++    QTimer *m_timer;
++    QHash<Konsole::MainWindow *, QDockWidget *> m_docks;
++};
++
++#endif
