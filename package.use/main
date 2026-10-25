@@ -140,3 +140,4 @@ gui-apps/sddm-gentoo-config kwin -weston -custom-compositor
 # required by @world (argument)
 >=dev-qt/qttools-6.12.0 qdoc
 sci-misc/stable-diffusion-cpp -opencl
+sci-mathematics/z3 java
