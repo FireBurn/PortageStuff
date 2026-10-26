@@ -216,10 +216,11 @@ diff -urN a/src/main.cpp b/src/main.cpp
 diff -urN a/src/rendervulkan.cpp b/src/rendervulkan.cpp
 --- a/src/rendervulkan.cpp
 +++ b/src/rendervulkan.cpp
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,7 @@
  // Initialize Vulkan and composite stuff with a compute queue
  
 +#include <cstdlib>
++#include <stop_token>
  #include <cassert>
  #include <fcntl.h>
  #include <unistd.h>

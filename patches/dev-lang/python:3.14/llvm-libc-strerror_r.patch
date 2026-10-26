@@ -1,0 +1,11 @@
+--- a/Python/fileutils.c
++++ b/Python/fileutils.c
+@@ -3151,7 +3151,7 @@
+ 
+ #ifdef _Py_HAVE_STRERROR_R
+    // Check which strerror_r() API is used
+-#  if defined(__GLIBC__) && !((_POSIX_C_SOURCE >= 200112L) && !defined(_GNU_SOURCE))
++#  if (defined(__GLIBC__) || defined(__LLVM_LIBC__)) && !((_POSIX_C_SOURCE >= 200112L) && !defined(_GNU_SOURCE))
+ #    define Py_STRERROR_R_GNU
+ #  elif defined(__ANDROID__) && defined(_GNU_SOURCE)
+ #    define Py_STRERROR_R_GNU

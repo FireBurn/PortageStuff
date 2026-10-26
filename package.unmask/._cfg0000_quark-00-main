@@ -1,0 +1,17 @@
+dev-qt/*
+media-libs/mesa
+#x11-base/xorg-drivers
+#x11-base/xorg-server
+# move x11-misc/sddm gui-apps/sddm
+gui-apps/sddm
+x11-drivers/xf86-video-intel
+www-client/chromium
+www-plugins/chrome-binary-plugins
+dev-util/spirv-llvm-translator
+dev-libs/roct-thunk-interface
+dev-libs/rocr-runtime
+dev-util/hipcc
+<app-office/libreoffice-9999
+<app-office/libreoffice-l10n-9999
+dev-libs/libixion
+dev-libs/liborcus
