@@ -2,7 +2,8 @@ dev-qt/*
 media-libs/mesa
 #x11-base/xorg-drivers
 #x11-base/xorg-server
-x11-misc/sddm
+# move x11-misc/sddm gui-apps/sddm
+gui-apps/sddm
 x11-drivers/xf86-video-intel
 www-client/chromium
 www-plugins/chrome-binary-plugins
