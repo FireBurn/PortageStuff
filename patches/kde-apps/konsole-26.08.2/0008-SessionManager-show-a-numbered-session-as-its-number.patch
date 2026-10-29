@@ -1,0 +1,89 @@
+From c63755febd130611306f2f6df9b74f94cecbbdb5 Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 29 Oct 2026 07:11:45 +0000
+Subject: [PATCH] SessionManager: show a numbered session as its number and
+ program
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A session that only has a number is shown as 3 · claude, not tmux 3.
+---
+ src/plugins/SessionManager/autotests/MultiplexerTest.cpp | 9 +++++++--
+ src/plugins/SessionManager/multiplexer.cpp               | 5 +++--
+ src/plugins/SessionManager/multiplexer.h                 | 2 +-
+ src/plugins/SessionManager/muxwidget.cpp                 | 3 ++-
+ 4 files changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/src/plugins/SessionManager/autotests/MultiplexerTest.cpp b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+index a938ac192..c91f6ac0c 100644
+--- a/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
++++ b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+@@ -147,14 +147,19 @@ void MultiplexerTest::namesShownToPeople()
+     Session numbered;
+     numbered.tool = Tool::Tmux;
+     numbered.name = QStringLiteral("3");
+-    QCOMPARE(displayName(numbered), QStringLiteral("tmux 3"));
++    numbered.command = QStringLiteral("claude");
++    QCOMPARE(displayName(numbered), QStringLiteral("3 · claude"));
++    numbered.command.clear();
++    QCOMPARE(displayName(numbered), QStringLiteral("3"));
+     Session named;
+     named.name = QStringLiteral("build");
++    named.command = QStringLiteral("make");
+     QCOMPARE(displayName(named), QStringLiteral("build"));
+     Session screen;
+     screen.tool = Tool::Screen;
+     screen.name = QStringLiteral("12");
+-    QCOMPARE(displayName(screen), QStringLiteral("screen 12"));
++    screen.command = QStringLiteral("htop");
++    QCOMPARE(displayName(screen), QStringLiteral("12 · htop"));
+ }
+ 
+ // Runs the generated script against a stand-in ssh, so the loop itself is what is tested.
+diff --git a/src/plugins/SessionManager/multiplexer.cpp b/src/plugins/SessionManager/multiplexer.cpp
+index 59f80af69..e34ed13ad 100644
+--- a/src/plugins/SessionManager/multiplexer.cpp
++++ b/src/plugins/SessionManager/multiplexer.cpp
+@@ -218,8 +218,9 @@ QString reconnectingTerminalCommand(const QStringList &sshArgs, const QString &c
+ QString displayName(const Session &session)
+ {
+     static const QRegularExpression onlyDigits(QStringLiteral("^[0-9]+$"));
+-    if (onlyDigits.match(session.name).hasMatch()) {
+-        return toolName(session.tool) + QLatin1Char(' ') + session.name;
++    // A bare number says little, so what is running in it goes next to it.
++    if (onlyDigits.match(session.name).hasMatch() && !session.command.isEmpty()) {
++        return session.name + QStringLiteral(" · ") + session.command;
+     }
+     return session.name;
+ }
+diff --git a/src/plugins/SessionManager/multiplexer.h b/src/plugins/SessionManager/multiplexer.h
+index 35a216ca6..0af96985f 100644
+--- a/src/plugins/SessionManager/multiplexer.h
++++ b/src/plugins/SessionManager/multiplexer.h
+@@ -79,7 +79,7 @@ QString remoteTerminalCommand(const QStringList &sshArgs, const QString &command
+  */
+ QString reconnectingTerminalCommand(const QStringList &sshArgs, const QString &command, int stepSeconds = 3);
+ 
+-/** The name to show for a session: a bare number is "tmux 3", anything else is its own name. */
++/** The name to show for a session: a bare number is shown with the program running in it, as "3 · claude". */
+ QString displayName(const Session &session);
+ 
+ /** Arguments for a non-interactive ssh run of @p command, for background queries. */
+diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
+index d1631bf7d..8d8c81e00 100644
+--- a/src/plugins/SessionManager/muxwidget.cpp
++++ b/src/plugins/SessionManager/muxwidget.cpp
+@@ -31,7 +31,8 @@ QString sessionSubtitle(const Session &session, bool open)
+ {
+     QStringList parts;
+     parts << toolName(session.tool);
+-    if (!session.command.isEmpty()) {
++    // A number-only name already shows what is running, so it is not said twice.
++    if (!session.command.isEmpty() && displayName(session) == session.name) {
+         parts << i18nc("@info the program a terminal is running", "running %1", session.command);
+     }
+     if (session.windows > 1) {
+-- 
+2.56.0
+

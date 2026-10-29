@@ -1,0 +1,195 @@
+From d7d3fe84fd44b72ce286be949b8fe3ac0c3707ec Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 29 Oct 2026 06:56:05 +0000
+Subject: [PATCH 6/7] SessionManager: reconnect a dropped ssh tab and show
+ plain session names
+
+An ssh tab opens again by itself when the connection drops, waiting a little
+longer each time and giving up after five quick failures. A session that
+only has a number is shown as tmux 3 instead of 3.
+---
+ .../autotests/MultiplexerTest.cpp             | 73 +++++++++++++++++++
+ src/plugins/SessionManager/multiplexer.cpp    | 33 +++++++++
+ src/plugins/SessionManager/multiplexer.h      | 11 +++
+ src/plugins/SessionManager/muxmodel.cpp       |  2 +-
+ 4 files changed, 118 insertions(+), 1 deletion(-)
+
+diff --git a/src/plugins/SessionManager/autotests/MultiplexerTest.cpp b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+index 5783907c6..a938ac192 100644
+--- a/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
++++ b/src/plugins/SessionManager/autotests/MultiplexerTest.cpp
+@@ -4,6 +4,10 @@
+     SPDX-License-Identifier: GPL-2.0-or-later
+ */
+ 
++#include <QFile>
++#include <QProcess>
++#include <QProcessEnvironment>
++#include <QTemporaryDir>
+ #include <QTest>
+ 
+ #include "../multiplexer.h"
+@@ -23,6 +27,10 @@ private Q_SLOTS:
+     void parseProbeNothingInstalled();
+     void commands();
+     void remoteCommands();
++    void namesShownToPeople();
++    void reconnectsAfterALostConnectionAndStopsAfterAnOrdinaryEnd();
++    void anOrdinaryExitIsPassedOnWithoutReconnecting();
++    void givesUpAfterFiveQuickFailures();
+ };
+ 
+ void MultiplexerTest::parseTmux()
+@@ -134,5 +142,70 @@ void MultiplexerTest::remoteCommands()
+     QCOMPARE(args.at(args.size() - 2), QStringLiteral("quark"));
+ }
+ 
++void MultiplexerTest::namesShownToPeople()
++{
++    Session numbered;
++    numbered.tool = Tool::Tmux;
++    numbered.name = QStringLiteral("3");
++    QCOMPARE(displayName(numbered), QStringLiteral("tmux 3"));
++    Session named;
++    named.name = QStringLiteral("build");
++    QCOMPARE(displayName(named), QStringLiteral("build"));
++    Session screen;
++    screen.tool = Tool::Screen;
++    screen.name = QStringLiteral("12");
++    QCOMPARE(displayName(screen), QStringLiteral("screen 12"));
++}
++
++// Runs the generated script against a stand-in ssh, so the loop itself is what is tested.
++static int runReconnecting(const QString &fakeSsh, QString *output)
++{
++    QTemporaryDir dir;
++    QFile ssh(dir.filePath(QStringLiteral("ssh")));
++    ssh.open(QIODevice::WriteOnly);
++    ssh.write(fakeSsh.toUtf8());
++    ssh.close();
++    ssh.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner);
++    QProcess shell;
++    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
++    env.insert(QStringLiteral("PATH"), dir.path() + QLatin1Char(':') + env.value(QStringLiteral("PATH")));
++    env.insert(QStringLiteral("STATE"), dir.filePath(QStringLiteral("count")));
++    shell.setProcessEnvironment(env);
++    const QString command = reconnectingTerminalCommand({QStringLiteral("me@quark")}, QStringLiteral("tmux attach-session -t '=a b'"), 0);
++    shell.start(QStringLiteral("sh"), {QStringLiteral("-c"), command});
++    shell.waitForFinished(20000);
++    *output = QString::fromUtf8(shell.readAllStandardOutput());
++    return shell.exitCode();
++}
++
++void MultiplexerTest::reconnectsAfterALostConnectionAndStopsAfterAnOrdinaryEnd()
++{
++    // Fails twice with 255 and then ends normally after being asked for the terminal.
++    QString output;
++    const int code = runReconnecting(QStringLiteral("#!/bin/sh\nn=$(cat \"$STATE\" 2>/dev/null || echo 0); n=$((n+1)); echo $n > \"$STATE\"\n"
++                                                    "[ $n -lt 3 ] && exit 255\necho \"args: $*\"\nexit 0\n"),
++                                     &output);
++    QCOMPARE(code, 0);
++    QCOMPARE(output.count(QStringLiteral("The connection dropped")), 2);
++    QVERIFY(output.contains(QStringLiteral("ServerAliveInterval=15")));
++    QVERIFY(output.contains(QStringLiteral("me@quark")));
++    QVERIFY(output.contains(QStringLiteral("tmux attach-session -t '=a b'")));
++}
++
++void MultiplexerTest::anOrdinaryExitIsPassedOnWithoutReconnecting()
++{
++    QString output;
++    QCOMPARE(runReconnecting(QStringLiteral("#!/bin/sh\nexit 7\n"), &output), 7);
++    QVERIFY(!output.contains(QStringLiteral("dropped")));
++}
++
++void MultiplexerTest::givesUpAfterFiveQuickFailures()
++{
++    QString output;
++    QCOMPARE(runReconnecting(QStringLiteral("#!/bin/sh\nexit 255\n"), &output), 255);
++    QVERIFY(output.contains(QStringLiteral("Giving up")));
++    QCOMPARE(output.count(QStringLiteral("The connection dropped")), 4);
++}
++
+ QTEST_GUILESS_MAIN(MultiplexerTest)
+ #include "MultiplexerTest.moc"
+diff --git a/src/plugins/SessionManager/multiplexer.cpp b/src/plugins/SessionManager/multiplexer.cpp
+index 34a87dbef..59f80af69 100644
+--- a/src/plugins/SessionManager/multiplexer.cpp
++++ b/src/plugins/SessionManager/multiplexer.cpp
+@@ -191,6 +191,39 @@ QString remoteTerminalCommand(const QStringList &sshArgs, const QString &command
+     return parts.join(QLatin1Char(' '));
+ }
+ 
++QString reconnectingTerminalCommand(const QStringList &sshArgs, const QString &command, int stepSeconds)
++{
++    QStringList ssh{QStringLiteral("ssh"),
++                    QStringLiteral("-t"),
++                    QStringLiteral("-o"),
++                    QStringLiteral("ServerAliveInterval=15"),
++                    QStringLiteral("-o"),
++                    QStringLiteral("ServerAliveCountMax=3")};
++    for (const QString &arg : sshArgs) {
++        ssh.append(shellQuote(arg));
++    }
++    ssh.append(shellQuote(command));
++    const QString script = QStringLiteral(
++                               "fails=0; while :; do start=$(date +%s); %1; rc=$?;"
++                               " [ $rc -ne 255 ] && exit $rc;"
++                               " if [ $(( $(date +%s) - start )) -lt 5 ]; then fails=$((fails+1)); else fails=0; fi;"
++                               " if [ $fails -ge 5 ]; then echo; echo \"Could not connect. Giving up.\"; exit 255; fi;"
++                               " wait=$(((fails+1)*%2)); echo; echo \"The connection dropped. Reconnecting in ${wait}s. Press Ctrl+C to stop.\";"
++                               " sleep $wait; done")
++                               .arg(ssh.join(QLatin1Char(' ')))
++                               .arg(stepSeconds);
++    return QStringLiteral("sh -c ") + shellQuote(script);
++}
++
++QString displayName(const Session &session)
++{
++    static const QRegularExpression onlyDigits(QStringLiteral("^[0-9]+$"));
++    if (onlyDigits.match(session.name).hasMatch()) {
++        return toolName(session.tool) + QLatin1Char(' ') + session.name;
++    }
++    return session.name;
++}
++
+ QStringList remoteQueryArguments(const QStringList &sshArgs, const QString &command, const QString &controlPath)
+ {
+     QStringList args{QStringLiteral("-o"),
+diff --git a/src/plugins/SessionManager/multiplexer.h b/src/plugins/SessionManager/multiplexer.h
+index 6ee03b26f..35a216ca6 100644
+--- a/src/plugins/SessionManager/multiplexer.h
++++ b/src/plugins/SessionManager/multiplexer.h
+@@ -71,6 +71,17 @@ QString renameCommand(const Session &session, const QString &newName);
+  */
+ QString remoteTerminalCommand(const QStringList &sshArgs, const QString &command);
+ 
++/**
++ * The same, but started again by itself when the connection drops (ssh ends with 255, its code for a lost or
++ * refused connection), so a tab comes back to the same terminal. Any other ending, such as detaching or the
++ * program exiting, closes it. Five quick failures in a row stop it, so a wrong address does not loop for ever.
++ * @p stepSeconds is how much longer each attempt waits.
++ */
++QString reconnectingTerminalCommand(const QStringList &sshArgs, const QString &command, int stepSeconds = 3);
++
++/** The name to show for a session: a bare number is "tmux 3", anything else is its own name. */
++QString displayName(const Session &session);
++
+ /** Arguments for a non-interactive ssh run of @p command, for background queries. */
+ QStringList remoteQueryArguments(const QStringList &sshArgs, const QString &command, const QString &controlPath);
+ }
+diff --git a/src/plugins/SessionManager/muxmodel.cpp b/src/plugins/SessionManager/muxmodel.cpp
+index 8de71ffc6..739dfd2da 100644
+--- a/src/plugins/SessionManager/muxmodel.cpp
++++ b/src/plugins/SessionManager/muxmodel.cpp
+@@ -245,7 +245,7 @@ void MuxModel::updateHost(const QString &hostId)
+     }
+ 
+     for (const Session &session : r.sessions) {
+-        auto *child = new QStandardItem(session.name);
++        auto *child = new QStandardItem(displayName(session));
+         child->setEditable(false);
+         child->setData(SessionKind, KindRole);
+         child->setData(hostId, HostIdRole);
+-- 
+2.56.0
+
