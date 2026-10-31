@@ -1,0 +1,22 @@
+The functions that module level asm refers to must be visible to the linker, so with LTO they cannot be static, since the compiler does not see the asm as a use and renames or drops them.
+
+--- a/dlls/wow64/syscall.c
++++ b/dlls/wow64/syscall.c
+@@ -194,7 +194,7 @@
+ /**********************************************************************
+  *           call_user_exception_dispatcher
+  */
+-static void __attribute__((used)) call_user_exception_dispatcher( EXCEPTION_RECORD32 *rec, void *ctx32_ptr,
++void __attribute__((used)) call_user_exception_dispatcher( EXCEPTION_RECORD32 *rec, void *ctx32_ptr,
+                                                                   void *ctx64_ptr )
+ {
+     switch (current_machine)
+@@ -297,7 +297,7 @@
+ /**********************************************************************
+  *           call_raise_user_exception_dispatcher
+  */
+-static void __attribute__((used)) call_raise_user_exception_dispatcher( ULONG code )
++void __attribute__((used)) call_raise_user_exception_dispatcher( ULONG code )
+ {
+     NtCurrentTeb32()->ExceptionCode = code;
+ 
