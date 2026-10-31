@@ -1,0 +1,23 @@
+[CodeGen] Lower differences from __ImageBase to image relative references on MinGW
+
+lowerRelativeReference returned early for Cygwin and MinGW, so a constant
+(ptrtoint X - ptrtoint __ImageBase) reached the object writer as a plain
+symbol difference and failed with "symbol '__ImageBase' can not be
+undefined in a subtraction expression". Backport of llvm/llvm-project#237118
+to 23.1.
+---
+diff --git a/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp b/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
+index c7d07c1..a0fbf34 100644
+--- a/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
++++ b/llvm/lib/CodeGen/TargetLoweringObjectFileImpl.cpp
+@@ -2102,10 +2102,6 @@ MCSection *TargetLoweringObjectFileCOFF::getStaticDtorSection(
+ const MCExpr *TargetLoweringObjectFileCOFF::lowerRelativeReference(
+     const GlobalValue *LHS, const GlobalValue *RHS, int64_t Addend,
+     std::optional<int64_t> PCRelativeOffset, const TargetMachine &TM) const {
+-  const Triple &T = TM.getTargetTriple();
+-  if (T.isOSCygMing())
+-    return nullptr;
+-
+   // Our symbols should exist in address space zero, cowardly no-op if
+   // otherwise.
+   if (LHS->getType()->getPointerAddressSpace() != 0 ||
