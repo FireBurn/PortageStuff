@@ -33,10 +33,11 @@ diff --git a/src/outputconfigurationstore.cpp b/src/outputconfigurationstore.cpp
 index 2f6a76caf4..dd6c0d2c90 100644
 --- a/src/outputconfigurationstore.cpp
 +++ b/src/outputconfigurationstore.cpp
-@@ -23,6 +23,10 @@
+@@ -23,7 +23,11 @@
  #include <QJsonArray>
  #include <QJsonDocument>
  #include <QJsonObject>
+ #include <drm_mode.h>
 +#include <array>
 +#include <functional>
 +#include <limits>
