@@ -1,0 +1,1390 @@
+From a3d5b06cc5b3409621feb7c9afb16e327346832d Mon Sep 17 00:00:00 2001
+From: Mike Lothian <mike@fireburn.co.uk>
+Date: Thu, 29 Oct 2026 06:56:13 +0000
+Subject: [PATCH 7/7] SessionManager: group and colour tabs, show the list from
+ the window edge
+
+Tabs opened from the list are grouped by computer with this one first and
+coloured per group, and a tab moved by hand stays where it was put. The list
+also slides over the terminal when the pointer reaches the edge away from the
+scroll bar, without resizing the terminal. New Running Terminal makes a tmux
+session, or a screen one where tmux is missing.
+---
+ src/plugins/SessionManager/CMakeLists.txt     |   5 +-
+ .../SessionManager/autotests/CMakeLists.txt   |   7 +
+ .../autotests/EdgePanelTest.cpp               |  87 +++++++
+ .../autotests/MuxOverlayTest.cpp              | 142 ++++++++++++
+ .../SessionManager/autotests/TabOrderTest.cpp |  87 +++++++
+ src/plugins/SessionManager/edgepanel.cpp      |  79 +++++++
+ src/plugins/SessionManager/edgepanel.h        |  56 +++++
+ src/plugins/SessionManager/muxoverlay.cpp     | 147 ++++++++++++
+ src/plugins/SessionManager/muxoverlay.h       |  81 +++++++
+ src/plugins/SessionManager/muxwidget.cpp      |  28 ++-
+ src/plugins/SessionManager/muxwidget.h        |   5 +
+ .../SessionManager/sessionmanagerplugin.cpp   | 218 ++++++++++++++++--
+ .../SessionManager/sessionmanagerplugin.h     |   7 +
+ src/plugins/SessionManager/taborder.cpp       |  69 ++++++
+ src/plugins/SessionManager/taborder.h         |  39 ++++
+ 15 files changed, 1023 insertions(+), 34 deletions(-)
+ create mode 100644 src/plugins/SessionManager/autotests/EdgePanelTest.cpp
+ create mode 100644 src/plugins/SessionManager/autotests/MuxOverlayTest.cpp
+ create mode 100644 src/plugins/SessionManager/autotests/TabOrderTest.cpp
+ create mode 100644 src/plugins/SessionManager/edgepanel.cpp
+ create mode 100644 src/plugins/SessionManager/edgepanel.h
+ create mode 100644 src/plugins/SessionManager/muxoverlay.cpp
+ create mode 100644 src/plugins/SessionManager/muxoverlay.h
+ create mode 100644 src/plugins/SessionManager/taborder.cpp
+ create mode 100644 src/plugins/SessionManager/taborder.h
+
+diff --git a/src/plugins/SessionManager/CMakeLists.txt b/src/plugins/SessionManager/CMakeLists.txt
+index da66a81ac..e1c52514c 100644
+--- a/src/plugins/SessionManager/CMakeLists.txt
++++ b/src/plugins/SessionManager/CMakeLists.txt
+@@ -3,9 +3,11 @@ add_library(konsole_multiplexer STATIC
+     muxhost.cpp
+     muxlayout.cpp
+     muxprobe.cpp
++    taborder.cpp
++    edgepanel.cpp
+ )
+ set_target_properties(konsole_multiplexer PROPERTIES POSITION_INDEPENDENT_CODE ON)
+-target_link_libraries(konsole_multiplexer PUBLIC Qt::Core KF6::ConfigCore KF6::I18n)
++target_link_libraries(konsole_multiplexer PUBLIC Qt::Core Qt::Gui KF6::ConfigCore KF6::I18n)
+ 
+ if(BUILD_TESTING)
+     add_subdirectory(autotests)
+@@ -15,6 +17,7 @@ kcoreaddons_add_plugin(konsole_sessionmanagerplugin
+ SOURCES
+     sessionmanagerplugin.cpp
+     muxmodel.cpp
++    muxoverlay.cpp
+     muxwidget.cpp
+ INSTALL_NAMESPACE
+     "konsoleplugins"
+diff --git a/src/plugins/SessionManager/autotests/CMakeLists.txt b/src/plugins/SessionManager/autotests/CMakeLists.txt
+index 760fbca0b..194f5f1b0 100644
+--- a/src/plugins/SessionManager/autotests/CMakeLists.txt
++++ b/src/plugins/SessionManager/autotests/CMakeLists.txt
+@@ -4,5 +4,12 @@ ecm_add_tests(
+     MultiplexerTest.cpp
+     MuxHostTest.cpp
+     MuxLayoutTest.cpp
++    TabOrderTest.cpp
++    EdgePanelTest.cpp
+     LINK_LIBRARIES konsole_multiplexer Qt::Test
+ )
++
++# The edge panel needs the widgets and the list model, so it is built here and not in the plain library.
++ecm_add_test(MuxOverlayTest.cpp ../muxoverlay.cpp ../muxwidget.cpp ../muxmodel.cpp
++    TEST_NAME MuxOverlayTest
++    LINK_LIBRARIES konsole_multiplexer Qt::Test Qt::Widgets KF6::WidgetsAddons)
+diff --git a/src/plugins/SessionManager/autotests/EdgePanelTest.cpp b/src/plugins/SessionManager/autotests/EdgePanelTest.cpp
+new file mode 100644
+index 000000000..c3c6a7883
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/EdgePanelTest.cpp
+@@ -0,0 +1,87 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QObject>
++#include <QTest>
++
++#include "../edgepanel.h"
++
++using namespace EdgePanel;
++
++class EdgePanelTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void theEdgeIsAlwaysAwayFromTheScrollBar();
++    void zonesAndPanelStayInsideTheArea();
++    void theShortCallToTheEdgeDoesNothing();
++    void stayingAtTheEdgeShowsThePanel();
++    void leavingHidesItAfterTheDelayButNotWhileInUse();
++    void goingBackBeforeTheDelayKeepsItUp();
++};
++
++void EdgePanelTest::theEdgeIsAlwaysAwayFromTheScrollBar()
++{
++    QCOMPARE(edgeFor(0), Edge::Left); // scroll bar on the right
++    QCOMPARE(edgeFor(1), Edge::Right); // scroll bar on the left
++    QCOMPARE(edgeFor(2), Edge::Left); // no scroll bar
++}
++
++void EdgePanelTest::zonesAndPanelStayInsideTheArea()
++{
++    const QRect area(0, 30, 1000, 600);
++    QCOMPARE(hotZone(area, Edge::Left, 6), QRect(0, 30, 6, 600));
++    QCOMPARE(hotZone(area, Edge::Right, 6), QRect(994, 30, 6, 600));
++    QCOMPARE(panelRect(area, Edge::Left, 320), QRect(0, 30, 320, 600));
++    QCOMPARE(panelRect(area, Edge::Right, 320), QRect(680, 30, 320, 600));
++    // A narrow window gets at most half of itself covered.
++    QCOMPARE(panelRect(QRect(0, 0, 400, 300), Edge::Left, 320).width(), 200);
++}
++
++void EdgePanelTest::theShortCallToTheEdgeDoesNothing()
++{
++    Visibility v(180, 700);
++    QVERIFY(!v.update(true, false, false, 0));
++    QVERIFY(!v.update(true, false, false, 100));
++    QVERIFY(!v.update(false, false, false, 120)); // left again
++    QVERIFY(!v.update(true, false, false, 130)); // the clock starts over
++    QVERIFY(!v.update(true, false, false, 300));
++}
++
++void EdgePanelTest::stayingAtTheEdgeShowsThePanel()
++{
++    Visibility v(180, 700);
++    QVERIFY(!v.update(true, false, false, 0));
++    QVERIFY(v.update(true, false, false, 180));
++    QVERIFY(v.visible());
++}
++
++void EdgePanelTest::leavingHidesItAfterTheDelayButNotWhileInUse()
++{
++    Visibility v(100, 700);
++    v.update(true, false, false, 0);
++    QVERIFY(v.update(true, false, false, 100));
++    QVERIFY(v.update(false, true, false, 200)); // moved onto the panel
++    QVERIFY(v.update(false, false, false, 300)); // left it
++    QVERIFY(v.update(false, false, false, 900)); // 600 ms: still up
++    QVERIFY(v.update(false, false, true, 5000)); // a menu is open: stays
++    QVERIFY(v.update(false, false, false, 5100));
++    QVERIFY(!v.update(false, false, false, 5800)); // 700 ms after the menu closed
++}
++
++void EdgePanelTest::goingBackBeforeTheDelayKeepsItUp()
++{
++    Visibility v(100, 700);
++    v.show(0);
++    QVERIFY(v.update(false, false, false, 100));
++    QVERIFY(v.update(false, true, false, 600));
++    QVERIFY(v.update(false, false, false, 700));
++    QVERIFY(v.update(false, false, false, 1300));
++    QVERIFY(!v.update(false, false, false, 1400));
++}
++
++QTEST_GUILESS_MAIN(EdgePanelTest)
++#include "EdgePanelTest.moc"
+diff --git a/src/plugins/SessionManager/autotests/MuxOverlayTest.cpp b/src/plugins/SessionManager/autotests/MuxOverlayTest.cpp
+new file mode 100644
+index 000000000..3d2944620
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/MuxOverlayTest.cpp
+@@ -0,0 +1,142 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QApplication>
++#include <QDir>
++#include <QLabel>
++#include <QMainWindow>
++#include <QStandardPaths>
++#include <QTemporaryDir>
++#include <QTest>
++
++#include "../muxmodel.h"
++#include "../muxoverlay.h"
++#include "../muxwidget.h"
++
++class MuxOverlayTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void initTestCase();
++    void appearsAtTheEdgeAwayFromTheScrollBarWithoutResizingTheTerminal();
++    void staysAwayFromTheScrollBarSide();
++    void hidesWhenThePointerLeavesAndNotBefore();
++    void escapeClosesItAndSwitchingOffKeepsItClosed();
++
++private:
++    QTemporaryDir m_home;
++};
++
++void MuxOverlayTest::initTestCase()
++{
++    // The list asks the computers in ssh config what they are running, which a test must not do.
++    QStandardPaths::setTestModeEnabled(true);
++    qputenv("HOME", m_home.path().toUtf8());
++    qputenv("PATH", "/nonexistent");
++}
++
++namespace
++{
++struct Fixture {
++    QMainWindow window;
++    QLabel *terminal = new QLabel(QStringLiteral("terminal"));
++    MuxModel model;
++    QPoint pointer{500, 300};
++    int scrollBar = 0;
++    MuxEdgeOverlay *overlay = nullptr;
++
++    Fixture()
++    {
++        window.setCentralWidget(terminal);
++        window.resize(900, 600);
++        window.show();
++        QTest::qWaitForWindowExposed(&window);
++        window.activateWindow();
++        QTest::qWait(50);
++        overlay = new MuxEdgeOverlay(
++            &window,
++            &model,
++            [this] {
++                return scrollBar;
++            },
++            [this] {
++                return window.mapToGlobal(pointer);
++            });
++    }
++
++    // Puts the pointer on the left or right edge of the terminal and waits for the delay.
++    void goToEdge(bool left)
++    {
++        const QRect area(terminal->mapTo(&window, QPoint(0, 0)), terminal->size());
++        pointer = QPoint(left ? area.left() + 1 : area.right() - 1, area.center().y());
++        QTest::qWait(400);
++    }
++};
++}
++
++void MuxOverlayTest::appearsAtTheEdgeAwayFromTheScrollBarWithoutResizingTheTerminal()
++{
++    Fixture f;
++    const QSize before = f.terminal->size();
++    QVERIFY(!f.overlay->isShown());
++    f.goToEdge(true);
++    QVERIFY(f.overlay->isShown());
++    QCOMPARE(f.terminal->size(), before); // nothing is resized as it comes and goes
++    const QWidget *panel = f.overlay->widget()->parentWidget();
++    QCOMPARE(panel->geometry().left(), f.terminal->mapTo(&f.window, QPoint(0, 0)).x());
++    QVERIFY(panel->width() > 150 && panel->width() <= f.terminal->width() / 2);
++    const QString shot = qEnvironmentVariable("MUX_SHOT");
++    if (!shot.isEmpty()) {
++        f.window.grab().save(shot);
++    }
++}
++
++void MuxOverlayTest::staysAwayFromTheScrollBarSide()
++{
++    Fixture f;
++    f.scrollBar = 0; // scroll bar on the right
++    // The right edge, where the scroll bar is, does nothing.
++    f.goToEdge(false);
++    QVERIFY(!f.overlay->isShown());
++    f.scrollBar = 1; // scroll bar on the left: now the right edge is the one
++    f.goToEdge(false);
++    QVERIFY(f.overlay->isShown());
++    const QWidget *panel = f.overlay->widget()->parentWidget();
++    QCOMPARE(panel->geometry().right(), f.terminal->mapTo(&f.window, QPoint(0, 0)).x() + f.terminal->width() - 1);
++}
++
++void MuxOverlayTest::hidesWhenThePointerLeavesAndNotBefore()
++{
++    Fixture f;
++    f.goToEdge(true);
++    QVERIFY(f.overlay->isShown());
++    f.pointer = QPoint(100, 300); // onto the panel
++    QTest::qWait(900);
++    QVERIFY(f.overlay->isShown());
++    f.pointer = QPoint(700, 300); // out over the terminal
++    QTest::qWait(300);
++    QVERIFY(f.overlay->isShown()); // not at once
++    QTest::qWait(900);
++    QVERIFY(!f.overlay->isShown());
++}
++
++void MuxOverlayTest::escapeClosesItAndSwitchingOffKeepsItClosed()
++{
++    Fixture f;
++    f.goToEdge(true);
++    QVERIFY(f.overlay->isShown());
++    QTest::keyClick(f.overlay->widget()->parentWidget(), Qt::Key_Escape);
++    QVERIFY(!f.overlay->isShown());
++    f.overlay->setAutoHide(false);
++    f.goToEdge(true);
++    QVERIFY(!f.overlay->isShown());
++    f.overlay->setAutoHide(true);
++    f.goToEdge(true);
++    QVERIFY(f.overlay->isShown());
++}
++
++QTEST_MAIN(MuxOverlayTest)
++#include "MuxOverlayTest.moc"
+diff --git a/src/plugins/SessionManager/autotests/TabOrderTest.cpp b/src/plugins/SessionManager/autotests/TabOrderTest.cpp
+new file mode 100644
+index 000000000..757a3e2fc
+--- /dev/null
++++ b/src/plugins/SessionManager/autotests/TabOrderTest.cpp
+@@ -0,0 +1,87 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include <QObject>
++#include <QTest>
++
++#include "../taborder.h"
++
++using namespace TabOrder;
++
++class TabOrderTest : public QObject
++{
++    Q_OBJECT
++private Q_SLOTS:
++    void thisComputerFirstThenOthersThenToolThenName();
++    void namesSortNumbersByValue();
++    void tabsNotOpenedFromThePanelKeepTheirPlace();
++    void tabsMovedByHandKeepTheirPlaceAndOthersFlowAround();
++    void anOrderedBarIsLeftAlone();
++    void groupColoursAreDistinctForNeighbouringGroups();
++};
++
++static Tab tab(int group, int tool, const QString &name, bool managed = true, bool manual = false, qint64 created = 0)
++{
++    Tab t;
++    t.group = group;
++    t.tool = tool;
++    t.name = name;
++    t.managed = managed;
++    t.manual = manual;
++    t.created = created;
++    return t;
++}
++
++void TabOrderTest::thisComputerFirstThenOthersThenToolThenName()
++{
++    const QList<Tab> tabs{tab(2, 0, QStringLiteral("a")),
++                          tab(0, 1, QStringLiteral("z")),
++                          tab(1, 0, QStringLiteral("b")),
++                          tab(0, 0, QStringLiteral("y")),
++                          tab(0, 0, QStringLiteral("a"))};
++    // local tmux a, local tmux y, local screen z, then computer 1, then computer 2
++    QCOMPARE(arrange(tabs), (QList<int>{4, 3, 1, 2, 0}));
++}
++
++void TabOrderTest::namesSortNumbersByValue()
++{
++    const QList<Tab> tabs{tab(0, 0, QStringLiteral("10")), tab(0, 0, QStringLiteral("2")), tab(0, 0, QStringLiteral("Build")), tab(0, 0, QStringLiteral("1"))};
++    QCOMPARE(arrange(tabs), (QList<int>{3, 1, 0, 2}));
++    QVERIFY(naturalLess(QStringLiteral("a2"), QStringLiteral("a10")));
++    QVERIFY(!naturalLess(QStringLiteral("B"), QStringLiteral("a")));
++}
++
++void TabOrderTest::tabsNotOpenedFromThePanelKeepTheirPlace()
++{
++    // A plain shell in the middle stays at index 1.
++    const QList<Tab> tabs{tab(1, 0, QStringLiteral("r")), tab(0, 0, QStringLiteral("shell"), false), tab(0, 0, QStringLiteral("l"))};
++    QCOMPARE(arrange(tabs), (QList<int>{2, 1, 0}));
++}
++
++void TabOrderTest::tabsMovedByHandKeepTheirPlaceAndOthersFlowAround()
++{
++    // The last tab was dragged to the front by hand; the other two sort around it.
++    const QList<Tab> tabs{tab(0, 0, QStringLiteral("a"), true, true), tab(1, 0, QStringLiteral("b")), tab(0, 0, QStringLiteral("c"))};
++    QCOMPARE(arrange(tabs), (QList<int>{0, 2, 1}));
++}
++
++void TabOrderTest::anOrderedBarIsLeftAlone()
++{
++    const QList<Tab> tabs{tab(0, 0, QStringLiteral("a")), tab(0, 0, QStringLiteral("b")), tab(1, 0, QStringLiteral("a"))};
++    QCOMPARE(arrange(tabs), (QList<int>{0, 1, 2}));
++    QCOMPARE(arrange({}), QList<int>());
++}
++
++void TabOrderTest::groupColoursAreDistinctForNeighbouringGroups()
++{
++    for (int g = 0; g < 5; ++g) {
++        QVERIFY(groupColour(g) != groupColour(g + 1));
++    }
++    QCOMPARE(groupColour(0), groupColour(6));
++}
++
++QTEST_GUILESS_MAIN(TabOrderTest)
++#include "TabOrderTest.moc"
+diff --git a/src/plugins/SessionManager/edgepanel.cpp b/src/plugins/SessionManager/edgepanel.cpp
+new file mode 100644
+index 000000000..ffe4ca144
+--- /dev/null
++++ b/src/plugins/SessionManager/edgepanel.cpp
+@@ -0,0 +1,79 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "edgepanel.h"
++
++namespace EdgePanel
++{
++Edge edgeFor(int scrollBarPosition)
++{
++    return scrollBarPosition == 1 ? Edge::Right : Edge::Left;
++}
++
++QRect hotZone(const QRect &area, Edge edge, int width)
++{
++    return edge == Edge::Left ? QRect(area.left(), area.top(), width, area.height()) : QRect(area.right() - width + 1, area.top(), width, area.height());
++}
++
++QRect panelRect(const QRect &area, Edge edge, int width)
++{
++    const int w = qMin(width, area.width() / 2);
++    return edge == Edge::Left ? QRect(area.left(), area.top(), w, area.height()) : QRect(area.right() - w + 1, area.top(), w, area.height());
++}
++
++Visibility::Visibility(int showDelayMs, int hideDelayMs)
++    : m_showDelay(showDelayMs)
++    , m_hideDelay(hideDelayMs)
++{
++}
++
++bool Visibility::visible() const
++{
++    return m_visible;
++}
++
++void Visibility::show(qint64 nowMs)
++{
++    m_visible = true;
++    m_awaySince = nowMs;
++    m_hotSince = -1;
++}
++
++void Visibility::hide()
++{
++    m_visible = false;
++    m_hotSince = -1;
++    m_awaySince = -1;
++}
++
++bool Visibility::update(bool inHotZone, bool inPanel, bool busy, qint64 nowMs)
++{
++    if (!m_visible) {
++        if (inHotZone) {
++            if (m_hotSince < 0) {
++                m_hotSince = nowMs;
++            }
++            if (nowMs - m_hotSince >= m_showDelay) {
++                show(nowMs);
++            }
++        } else {
++            m_hotSince = -1;
++        }
++        return m_visible;
++    }
++    if (inPanel || inHotZone || busy) {
++        m_awaySince = -1;
++    } else {
++        if (m_awaySince < 0) {
++            m_awaySince = nowMs;
++        }
++        if (nowMs - m_awaySince >= m_hideDelay) {
++            hide();
++        }
++    }
++    return m_visible;
++}
++}
+diff --git a/src/plugins/SessionManager/edgepanel.h b/src/plugins/SessionManager/edgepanel.h
+new file mode 100644
+index 000000000..58dd852a2
+--- /dev/null
++++ b/src/plugins/SessionManager/edgepanel.h
+@@ -0,0 +1,56 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef EDGEPANEL_H
++#define EDGEPANEL_H
++
++#include <QPoint>
++#include <QRect>
++
++/**
++ * A panel that slides over the terminal when the pointer reaches one edge of the window and goes again when it
++ * leaves. It never takes space from the terminal, so nothing is resized as it comes and goes, and it uses the
++ * edge away from the scroll bar so the scroll bar is never covered.
++ */
++namespace EdgePanel
++{
++enum class Edge {
++    Left,
++    Right,
++};
++
++/** The edge away from the scroll bar. @p scrollBarPosition is Konsole's: 0 right, 1 left, 2 hidden. */
++Edge edgeFor(int scrollBarPosition);
++
++/** A thin strip along the edge where the pointer calls the panel up. */
++QRect hotZone(const QRect &area, Edge edge, int width);
++
++/** Where the panel sits when it is shown. */
++QRect panelRect(const QRect &area, Edge edge, int width);
++
++/** Decides, from the pointer and a clock, when the panel is shown. Nothing here reads the pointer or a timer. */
++class Visibility
++{
++public:
++    Visibility(int showDelayMs = 180, int hideDelayMs = 700);
++
++    /** @p busy is true while a menu or dialog from the panel is open, which keeps it up. */
++    bool update(bool inHotZone, bool inPanel, bool busy, qint64 nowMs);
++
++    bool visible() const;
++    void show(qint64 nowMs);
++    void hide();
++
++private:
++    int m_showDelay;
++    int m_hideDelay;
++    bool m_visible = false;
++    qint64 m_hotSince = -1;
++    qint64 m_awaySince = -1;
++};
++}
++
++#endif
+diff --git a/src/plugins/SessionManager/muxoverlay.cpp b/src/plugins/SessionManager/muxoverlay.cpp
+new file mode 100644
+index 000000000..448fb07c4
+--- /dev/null
++++ b/src/plugins/SessionManager/muxoverlay.cpp
+@@ -0,0 +1,147 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "muxoverlay.h"
++
++#include "muxmodel.h"
++#include "muxwidget.h"
++
++#include <QApplication>
++#include <QCursor>
++#include <QEvent>
++#include <QKeyEvent>
++#include <QMainWindow>
++#include <QTimer>
++#include <QVBoxLayout>
++
++namespace
++{
++constexpr int hotZoneWidth = 4;
++}
++
++MuxEdgeOverlay::MuxEdgeOverlay(QMainWindow *window, MuxModel *model, std::function<int()> scrollBarPosition, std::function<QPoint()> pointer)
++    : QObject(window)
++    , m_window(window)
++    , m_scrollBarPosition(std::move(scrollBarPosition))
++    , m_pointer(std::move(pointer))
++    , m_panel(new QFrame(window))
++    , m_widget(new MuxWidget(model, m_panel))
++    , m_timer(new QTimer(this))
++{
++    m_widget->setPinnable(true);
++    m_panel->setFrameShape(QFrame::StyledPanel);
++    m_panel->setAutoFillBackground(true);
++    m_panel->hide();
++    auto *layout = new QVBoxLayout(m_panel);
++    layout->setContentsMargins(0, 0, 0, 0);
++    layout->addWidget(m_widget);
++    m_panel->installEventFilter(this);
++    window->installEventFilter(this);
++
++    m_clock.start();
++    m_timer->setInterval(60);
++    connect(m_timer, &QTimer::timeout, this, &MuxEdgeOverlay::poll);
++    m_timer->start();
++}
++
++MuxWidget *MuxEdgeOverlay::widget() const
++{
++    return m_widget;
++}
++
++bool MuxEdgeOverlay::autoHide() const
++{
++    return m_autoHide;
++}
++
++void MuxEdgeOverlay::setAutoHide(bool enabled)
++{
++    m_autoHide = enabled;
++    if (!enabled) {
++        m_visibility.hide();
++        poll();
++    }
++}
++
++void MuxEdgeOverlay::setSuspended(bool suspended)
++{
++    m_suspended = suspended;
++    if (suspended) {
++        m_visibility.hide();
++        poll();
++    }
++}
++
++void MuxEdgeOverlay::reveal()
++{
++    if (m_suspended) {
++        return;
++    }
++    m_visibility.show(m_clock.elapsed());
++    poll();
++}
++
++bool MuxEdgeOverlay::isShown() const
++{
++    return m_panel->isVisible();
++}
++
++QRect MuxEdgeOverlay::area() const
++{
++    QWidget *central = m_window->centralWidget();
++    return QRect(central->mapTo(m_window, QPoint(0, 0)), central->size());
++}
++
++EdgePanel::Edge MuxEdgeOverlay::edge() const
++{
++    return EdgePanel::edgeFor(m_scrollBarPosition());
++}
++
++void MuxEdgeOverlay::place()
++{
++    const int width = m_window->fontMetrics().horizontalAdvance(QLatin1Char('M')) * 38;
++    m_panel->setGeometry(EdgePanel::panelRect(area(), edge(), width));
++}
++
++void MuxEdgeOverlay::poll()
++{
++    const bool usable = m_autoHide && !m_suspended && m_window->isActiveWindow();
++    bool shown = false;
++    if (usable || (m_panel->isVisible() && m_visibility.visible() && !m_suspended && m_autoHide)) {
++        const QPoint pointer = m_window->mapFromGlobal(m_pointer());
++        const bool hot = usable && EdgePanel::hotZone(area(), edge(), hotZoneWidth).contains(pointer);
++        const bool inPanel = m_panel->isVisible() && m_panel->geometry().contains(pointer);
++        // A menu or dialog opened from the panel keeps it up.
++        const bool busy = QApplication::activePopupWidget() != nullptr || QApplication::activeModalWidget() != nullptr;
++        shown = m_visibility.update(hot, inPanel, busy, m_clock.elapsed());
++    } else {
++        m_visibility.hide();
++    }
++    if (shown != m_panel->isVisible()) {
++        if (shown) {
++            place();
++        }
++        m_panel->setVisible(shown);
++        if (shown) {
++            m_panel->raise();
++        }
++        Q_EMIT shownChanged(shown);
++    }
++}
++
++bool MuxEdgeOverlay::eventFilter(QObject *watched, QEvent *event)
++{
++    if (watched == m_window && (event->type() == QEvent::Resize || event->type() == QEvent::Show) && m_panel->isVisible()) {
++        place();
++    } else if (watched == m_panel && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
++        m_visibility.hide();
++        poll();
++        return true;
++    }
++    return QObject::eventFilter(watched, event);
++}
++
++#include "moc_muxoverlay.cpp"
+diff --git a/src/plugins/SessionManager/muxoverlay.h b/src/plugins/SessionManager/muxoverlay.h
+new file mode 100644
+index 000000000..e0a4a14eb
+--- /dev/null
++++ b/src/plugins/SessionManager/muxoverlay.h
+@@ -0,0 +1,81 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef MUXOVERLAY_H
++#define MUXOVERLAY_H
++
++#include "edgepanel.h"
++
++#include <QCursor>
++#include <QElapsedTimer>
++#include <QFrame>
++#include <QObject>
++#include <QPoint>
++
++#include <functional>
++
++class MuxModel;
++class MuxWidget;
++class QTimer;
++
++class QMainWindow;
++
++/**
++ * Running Terminals as a panel that appears over the terminal when the pointer reaches the edge of the window,
++ * on the side away from the scroll bar, and goes away again when the pointer leaves. It does not take space from
++ * the terminal, so nothing is resized as it comes and goes, and the pointer is watched on a timer, so the edge
++ * stays usable for the terminal and the scroll bar.
++ */
++class MuxEdgeOverlay : public QObject
++{
++    Q_OBJECT
++public:
++    /**
++     * @p scrollBarPosition says where the terminal's scroll bar is (0 right, 1 left, 2 hidden) and @p pointer gives
++     * the pointer in screen coordinates. Both are parameters so that the panel does not depend on Konsole.
++     */
++    MuxEdgeOverlay(
++        QMainWindow *window,
++        MuxModel *model,
++        std::function<int()> scrollBarPosition,
++        std::function<QPoint()> pointer = [] {
++            return QCursor::pos();
++        });
++
++    MuxWidget *widget() const;
++    bool autoHide() const;
++    void setAutoHide(bool enabled);
++    /** True while something else already shows the list, such as the side dock. */
++    void setSuspended(bool suspended);
++    /** Shows the panel now, as if the pointer had stayed at the edge. */
++    void reveal();
++    bool isShown() const;
++
++Q_SIGNALS:
++    void shownChanged(bool shown);
++
++protected:
++    bool eventFilter(QObject *watched, QEvent *event) override;
++
++private:
++    void poll();
++    void place();
++    QRect area() const;
++    EdgePanel::Edge edge() const;
++
++    QMainWindow *m_window;
++    std::function<int()> m_scrollBarPosition;
++    std::function<QPoint()> m_pointer;
++    QFrame *m_panel;
++    MuxWidget *m_widget;
++    QTimer *m_timer;
++    QElapsedTimer m_clock;
++    EdgePanel::Visibility m_visibility;
++    bool m_autoHide = true;
++    bool m_suspended = false;
++};
++
++#endif
+diff --git a/src/plugins/SessionManager/muxwidget.cpp b/src/plugins/SessionManager/muxwidget.cpp
+index 18174b1bf..d1631bf7d 100644
+--- a/src/plugins/SessionManager/muxwidget.cpp
++++ b/src/plugins/SessionManager/muxwidget.cpp
+@@ -117,9 +117,10 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+     , m_empty(new QLabel(this))
+     , m_restoreBar(new QFrame(this))
+     , m_restoreLabel(new QLabel(m_restoreBar))
+-    , m_openButton(new QPushButton(QIcon::fromTheme(QStringLiteral("media-playback-start")), i18nc("@action:button", "Open"), this))
+-    , m_openAllButton(new QPushButton(QIcon::fromTheme(QStringLiteral("view-restore")), i18nc("@action:button", "Open All"), this))
++    , m_openButton(new QPushButton(QIcon::fromTheme(QStringLiteral("media-playback-start")), i18nc("@action:button", "Open in Tab"), this))
++    , m_openAllButton(new QPushButton(QIcon::fromTheme(QStringLiteral("view-restore")), i18nc("@action:button", "Open All in Tabs"), this))
+     , m_newButton(new QToolButton(this))
++    , m_pinButton(new QToolButton(this))
+ {
+     qRegisterMetaType<Multiplexer::Session>();
+ 
+@@ -147,17 +148,22 @@ MuxWidget::MuxWidget(MuxModel *model, QWidget *parent)
+ 
+     auto *refresh = new QToolButton(this);
+     refresh->setIcon(QIcon::fromTheme(QStringLiteral("view-refresh")));
+-    refresh->setToolTip(i18nc("@info:tooltip", "Look for running terminals again"));
++    refresh->setToolTip(i18nc("@info:tooltip", "Check every computer again"));
+     auto *addHostButton = new QToolButton(this);
+     addHostButton->setIcon(QIcon::fromTheme(QStringLiteral("network-server")));
+-    addHostButton->setToolTip(i18nc("@info:tooltip", "Add another computer"));
++    addHostButton->setToolTip(i18nc("@info:tooltip", "Add a computer to look at…"));
+ 
+     auto *top = new QHBoxLayout;
+     auto *title = new QLabel(i18n("Running terminals"), this);
+     QFont titleFont = title->font();
+     titleFont.setBold(true);
+     title->setFont(titleFont);
++    m_pinButton->setIcon(QIcon::fromTheme(QStringLiteral("window-pin")));
++    m_pinButton->setToolTip(i18nc("@info:tooltip", "Keep this list open in a side panel"));
++    m_pinButton->hide();
++    connect(m_pinButton, &QToolButton::clicked, this, &MuxWidget::pinRequested);
+     top->addWidget(title, 1);
++    top->addWidget(m_pinButton);
+     top->addWidget(addHostButton);
+     top->addWidget(refresh);
+ 
+@@ -233,6 +239,11 @@ void MuxWidget::setRestoreOffer(int count)
+     m_restoreLabel->setText(i18np("Last time you had %1 terminal open. Bring it back?", "Last time you had %1 terminals open. Bring them back?", count));
+ }
+ 
++void MuxWidget::setPinnable(bool pinnable)
++{
++    m_pinButton->setVisible(pinnable);
++}
++
+ void MuxWidget::showEvent(QShowEvent *event)
+ {
+     QWidget::showEvent(event);
+@@ -292,13 +303,14 @@ void MuxWidget::fillNewMenu(QMenu *menu, const QString &hostId)
+             }
+         });
+     };
++    // tmux comes first and is the one to use; screen is offered next to it only where both exist.
+     if (r.tmuxAvailable && r.screenAvailable) {
+-        add(Tool::Tmux, i18nc("@action", "New (tmux)"));
+-        add(Tool::Screen, i18nc("@action", "New (screen)"));
++        add(Tool::Tmux, i18nc("@action", "New tmux Terminal"));
++        add(Tool::Screen, i18nc("@action", "New screen Terminal"));
+     } else if (r.tmuxAvailable) {
+-        add(Tool::Tmux, i18nc("@action", "New running terminal"));
++        add(Tool::Tmux, i18nc("@action", "New tmux Terminal"));
+     } else if (r.screenAvailable) {
+-        add(Tool::Screen, i18nc("@action", "New running terminal"));
++        add(Tool::Screen, i18nc("@action", "New screen Terminal"));
+     }
+ }
+ 
+diff --git a/src/plugins/SessionManager/muxwidget.h b/src/plugins/SessionManager/muxwidget.h
+index c703b0f84..80cf307bc 100644
+--- a/src/plugins/SessionManager/muxwidget.h
++++ b/src/plugins/SessionManager/muxwidget.h
+@@ -27,11 +27,15 @@ public:
+     /** Offers to bring back @p count terminals that were open last time. Zero hides the offer. */
+     void setRestoreOffer(int count);
+ 
++    /** Shows a button that asks for the list to be kept open in a side panel. */
++    void setPinnable(bool pinnable);
++
+ Q_SIGNALS:
+     void openRequested(const QString &hostId, const Multiplexer::Session &session, bool takeOver);
+     void openAllRequested(const QString &hostId);
+     void restoreRequested();
+     void restoreDismissed();
++    void pinRequested();
+     void newRequested(const QString &hostId, Multiplexer::Tool tool, const QString &name);
+ 
+ protected:
+@@ -62,6 +66,7 @@ private:
+     QPushButton *m_openButton;
+     QPushButton *m_openAllButton;
+     QToolButton *m_newButton;
++    QToolButton *m_pinButton;
+ };
+ 
+ #endif
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.cpp b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+index b115c867d..0b038e3cd 100644
+--- a/src/plugins/SessionManager/sessionmanagerplugin.cpp
++++ b/src/plugins/SessionManager/sessionmanagerplugin.cpp
+@@ -7,7 +7,9 @@
+ #include "sessionmanagerplugin.h"
+ 
+ #include "muxmodel.h"
++#include "muxoverlay.h"
+ #include "muxwidget.h"
++#include "taborder.h"
+ 
+ #include "MainWindow.h"
+ #include "ProcessInfo.h"
+@@ -15,16 +17,23 @@
+ #include "ViewManager.h"
+ #include "profile/ProfileManager.h"
+ #include "session/Session.h"
++#include "session/SessionController.h"
+ #include "session/SessionManager.h"
++#include "terminalDisplay/TerminalDisplay.h"
+ #include "widgets/ViewContainer.h"
++#include "widgets/ViewSplitter.h"
+ 
+ #include <KActionCollection>
++#include <KConfigGroup>
+ #include <KLocalizedString>
+ #include <KPluginFactory>
++#include <KSharedConfig>
+ 
+ #include <QAction>
+ #include <QApplication>
++#include <QDateTime>
+ #include <QDockWidget>
++#include <QTabBar>
+ #include <QTimer>
+ 
+ K_PLUGIN_CLASS_WITH_JSON(SessionManagerPlugin, "konsole_sessionmanager.json")
+@@ -32,6 +41,14 @@ K_PLUGIN_CLASS_WITH_JSON(SessionManagerPlugin, "konsole_sessionmanager.json")
+ using namespace Multiplexer;
+ 
+ static const char keyProperty[] = "konsoleMuxKey";
++static const char openedProperty[] = "konsoleMuxOpened";
++static const char manualProperty[] = "konsoleMuxManual";
++static const char watchedProperty[] = "konsoleMuxWatched";
++
++static bool autoHideSetting()
++{
++    return KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).readEntry("AutoHide", true);
++}
+ 
+ SessionManagerPlugin::SessionManagerPlugin(QObject *object, const QVariantList &args)
+     : Konsole::IKonsolePlugin(object, args)
+@@ -53,6 +70,7 @@ SessionManagerPlugin::~SessionManagerPlugin() = default;
+ 
+ void SessionManagerPlugin::createWidgetsForMainWindow(Konsole::MainWindow *mainWindow)
+ {
++    int pendingOfferCount = 0;
+     auto *dock = new QDockWidget(mainWindow);
+     auto *widget = new MuxWidget(m_model.get());
+     dock->setWidget(widget);
+@@ -67,38 +85,53 @@ void SessionManagerPlugin::createWidgetsForMainWindow(Konsole::MainWindow *mainW
+     if (m_offerPending) {
+         m_offerPending = false;
+         widget->setRestoreOffer(m_savedLayout.count());
++        pendingOfferCount = m_savedLayout.count();
+     }
+-    connect(widget, &MuxWidget::restoreRequested, this, [this, mainWindow] {
+-        restoreLayout(mainWindow);
+-    });
+-    connect(widget, &MuxWidget::restoreDismissed, this, [this] {
+-        setRestoreOffer(0);
+-    });
++    const auto wire = [this, mainWindow](MuxWidget *w) {
++        connect(w, &MuxWidget::restoreRequested, this, [this, mainWindow] {
++            restoreLayout(mainWindow);
++        });
++        connect(w, &MuxWidget::restoreDismissed, this, [this] {
++            setRestoreOffer(0);
++        });
++        connect(w, &MuxWidget::openRequested, this, [this, mainWindow](const QString &hostId, const Session &session, bool takeOver) {
++            openSession(mainWindow, hostId, session, takeOver);
++        });
++        connect(w, &MuxWidget::openAllRequested, this, [this, mainWindow](const QString &hostId) {
++            openAll(mainWindow, hostId);
++        });
++        connect(w, &MuxWidget::newRequested, this, [this, mainWindow](const QString &hostId, Tool tool, const QString &name) {
++            createSession(mainWindow, hostId, tool, name);
++        });
++    };
++    wire(widget);
+ 
+-    connect(widget, &MuxWidget::openRequested, this, [this, mainWindow](const QString &hostId, const Session &session, bool takeOver) {
+-        openSession(mainWindow, hostId, session, takeOver);
++    // The same list also comes up over the terminal when the pointer reaches the edge of the window.
++    auto *overlay = new MuxEdgeOverlay(mainWindow, m_model.get(), [] {
++        const Konsole::Profile::Ptr profile = Konsole::ProfileManager::instance()->defaultProfile();
++        return profile ? profile->property<int>(Konsole::Profile::ScrollBarPosition) : 0;
+     });
+-    connect(widget, &MuxWidget::openAllRequested, this, [this, mainWindow](const QString &hostId) {
+-        openAll(mainWindow, hostId);
++    m_overlays[mainWindow] = overlay;
++    overlay->setAutoHide(autoHideSetting());
++    wire(overlay->widget());
++    if (pendingOfferCount > 0) {
++        overlay->widget()->setRestoreOffer(pendingOfferCount);
++    }
++    connect(overlay->widget(), &MuxWidget::pinRequested, dock, [dock] {
++        dock->show();
+     });
+-    connect(widget, &MuxWidget::newRequested, this, [this, mainWindow](const QString &hostId, Tool tool, const QString &name) {
+-        createSession(mainWindow, hostId, tool, name);
++    connect(dock, &QDockWidget::visibilityChanged, overlay, &MuxEdgeOverlay::setSuspended);
++    connect(overlay, &MuxEdgeOverlay::shownChanged, this, [this] {
++        updatePolling();
+     });
+ 
+     // Only poll while a panel is visible.
+     connect(dock, &QDockWidget::visibilityChanged, this, [this] {
+-        const bool anyVisible = std::any_of(m_docks.cbegin(), m_docks.cend(), [](QDockWidget *d) {
+-            return d->isVisible();
+-        });
+-        if (anyVisible) {
+-            updateOpenState();
+-            m_timer->start();
+-        } else {
+-            m_timer->stop();
+-        }
++        updatePolling();
+     });
+     connect(mainWindow, &QObject::destroyed, this, [this, mainWindow] {
+         m_docks.remove(mainWindow);
++        m_overlays.remove(mainWindow);
+     });
+ }
+ 
+@@ -110,7 +143,35 @@ QList<QAction *> SessionManagerPlugin::menuBarActions(Konsole::MainWindow *mainW
+     QDockWidget *dock = m_docks.value(mainWindow);
+     connect(toggle, &QAction::triggered, dock, &QDockWidget::setVisible);
+     connect(dock, &QDockWidget::visibilityChanged, toggle, &QAction::setChecked);
+-    return {toggle};
++
++    auto *autoHide = new QAction(i18n("Auto-hide Running Terminals"), mainWindow);
++    autoHide->setCheckable(true);
++    autoHide->setChecked(autoHideSetting());
++    autoHide->setToolTip(i18n("Show the list when the pointer reaches the edge of the window, on the side away from the scroll bar"));
++    connect(autoHide, &QAction::toggled, this, [this](bool on) {
++        KSharedConfig::openConfig()->group(QStringLiteral("SessionManager")).writeEntry("AutoHide", on);
++        KSharedConfig::openConfig()->sync();
++        for (MuxEdgeOverlay *overlay : std::as_const(m_overlays)) {
++            overlay->setAutoHide(on);
++        }
++    });
++
++    // One step to a new terminal that keeps running: tmux where it is installed, screen where it is not.
++    auto *create = new QAction(QIcon::fromTheme(QStringLiteral("list-add")), i18n("New Running Terminal"), mainWindow);
++    const QString localId = MuxHosts::local().id;
++    const auto update = [this, create, localId] {
++        const ProbeResult &r = m_model->result(localId);
++        create->setEnabled(r.tmuxAvailable || r.screenAvailable);
++        create->setText(r.tmuxAvailable || !r.screenAvailable ? i18n("New Running Terminal (tmux)") : i18n("New Running Terminal (screen)"));
++    };
++    update();
++    connect(m_model.get(), &MuxModel::hostUpdated, create, update);
++    auto *self = const_cast<SessionManagerPlugin *>(this);
++    connect(create, &QAction::triggered, self, [self, mainWindow, localId] {
++        const ProbeResult &r = self->m_model->result(localId);
++        self->createSession(mainWindow, localId, r.tmuxAvailable || !r.screenAvailable ? Tool::Tmux : Tool::Screen, QString());
++    });
++    return {toggle, autoHide, create};
+ }
+ 
+ void SessionManagerPlugin::activeViewChanged(Konsole::SessionController *controller, Konsole::MainWindow *mainWindow)
+@@ -123,7 +184,7 @@ Konsole::Session *
+ SessionManagerPlugin::openCommand(Konsole::MainWindow *mainWindow, const QString &hostId, const QString &command, const QString &title, const QString &key)
+ {
+     const MuxHost host = m_model->host(hostId);
+-    const QString text = host.isLocal() ? command : remoteTerminalCommand(host.sshArgs, command);
++    const QString text = host.isLocal() ? command : reconnectingTerminalCommand(host.sshArgs, command);
+ 
+     Konsole::Profile::Ptr profile = Konsole::ProfileManager::instance()->defaultProfile();
+     Konsole::Session *session = Konsole::SessionManager::instance()->createSession(profile);
+@@ -131,11 +192,13 @@ SessionManagerPlugin::openCommand(Konsole::MainWindow *mainWindow, const QString
+     session->setTabTitleFormat(Konsole::Session::LocalTabTitle, tabTitle);
+     session->setTabTitleFormat(Konsole::Session::RemoteTabTitle, tabTitle);
+     session->setProperty(keyProperty, key);
++    session->setProperty(openedProperty, QDateTime::currentMSecsSinceEpoch());
+     session->sendTextToTerminal(text, QLatin1Char('\r'));
+ 
+     // The view must exist before the process starts, see MainWindow::createSSHSession().
+     Konsole::ViewManager *viewManager = mainWindow->viewManager();
+     viewManager->activeContainer()->addView(viewManager->createView(session));
++    organiseTabs(mainWindow);
+ 
+     connect(session, &QObject::destroyed, this, [this] {
+         QTimer::singleShot(0, this, [this] {
+@@ -158,7 +221,7 @@ SessionManagerPlugin::openCommand(Konsole::MainWindow *mainWindow, const QString
+ 
+ Konsole::Session *SessionManagerPlugin::openSession(Konsole::MainWindow *mainWindow, const QString &hostId, const Session &session, bool takeOver)
+ {
+-    return openCommand(mainWindow, hostId, attachCommand(session, takeOver), session.name, MuxModel::sessionKey(hostId, session));
++    return openCommand(mainWindow, hostId, attachCommand(session, takeOver), displayName(session), MuxModel::sessionKey(hostId, session));
+ }
+ 
+ void SessionManagerPlugin::openAll(Konsole::MainWindow *mainWindow, const QString &hostId)
+@@ -180,7 +243,7 @@ void SessionManagerPlugin::createSession(Konsole::MainWindow *mainWindow, const
+ {
+     // The name is only known to the tool once it exists, so the tab is not marked as open
+     // until the next refresh finds it.
+-    const QString title = name.isEmpty() ? i18n("New terminal") : name;
++    const QString title = name.isEmpty() ? i18nc("@title:tab", "New %1 terminal", toolName(tool)) : name;
+     Session created;
+     created.tool = tool;
+     created.name = name;
+@@ -191,6 +254,108 @@ void SessionManagerPlugin::createSession(Konsole::MainWindow *mainWindow, const
+     });
+ }
+ 
++void SessionManagerPlugin::updatePolling()
++{
++    const bool dockVisible = std::any_of(m_docks.cbegin(), m_docks.cend(), [](QDockWidget *d) {
++        return d->isVisible();
++    });
++    const bool overlayShown = std::any_of(m_overlays.cbegin(), m_overlays.cend(), [](MuxEdgeOverlay *o) {
++        return o->isShown();
++    });
++    if (dockVisible || overlayShown) {
++        updateOpenState();
++        m_timer->start();
++    } else {
++        m_timer->stop();
++    }
++}
++
++static Konsole::Session *sessionAt(Konsole::TabbedViewContainer *container, int index)
++{
++    auto *splitter = qobject_cast<Konsole::ViewSplitter *>(container->widget(index));
++    Konsole::TerminalDisplay *display = splitter ? splitter->activeTerminalDisplay() : nullptr;
++    return display ? display->session().data() : nullptr;
++}
++
++void SessionManagerPlugin::watchTabBar(QTabBar *bar, Konsole::MainWindow *mainWindow)
++{
++    if (bar->property(watchedProperty).toBool()) {
++        return;
++    }
++    bar->setProperty(watchedProperty, true);
++    // A tab the user drags stays where they put it; the rest sort around it.
++    connect(bar, &QTabBar::tabMoved, this, [this, mainWindow](int, int to) {
++        if (m_arranging) {
++            return;
++        }
++        Konsole::TabbedViewContainer *container = mainWindow->viewManager()->activeContainer();
++        if (Konsole::Session *session = container ? sessionAt(container, to) : nullptr) {
++            if (!session->property(keyProperty).toString().isEmpty()) {
++                session->setProperty(manualProperty, true);
++            }
++        }
++    });
++}
++
++void SessionManagerPlugin::organiseTabs(Konsole::MainWindow *mainWindow)
++{
++    Konsole::TabbedViewContainer *container = mainWindow->viewManager()->activeContainer();
++    QTabBar *bar = container ? container->findChild<QTabBar *>() : nullptr;
++    if (!bar) {
++        return;
++    }
++    watchTabBar(bar, mainWindow);
++
++    QList<TabOrder::Tab> tabs;
++    QList<Konsole::Session *> sessions;
++    for (int i = 0; i < container->count(); ++i) {
++        Konsole::Session *session = sessionAt(container, i);
++        sessions.append(session);
++        TabOrder::Tab tab;
++        const QStringList parts = session ? session->property(keyProperty).toString().split(QLatin1Char('\n')) : QStringList();
++        if (parts.size() >= 3) {
++            tab.managed = true;
++            tab.manual = session->property(manualProperty).toBool();
++            tab.group = 0;
++            for (int h = 0; h < m_model->hosts().size(); ++h) {
++                if (m_model->hosts().at(h).id == parts.at(0)) {
++                    tab.group = h;
++                    break;
++                }
++            }
++            tab.tool = parts.at(1) == toolName(Tool::Screen) ? 1 : 0;
++            tab.name = parts.mid(2).join(QLatin1Char('\n'));
++            tab.created = session->property(openedProperty).toLongLong();
++        }
++        tabs.append(tab);
++    }
++
++    // arrange() says which tab belongs in each place; move them there one at a time.
++    const QList<int> wanted = TabOrder::arrange(tabs);
++    QList<int> current;
++    for (int i = 0; i < tabs.size(); ++i) {
++        current.append(i);
++    }
++    m_arranging = true;
++    for (int slot = 0; slot < wanted.size(); ++slot) {
++        const int from = current.indexOf(wanted.at(slot));
++        if (from != slot) {
++            bar->moveTab(from, slot);
++            current.move(from, slot);
++        }
++    }
++    m_arranging = false;
++
++    // Every group has its own colour, so tabs from one computer are easy to find. Applied after the moves,
++    // by the place each tab ended up in.
++    for (int slot = 0; slot < wanted.size(); ++slot) {
++        const TabOrder::Tab &tab = tabs.at(wanted.at(slot));
++        if (tab.managed) {
++            container->setColor(slot, TabOrder::groupColour(tab.group));
++        }
++    }
++}
++
+ void SessionManagerPlugin::saveLayout()
+ {
+     MuxLayout layout;
+@@ -211,6 +376,9 @@ void SessionManagerPlugin::setRestoreOffer(int count)
+     for (QDockWidget *dock : std::as_const(m_docks)) {
+         static_cast<MuxWidget *>(dock->widget())->setRestoreOffer(count);
+     }
++    for (MuxEdgeOverlay *overlay : std::as_const(m_overlays)) {
++        overlay->widget()->setRestoreOffer(count);
++    }
+ }
+ 
+ void SessionManagerPlugin::restoreLayout(Konsole::MainWindow *mainWindow)
+diff --git a/src/plugins/SessionManager/sessionmanagerplugin.h b/src/plugins/SessionManager/sessionmanagerplugin.h
+index 457c7e983..c6ce8dcc2 100644
+--- a/src/plugins/SessionManager/sessionmanagerplugin.h
++++ b/src/plugins/SessionManager/sessionmanagerplugin.h
+@@ -17,7 +17,9 @@
+ 
+ class MuxModel;
+ class QDockWidget;
++class QTabBar;
+ class QTimer;
++class MuxEdgeOverlay;
+ 
+ namespace Konsole
+ {
+@@ -45,12 +47,17 @@ private:
+     void saveLayout();
+     void restoreLayout(Konsole::MainWindow *mainWindow);
+     void setRestoreOffer(int count);
++    void organiseTabs(Konsole::MainWindow *mainWindow);
++    void updatePolling();
++    void watchTabBar(QTabBar *bar, Konsole::MainWindow *mainWindow);
+ 
+     std::unique_ptr<MuxModel> m_model;
+     QTimer *m_timer;
+     MuxLayout m_savedLayout;
+     bool m_offerPending;
+     QHash<Konsole::MainWindow *, QDockWidget *> m_docks;
++    QHash<Konsole::MainWindow *, MuxEdgeOverlay *> m_overlays;
++    bool m_arranging = false;
+ };
+ 
+ #endif
+diff --git a/src/plugins/SessionManager/taborder.cpp b/src/plugins/SessionManager/taborder.cpp
+new file mode 100644
+index 000000000..2b5952fba
+--- /dev/null
++++ b/src/plugins/SessionManager/taborder.cpp
+@@ -0,0 +1,69 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#include "taborder.h"
++
++#include <QCollator>
++
++#include <algorithm>
++
++namespace TabOrder
++{
++bool naturalLess(const QString &a, const QString &b)
++{
++    QCollator collator;
++    collator.setNumericMode(true);
++    collator.setCaseSensitivity(Qt::CaseInsensitive);
++    return collator.compare(a, b) < 0;
++}
++
++QList<int> arrange(const QList<Tab> &tabs)
++{
++    const int count = tabs.size();
++    QList<int> result(count, -1);
++    QList<int> movable;
++    for (int i = 0; i < count; ++i) {
++        if (tabs.at(i).managed && !tabs.at(i).manual) {
++            movable.append(i);
++        } else {
++            result[i] = i;
++        }
++    }
++    std::stable_sort(movable.begin(), movable.end(), [&tabs](int x, int y) {
++        const Tab &a = tabs.at(x);
++        const Tab &b = tabs.at(y);
++        if (a.group != b.group) {
++            return a.group < b.group;
++        }
++        if (a.tool != b.tool) {
++            return a.tool < b.tool;
++        }
++        if (a.name != b.name) {
++            return naturalLess(a.name, b.name);
++        }
++        return a.created < b.created;
++    });
++    int next = 0;
++    for (int slot = 0; slot < count; ++slot) {
++        if (result.at(slot) < 0) {
++            result[slot] = movable.at(next++);
++        }
++    }
++    return result;
++}
++
++QColor groupColour(int group)
++{
++    // Okabe and Ito's set, without the yellow that would vanish on a light tab bar.
++    static const QColor colours[] = {QColor(0x00, 0x72, 0xB2),
++                                     QColor(0xE6, 0x9F, 0x00),
++                                     QColor(0x00, 0x9E, 0x73),
++                                     QColor(0xCC, 0x79, 0xA7),
++                                     QColor(0xD5, 0x5E, 0x00),
++                                     QColor(0x56, 0xB4, 0xE9)};
++    return colours[qAbs(group) % 6];
++}
++}
+diff --git a/src/plugins/SessionManager/taborder.h b/src/plugins/SessionManager/taborder.h
+new file mode 100644
+index 000000000..60b118391
+--- /dev/null
++++ b/src/plugins/SessionManager/taborder.h
+@@ -0,0 +1,39 @@
++/*
++    SPDX-FileCopyrightText: 2026 Mike Lothian <mike@fireburn.co.uk>
++
++    SPDX-License-Identifier: GPL-2.0-or-later
++*/
++
++#ifndef TABORDER_H
++#define TABORDER_H
++
++#include <QColor>
++#include <QList>
++#include <QString>
++
++/**
++ * Where tabs opened from Running Terminals go on the tab bar: grouped by computer, this one first, then tmux
++ * before screen, then by name. Tabs the user moved by hand and tabs not opened from the panel keep their place.
++ */
++namespace TabOrder
++{
++struct Tab {
++    bool managed = false; // opened from Running Terminals
++    bool manual = false; // moved by hand, so left where it is
++    int group = 0; // 0 is this computer, then each other computer in the order the panel lists them
++    int tool = 0; // 0 tmux, 1 screen
++    QString name;
++    qint64 created = 0;
++};
++
++/** The original positions, in the order the tabs should now be in. */
++QList<int> arrange(const QList<Tab> &tabs);
++
++/** 2 sorts before 10, and case is ignored. */
++bool naturalLess(const QString &a, const QString &b);
++
++/** A colour for a group of tabs. They stay apart for the common kinds of colour blindness. */
++QColor groupColour(int group);
++}
++
++#endif
+-- 
+2.56.0
+
