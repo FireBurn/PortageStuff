@@ -1,0 +1,237 @@
+diff --git a/clang/include/clang/Basic/Builtins.td b/clang/include/clang/Basic/Builtins.td
+index 344a712ddc58..adea4842ea6a 100644
+--- a/clang/include/clang/Basic/Builtins.td
++++ b/clang/include/clang/Basic/Builtins.td
+@@ -4875,6 +4875,12 @@ def BuiltinFunctionStart : Builtin {
+   let Prototype = "void*(void&)";
+ }
+ 
++def BuiltinImgrel32 : Builtin {
++  let Spellings = ["__builtin_imgrel32"];
++  let Attributes = [NoThrow, Const, Constexpr, CustomTypeChecking];
++  let Prototype = "unsigned int(void const*)";
++}
++
+ def BuiltinOperatorNew : Builtin {
+   let Spellings = ["__builtin_operator_new"];
+   let Attributes = [Const, CustomTypeChecking, Constexpr];
+diff --git a/clang/include/clang/Basic/DiagnosticSemaKinds.td b/clang/include/clang/Basic/DiagnosticSemaKinds.td
+index 2cb79b6ba275..76b17a5fd0c4 100644
+--- a/clang/include/clang/Basic/DiagnosticSemaKinds.td
++++ b/clang/include/clang/Basic/DiagnosticSemaKinds.td
+@@ -1016,6 +1016,12 @@ def warn_fortify_scanf_overflow : Warning<
+ def err_function_start_invalid_type: Error<
+   "argument must be a function">;
+ 
++def err_imgrel32_requires_coff : Error<
++  "'__builtin_imgrel32' is only supported on COFF targets">;
++def err_imgrel32_not_address_constant : Error<
++  "argument to '__builtin_imgrel32' must be the address of a global variable "
++  "or function">;
++
+ def err_ptrauth_disabled :
+   Error<"this target does not support pointer authentication">;
+ def err_ptrauth_invalid_key :
+diff --git a/clang/lib/AST/ByteCode/Interp.h b/clang/lib/AST/ByteCode/Interp.h
+index 201679017c98..82606f91091b 100644
+--- a/clang/lib/AST/ByteCode/Interp.h
++++ b/clang/lib/AST/ByteCode/Interp.h
+@@ -1297,7 +1297,8 @@ static inline bool IsOpaqueConstantCall(const CallExpr *E) {
+   return (Builtin == Builtin::BI__builtin___CFStringMakeConstantString ||
+           Builtin == Builtin::BI__builtin___NSStringMakeConstantString ||
+           Builtin == Builtin::BI__builtin_ptrauth_sign_constant ||
+-          Builtin == Builtin::BI__builtin_function_start);
++          Builtin == Builtin::BI__builtin_function_start ||
++          Builtin == Builtin::BI__builtin_imgrel32);
+ }
+ 
+ bool arePotentiallyOverlappingStringLiterals(const Pointer &LHS,
+diff --git a/clang/lib/AST/ExprConstant.cpp b/clang/lib/AST/ExprConstant.cpp
+index 120af89a93b0..d47f6f177070 100644
+--- a/clang/lib/AST/ExprConstant.cpp
++++ b/clang/lib/AST/ExprConstant.cpp
+@@ -1930,7 +1930,8 @@ static bool IsOpaqueConstantCall(const CallExpr *E) {
+   return (Builtin == Builtin::BI__builtin___CFStringMakeConstantString ||
+           Builtin == Builtin::BI__builtin___NSStringMakeConstantString ||
+           Builtin == Builtin::BI__builtin_ptrauth_sign_constant ||
+-          Builtin == Builtin::BI__builtin_function_start);
++          Builtin == Builtin::BI__builtin_function_start ||
++          Builtin == Builtin::BI__builtin_imgrel32);
+ }
+ 
+ static bool IsOpaqueConstantCall(const LValue &LVal) {
+@@ -16711,6 +16712,21 @@ static bool getBuiltinAlignArguments(const CallExpr *E, EvalInfo &Info,
+ 
+ bool IntExprEvaluator::VisitBuiltinCallExpr(const CallExpr *E,
+                                             unsigned BuiltinOp) {
++  if (BuiltinOp == Builtin::BI__builtin_imgrel32) {
++    // The offset from the image base is only known to the linker. The result
++    // is an lvalue based on the call, which CodeGen turns into a relocation.
++    LValue LV;
++    if (!EvaluatePointer(E->getArg(0), LV, Info))
++      return false;
++    if (!LV.getLValueBase().is<const ValueDecl *>())
++      return Error(E);
++    LV.Designator.setInvalid();
++    LV.Base = E;
++    LV.Offset = CharUnits::Zero();
++    LV.moveInto(Result);
++    return true;
++  }
++
+   auto EvalTestOp = [&](llvm::function_ref<bool(const APInt &, const APInt &)>
+                             Fn) {
+     APValue SourceLHS, SourceRHS;
+diff --git a/clang/lib/CodeGen/CGBuiltin.cpp b/clang/lib/CodeGen/CGBuiltin.cpp
+index 37846bbb0b5e..922147351e36 100644
+--- a/clang/lib/CodeGen/CGBuiltin.cpp
++++ b/clang/lib/CodeGen/CGBuiltin.cpp
+@@ -6148,6 +6148,14 @@ RValue CodeGenFunction::EmitBuiltinExpr(const GlobalDecl GD, unsigned BuiltinID,
+   case Builtin::BI__builtin_function_start:
+     return RValue::get(CGM.GetFunctionStart(
+         E->getArg(0)->getAsBuiltinConstantDeclRef(CGM.getContext())));
++  case Builtin::BI__builtin_imgrel32: {
++    const Expr *Arg = E->getArg(0);
++    llvm::Constant *Ptr =
++        ConstantEmitter(*this).tryEmitAbstract(Arg, Arg->getType());
++    assert(Ptr && "Sema checked that the argument is a constant address");
++    return RValue::get(
++        CGM.GetImageRelativeOffset(Ptr, ConvertType(E->getType())));
++  }
+   case Builtin::BI__builtin_operator_new:
+     return EmitBuiltinNewDeleteCall(
+         E->getCallee()->getType()->castAs<FunctionProtoType>(), E, false);
+diff --git a/clang/lib/CodeGen/CGExprConstant.cpp b/clang/lib/CodeGen/CGExprConstant.cpp
+index 27b7423a42f9..903acbcd5762 100644
+--- a/clang/lib/CodeGen/CGExprConstant.cpp
++++ b/clang/lib/CodeGen/CGExprConstant.cpp
+@@ -2216,6 +2216,12 @@ llvm::Constant *ConstantLValueEmitter::tryEmit() {
+       return nullptr;
+   }
+ 
++  // The base is the address the offset is taken from; subtract the image base.
++  if (const auto *CE =
++          dyn_cast_if_present<CallExpr>(base.dyn_cast<const Expr *>()))
++    if (CE->getBuiltinCallee() == Builtin::BI__builtin_imgrel32)
++      return CGM.GetImageRelativeOffset(value, destTy);
++
+   // Convert to the appropriate type; this could be an lvalue for
+   // an integer.  FIXME: performAddrSpaceCast
+   if (isa<llvm::PointerType>(destTy))
+@@ -2464,6 +2470,10 @@ ConstantLValueEmitter::VisitAddrLabelExpr(const AddrLabelExpr *E) {
+ ConstantLValue
+ ConstantLValueEmitter::VisitCallExpr(const CallExpr *E) {
+   unsigned builtin = E->getBuiltinCallee();
++  if (builtin == Builtin::BI__builtin_imgrel32)
++    return Emitter.tryEmitPrivateForMemory(E->getArg(0),
++                                           E->getArg(0)->getType());
++
+   if (builtin == Builtin::BI__builtin_function_start)
+     return CGM.GetFunctionStart(
+         E->getArg(0)->getAsBuiltinConstantDeclRef(CGM.getContext()));
+diff --git a/clang/lib/CodeGen/CodeGenModule.cpp b/clang/lib/CodeGen/CodeGenModule.cpp
+index 313a364e80af..a55dc92d3179 100644
+--- a/clang/lib/CodeGen/CodeGenModule.cpp
++++ b/clang/lib/CodeGen/CodeGenModule.cpp
+@@ -5739,6 +5739,25 @@ CodeGenModule::GetAddrOfFunction(GlobalDecl GD, llvm::Type *Ty, bool ForVTable,
+   return F;
+ }
+ 
++llvm::Constant *CodeGenModule::GetImageRelativeOffset(llvm::Constant *Ptr,
++                                                      llvm::Type *Ty) {
++  llvm::GlobalVariable *ImageBase = TheModule.getNamedGlobal("__ImageBase");
++  if (!ImageBase) {
++    ImageBase =
++        new llvm::GlobalVariable(TheModule, Int8Ty, /*isConstant=*/true,
++                                 llvm::GlobalValue::ExternalLinkage,
++                                 /*Initializer=*/nullptr, "__ImageBase");
++    setDSOLocal(ImageBase);
++  }
++
++  // trunc(ptrtoint(P) - ptrtoint(__ImageBase)), which the backend lowers to an
++  // image relative relocation.
++  llvm::Constant *Diff = llvm::ConstantExpr::getSub(
++      llvm::ConstantExpr::getPtrToInt(Ptr, IntPtrTy),
++      llvm::ConstantExpr::getPtrToInt(ImageBase, IntPtrTy));
++  return llvm::ConstantExpr::getTrunc(Diff, Ty);
++}
++
+ llvm::Constant *CodeGenModule::GetFunctionStart(const ValueDecl *Decl) {
+   llvm::GlobalValue *F =
+       cast<llvm::GlobalValue>(GetAddrOfFunction(Decl)->stripPointerCasts());
+diff --git a/clang/lib/CodeGen/CodeGenModule.h b/clang/lib/CodeGen/CodeGenModule.h
+index f62c761be018..baf0211e7562 100644
+--- a/clang/lib/CodeGen/CodeGenModule.h
++++ b/clang/lib/CodeGen/CodeGenModule.h
+@@ -1112,6 +1112,10 @@ public:
+   // Return the function body address of the given function.
+   llvm::Constant *GetFunctionStart(const ValueDecl *Decl);
+ 
++  /// Returns the offset of the global Ptr points to from the image base,
++  /// as a constant of integer type Ty, for COFF targets.
++  llvm::Constant *GetImageRelativeOffset(llvm::Constant *Ptr, llvm::Type *Ty);
++
+   /// Return a function pointer for a reference to the given function.
+   /// This correctly handles weak references, but does not apply a
+   /// pointer signature.
+diff --git a/clang/lib/Sema/SemaChecking.cpp b/clang/lib/Sema/SemaChecking.cpp
+index 2a8395e26d0b..b0e497f1d001 100644
+--- a/clang/lib/Sema/SemaChecking.cpp
++++ b/clang/lib/Sema/SemaChecking.cpp
+@@ -307,6 +307,45 @@ static bool BuiltinFunctionStart(Sema &S, CallExpr *TheCall) {
+                                               TheCall->getBeginLoc());
+ }
+ 
++/// Check the argument to __builtin_imgrel32, the 32-bit offset of a global
++/// from the image base. It is only meaningful as a constant.
++static bool BuiltinImgrel32(Sema &S, CallExpr *TheCall) {
++  if (S.checkArgCount(TheCall, 1))
++    return true;
++
++  if (TheCall->getArg(0)->containsErrors())
++    return true;
++
++  if (!S.Context.getTargetInfo().getTriple().isOSBinFormatCOFF()) {
++    S.Diag(TheCall->getBeginLoc(), diag::err_imgrel32_requires_coff)
++        << TheCall->getSourceRange();
++    return true;
++  }
++
++  ExprResult Arg = S.DefaultFunctionArrayLvalueConversion(TheCall->getArg(0));
++  if (Arg.isInvalid())
++    return true;
++  TheCall->setArg(0, Arg.get());
++
++  // A dllimport declaration lives in another image and a thread-local variable
++  // has no fixed address, so neither has an offset from this image's base.
++  Expr::EvalResult Result;
++  const auto *D =
++      Arg.get()->EvaluateAsRValue(Result, S.Context) && Result.Val.isLValue()
++          ? Result.Val.getLValueBase().dyn_cast<const ValueDecl *>()
++          : nullptr;
++  if (!D || D->hasAttr<DLLImportAttr>() ||
++      (isa<VarDecl>(D) &&
++       cast<VarDecl>(D)->getTLSKind() != VarDecl::TLS_None)) {
++    S.Diag(TheCall->getBeginLoc(), diag::err_imgrel32_not_address_constant)
++        << TheCall->getSourceRange();
++    return true;
++  }
++
++  TheCall->setType(S.Context.UnsignedIntTy);
++  return false;
++}
++
+ /// Check the number of arguments and set the result type to
+ /// the argument type.
+ static bool BuiltinPreserveAI(Sema &S, CallExpr *TheCall) {
+@@ -3444,6 +3483,10 @@ Sema::CheckBuiltinFunctionCall(FunctionDecl *FDecl, unsigned BuiltinID,
+     if (BuiltinFunctionStart(*this, TheCall))
+       return ExprError();
+     break;
++  case Builtin::BI__builtin_imgrel32:
++    if (BuiltinImgrel32(*this, TheCall))
++      return ExprError();
++    break;
+   case Builtin::BI__builtin_is_aligned:
+   case Builtin::BI__builtin_align_up:
+   case Builtin::BI__builtin_align_down:
