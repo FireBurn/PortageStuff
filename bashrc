@@ -80,14 +80,6 @@ pre_src_compile() {
 	_force_user_flags
 	# Mozilla's elfhack linker wrapper aborts with "Not ELF?" on the bitcode
 	# objects of its own LTO, so it is turned off in the generated mozconfig.
-	# makedep writes the preloader link into the Makefile with the flags
-	# already expanded, so the flag goes on the line that sets the address,
-	# which is the continuation of the link, or the link itself for the
-	# preloader of a wow64 build.
-	if [[ -n ${WINE_PRELOADER_PIC} && -f ${BUILD_DIR:-${S}}/Makefile ]]; then
-		sed -i 's/\( -Wl,-Ttext=0x[0-9a-f]*\)$/\1 -Wl,-mllvm,-relocation-model=pic/' \
-			"${BUILD_DIR:-${S}}/Makefile" || die
-	fi
 	if [[ -n ${MOZ_NO_ELFHACK} && -f ${S}/.mozconfig ]]; then
 		sed -i 's/^ac_add_options --enable-elf-hack=relr.*/ac_add_options --disable-elf-hack # elfhack aborts on LTO objects/' \
 			"${S}/.mozconfig" || die
