@@ -1,0 +1,4 @@
+# aarch64 and riscv64 emulation for llvm-libc tests
+app-emulation/qemu QEMU_USER_TARGETS: aarch64 riscv64
+app-emulation/qemu QEMU_SOFTMMU_TARGETS: aarch64 riscv64 -x86_64
+app-emulation/qemu -X -gtk -opengl -pipewire -pulseaudio -alsa -wayland -vnc -usb -slirp -curl -io-uring -jpeg -png -pam -udev -vhost-net -gnutls -nls fdt
