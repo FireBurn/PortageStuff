@@ -9,3 +9,4 @@ dev-libs/libiconv-1.18
 
 # /lib/firmware is a clone of upstream linux-firmware, updated by git-update.
 sys-kernel/linux-firmware-20260916
+sys-libs/fts-standalone-1.2.7-r1
