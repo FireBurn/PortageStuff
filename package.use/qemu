@@ -1,0 +1,2 @@
+# qemu-user runs the aarch64 and riscv64 libc tests here; system emulation boots their VMs
+app-emulation/qemu qemu_user_targets_aarch64 qemu_user_targets_riscv64 qemu_softmmu_targets_aarch64 qemu_softmmu_targets_riscv64
