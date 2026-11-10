@@ -1,0 +1,73 @@
+diff -urN a/include/fpu/softfloat-types.h b/include/fpu/softfloat-types.h
+--- a/include/fpu/softfloat-types.h	2026-11-09 10:46:31.070497180 +0000
++++ b/include/fpu/softfloat-types.h	2026-11-09 10:46:31.078715379 +0000
+@@ -104,6 +104,12 @@
+ } floatx80;
+ #define make_floatx80(exp, mant) ((floatx80) { mant, exp })
+ #define make_floatx80_init(exp, mant) { .low = mant, .high = exp }
++/*
++ * llvm-libc's <stdlib.h> and <math.h> declare a typedef called float128, so
++ * the name has to be QEMU's own from here on. The macro keeps the token
++ * pasting in the softfloat helpers (float128_add and so on) working.
++ */
++#define float128 qemu_float128
+ typedef struct {
+ #if HOST_BIG_ENDIAN
+     uint64_t high, low;
+diff -urN a/include/fpu/softfloat.h b/include/fpu/softfloat.h
+--- a/include/fpu/softfloat.h	2026-11-09 10:48:46.323895722 +0000
++++ b/include/fpu/softfloat.h	2026-11-09 10:48:52.618337003 +0000
+@@ -1376,27 +1376,33 @@
+ | Minumum and maximum functions.
+ *----------------------------------------------------------------------------*/
+ 
+-#define MINMAX_1(type, name, flags)                                     \
+-    static inline type type##_##name(type a, type b, float_status *s)   \
+-    { return type##_minmax(a, b, s, flags); }
++/*
++ * pfx is only ever pasted, so it is not macro expanded: float128 is a macro here (see softfloat-types.h) and the
++ * function names have to stay float128_max and so on.
++ */
++#define MINMAX_2(type, pfx)                                             \
++    static inline type pfx##_max(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, 0); } \
++    static inline type pfx##_maxnum(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_isnum); } \
++    static inline type pfx##_maxnummag(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_isnum | float_minmax_ismag); } \
++    static inline type pfx##_maximum_number(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_isnumber); } \
++    static inline type pfx##_min(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_ismin); } \
++    static inline type pfx##_minnum(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_ismin | float_minmax_isnum); } \
++    static inline type pfx##_minnummag(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_ismin | float_minmax_isnum | float_minmax_ismag); } \
++    static inline type pfx##_minimum_number(type a, type b, float_status *s)    \
++    { return pfx##_minmax(a, b, s, float_minmax_ismin | float_minmax_isnumber); }
+ 
+-#define MINMAX_2(type)                                                  \
+-    MINMAX_1(type, max, 0)                                              \
+-    MINMAX_1(type, maxnum, float_minmax_isnum)                          \
+-    MINMAX_1(type, maxnummag, float_minmax_isnum | float_minmax_ismag)  \
+-    MINMAX_1(type, maximum_number, float_minmax_isnumber)               \
+-    MINMAX_1(type, min, float_minmax_ismin)                             \
+-    MINMAX_1(type, minnum, float_minmax_ismin | float_minmax_isnum)     \
+-    MINMAX_1(type, minnummag,                                           \
+-             float_minmax_ismin | float_minmax_isnum | float_minmax_ismag) \
+-    MINMAX_1(type, minimum_number,                                      \
+-             float_minmax_ismin | float_minmax_isnumber)
+-
+-MINMAX_2(float16)
+-MINMAX_2(bfloat16)
+-MINMAX_2(float32)
+-MINMAX_2(float64)
+-MINMAX_2(float128)
++MINMAX_2(float16, float16)
++MINMAX_2(bfloat16, bfloat16)
++MINMAX_2(float32, float32)
++MINMAX_2(float64, float64)
++MINMAX_2(float128, float128)
+ 
+ #undef MINMAX_1
+ #undef MINMAX_2
