@@ -1,0 +1,3 @@
+
+# 0.26.1 needs dev-libs/tree-sitter 0.26.*, which would downgrade the library to 0.26.13 and rebuild lldb. Drop when the binding allows 0.27.
+=dev-python/tree-sitter-0.26.1
