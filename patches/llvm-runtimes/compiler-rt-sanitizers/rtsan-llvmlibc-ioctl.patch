@@ -1,0 +1,14 @@
+llvm-libc is taken for musl, not being glibc, but declares ioctl with the
+unsigned long request parameter glibc gives it.
+
+--- a/compiler-rt/lib/rtsan/rtsan_interceptors_posix.cpp
++++ b/compiler-rt/lib/rtsan/rtsan_interceptors_posix.cpp
+@@ -185,7 +185,7 @@
+   return REAL(fcntl)(filedes, cmd, arg);
+ }
+ 
+-#if SANITIZER_MUSL
++#if SANITIZER_MUSL && !defined(__LLVM_LIBC__)
+ INTERCEPTOR(int, ioctl, int filedes, int request, ...) {
+ #else
+ INTERCEPTOR(int, ioctl, int filedes, unsigned long request, ...) {
